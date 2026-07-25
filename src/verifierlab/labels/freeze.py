@@ -11,11 +11,13 @@ from verifierlab.artifacts.records import ArtifactBase
 
 
 class FreezeRecord(ArtifactBase):
-    """Immutable freeze marker for a campaign run."""
+    """Immutable freeze marker for a campaign run (append-only tip)."""
 
+    kind: str = "freeze"
     freeze_id: str
     run_id: str
     campaign_digest: str
+    prev_digest: str | None = None
     commitment_digests: list[str] = Field(default_factory=list)
     frozen_at: float
     metadata: dict[str, Any] = Field(default_factory=dict)
