@@ -1,0 +1,37 @@
+{
+  "endpoint": "local://nemo-gym/resource",
+  "resource_uri": "local://nemo-gym/resource",
+  "resources": {
+    "endpoint_calls": 3,
+    "gpu_seconds": 0.0,
+    "tokens": 128
+  },
+  "episodes": [
+    {
+      "id": "ep-0",
+      "actions": [{"op": "refund", "amount": 50}],
+      "observation": {"balance": 450},
+      "reward": 50.0
+    },
+    {
+      "id": "ep-1",
+      "actions": [{"op": "refund", "amount": 200}],
+      "observation": {"balance": 250},
+      "reward": 200.0
+    }
+  ],
+  "verifications": [
+    {
+      "id": "v-0",
+      "accepted": true,
+      "score": 1.0,
+      "endpoint": "local://nemo-gym/verify"
+    },
+    {
+      "id": "v-1",
+      "accepted": false,
+      "score": 0.0,
+      "endpoint": "local://nemo-gym/verify"
+    }
+  ]
+}

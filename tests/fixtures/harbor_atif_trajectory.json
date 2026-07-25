@@ -1,0 +1,98 @@
+{
+  "schema_version": "ATIF-v1.5",
+  "session_id": "025B810F-B3A2-4C67-93C0-FE7A142A947A",
+  "agent": {
+    "name": "harbor-agent",
+    "version": "1.0.0",
+    "model_name": "gemini-2.5-flash",
+    "tool_definitions": [
+      {
+        "type": "function",
+        "function": {
+          "name": "financial_search",
+          "description": "Search for financial data for a given stock ticker",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "ticker": {"type": "string"},
+              "metric": {"type": "string"}
+            },
+            "required": ["ticker", "metric"]
+          }
+        }
+      }
+    ],
+    "extra": {}
+  },
+  "notes": "Fixture ATIF trajectory adapted from Harbor RFC 0001 example.",
+  "extra": {},
+  "final_metrics": {
+    "total_prompt_tokens": 1120,
+    "total_completion_tokens": 124,
+    "total_cached_tokens": 200,
+    "total_cost_usd": 0.00078,
+    "total_steps": 3,
+    "extra": {}
+  },
+  "steps": [
+    {
+      "step_id": 1,
+      "timestamp": "2025-10-11T10:30:00Z",
+      "source": "user",
+      "message": "What is the current trading price of Alphabet (GOOGL)?",
+      "extra": {}
+    },
+    {
+      "step_id": 2,
+      "timestamp": "2025-10-11T10:30:02Z",
+      "source": "agent",
+      "model_name": "gemini-2.5-flash",
+      "reasoning_effort": "medium",
+      "message": "I will search for the current trading price and volume for GOOGL.",
+      "reasoning_content": "Execute two tool calls for price and volume.",
+      "tool_calls": [
+        {
+          "tool_call_id": "call_price_1",
+          "function_name": "financial_search",
+          "arguments": {"ticker": "GOOGL", "metric": "price"}
+        },
+        {
+          "tool_call_id": "call_volume_2",
+          "function_name": "financial_search",
+          "arguments": {"ticker": "GOOGL", "metric": "volume"}
+        }
+      ],
+      "observation": {
+        "results": [
+          {
+            "source_call_id": "call_price_1",
+            "content": "GOOGL is currently trading at $185.35"
+          },
+          {
+            "source_call_id": "call_volume_2",
+            "content": "GOOGL volume: 1.5M shares traded."
+          }
+        ]
+      },
+      "metrics": {
+        "prompt_tokens": 520,
+        "completion_tokens": 80,
+        "cached_tokens": 200,
+        "cost_usd": 0.00045
+      }
+    },
+    {
+      "step_id": 3,
+      "timestamp": "2025-10-11T10:30:05Z",
+      "source": "agent",
+      "model_name": "gemini-2.5-flash",
+      "reasoning_effort": "low",
+      "message": "Alphabet (GOOGL) is trading at $185.35 with volume 1.5M.",
+      "metrics": {
+        "prompt_tokens": 600,
+        "completion_tokens": 44,
+        "cost_usd": 0.00033
+      }
+    }
+  ]
+}
