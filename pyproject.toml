@@ -1,0 +1,201 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "verifierlab"
+version = "0.1.0a0"
+description = "Verifier Assurance Lab — local-first campaigns for verifier robustness evaluation"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11,<3.14"
+authors = [{ name = "VerifierLab Contributors" }]
+keywords = ["verifier", "assurance", "evaluation", "robustness"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+]
+dependencies = [
+    "pydantic>=2.7,<3",
+    "pydantic-settings>=2.3,<3",
+    "typer>=0.12,<1",
+    "rich>=13.7,<15",
+    "pyyaml>=6.0,<7",
+    "jinja2>=3.1,<4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2,<9",
+    "pytest-asyncio>=0.23,<1",
+    "hypothesis>=6.100,<7",
+    "ruff>=0.5,<1",
+    "mypy>=1.10,<2",
+    "types-PyYAML>=6.0,<7",
+    "moto[s3]>=5.0,<6",
+]
+inspect = [
+    "inspect-ai>=0.3.200,<0.4",
+]
+harbor = [
+    # Harbor (https://pypi.org/project/harbor/) requires Python >=3.12.
+    "harbor>=0.17,<0.21; python_version >= '3.12'",
+]
+gym = [
+    "gymnasium>=0.29,<1.2",
+]
+openenv = [
+    # Hugging Face / Meta OpenEnv — heavy optional stack (gradio, openai, …).
+    # Reference HTTP protocol adapter works without this pin.
+    "openenv>=0.4,<0.5",
+]
+nemo = [
+    # NeMo Gym HTTP client + stdlib reference server; no NVIDIA stack required.
+]
+rl = [
+    # Local tabular RL baseline is in base; heavy trainers remain optional.
+]
+slurm = [
+    # No Python deps — live mode uses system sbatch/squeue/scancel.
+]
+kubernetes = [
+    "kubernetes>=29.0.0,<35",
+]
+objectstore = [
+    "boto3>=1.34,<2",
+]
+dashboard = []
+adapters = [
+    "verifierlab[gym]",
+    "verifierlab[inspect]",
+    "verifierlab[harbor]",
+    "verifierlab[openenv]",
+    "verifierlab[nemo]",
+]
+
+[project.scripts]
+valab = "verifierlab.cli:app"
+
+[project.entry-points."verifierlab.plugins"]
+# Plugins register here: name = "module:factory"
+
+[project.urls]
+Homepage = "https://github.com/fraware/verifierlab"
+Repository = "https://github.com/fraware/verifierlab"
+Issues = "https://github.com/fraware/verifierlab/issues"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+    "/docs",
+    "/examples",
+    "/campaigns",
+    "/scripts",
+    "/LICENSE",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/SECURITY.md",
+    "/CONTRIBUTING.md",
+    "/CODE_OF_CONDUCT.md",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I",
+    "UP",
+    "B",
+    "SIM",
+    "RUF",
+]
+ignore = [
+    "E501",
+    "B008",  # Typer Argument/Option defaults are the supported CLI idiom
+    "UP042",  # keep str, Enum for broader pydantic/JSON compatibility
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["verifierlab"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+mypy_path = "src"
+packages = ["verifierlab"]
+
+[[tool.mypy.overrides]]
+module = [
+    "verifierlab.api.*",
+    "verifierlab.artifacts.*",
+]
+disallow_untyped_defs = true
+disallow_any_generics = true
+
+[[tool.mypy.overrides]]
+module = [
+    "gymnasium",
+    "gymnasium.*",
+    "gym",
+    "inspect_ai",
+    "inspect_ai.*",
+    "harbor",
+    "harbor.*",
+    "openenv",
+    "openenv.*",
+    "nemo",
+    "nemo_gym",
+    "boto3",
+    "boto3.*",
+    "botocore",
+    "botocore.*",
+    "moto",
+    "moto.*",
+    "kubernetes",
+    "kubernetes.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+pythonpath = ["src", "."]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+markers = [
+    "slow: longer-running tests",
+    "integration: end-to-end campaign tests",
+    "gym: requires verifierlab[gym] / gymnasium",
+    "inspect: Inspect live (inspect-ai) or eval-log format regression",
+    "harbor: Harbor live (harbor SDK) or ATIF format regression",
+    "nemo: NeMo Gym HTTP client + local reference server",
+    "openenv: OpenEnv HTTP protocol + local reference server / optional openenv SDK",
+    "objectstore: requires verifierlab[objectstore] / boto3 (+ moto for mock AWS)",
+    "slurm: Slurm launcher live path (mocked or real sbatch)",
+    "kubernetes: Kubernetes launcher live path (mocked or real client)",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.2,<9",
+    "pytest-asyncio>=0.23,<1",
+    "hypothesis>=6.100,<7",
+    "ruff>=0.5,<1",
+    "mypy>=1.10,<2",
+    "types-PyYAML>=6.0,<7",
+]
