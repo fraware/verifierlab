@@ -15,13 +15,11 @@ from typing import Any
 from verifierlab.artifacts.canonical import digest_of
 from verifierlab.artifacts.cas import ContentAddressedStore
 from verifierlab.budgets.budget import Budget
-from verifierlab.budgets.ledger import BudgetExceeded, ProvenanceLedger
-from verifierlab.targets.fake import (
-    FakeEnvironment,
-    PlantedOracleGroundTruth,
-    fake_refund_verifier,
-    propose_fake_action,
-)
+from verifierlab.budgets.ledger import BudgetExceeded, OverrunRecord, ProvenanceLedger
+from verifierlab.campaigns.episode import trajectory_commitment
+from verifierlab.targets.fake import FakeEnvironment, fake_refund_verifier, propose_fake_action
+from verifierlab.verifiers.broker import VerifierBroker
+from verifierlab.verifiers.profile import VerifierProfile
 
 
 class WorkUnitStatus(str, Enum):
@@ -33,14 +31,19 @@ class WorkUnitStatus(str, Enum):
 
 
 def _run_fake_work_unit(payload: dict[str, Any]) -> dict[str, Any]:
-    """Process-pool entry point (must be picklable / top-level)."""
+    """Process-pool entry point (must be picklable / top-level).
+
+    Fake smoke path aligns with the campaign worker: no GT, broker-metered
+    verifier query, commitment = digest(trajectory || nonce).
+    """
     unit_id = payload["unit_id"]
     seed = int(payload["seed"])
     unit_index = int(payload["unit_index"])
     max_steps = int(payload.get("max_steps", 3))
+    nonce = str(payload.get("commitment_nonce") or f"{unit_id}:{unit_index}")
+    access_model = str(payload.get("access_model") or "black-box")
 
     env = FakeEnvironment(max_steps=max_steps)
-    gt = PlantedOracleGroundTruth()
     obs = env.reset(seed=seed + unit_index)
     steps_taken = 0
     while steps_taken < max_steps:
@@ -50,25 +53,53 @@ def _run_fake_work_unit(payload: dict[str, Any]) -> dict[str, Any]:
         if result["done"]:
             break
     trajectory = env.finalize()
-    commitment = gt.commit(trajectory)
-    decision = bool(fake_refund_verifier(trajectory))
+    profile = VerifierProfile.for_callable(fake_refund_verifier)
+    voucher: ProvenanceLedger | None = None
+    remaining = payload.get("query_budget_remaining")
+    if remaining is not None:
+        from verifierlab.budgets.budget import OverrunPolicy
+
+        policy_raw = str(payload.get("budget_overrun_policy") or "stop")
+        try:
+            policy = OverrunPolicy(policy_raw)
+        except ValueError:
+            policy = OverrunPolicy.STOP
+        voucher = ProvenanceLedger(
+            budget=Budget(max_queries=max(0, int(remaining)), overrun_policy=policy)
+        )
+    broker = VerifierBroker(
+        profile=profile,
+        verifier=fake_refund_verifier,
+        access_model=access_model,
+        caller=f"fake:{unit_id}",
+        ledger=voucher,
+    )
+    decision = broker.query(trajectory)
+    commitment = trajectory_commitment(trajectory, nonce)
     snap = env.snapshot()
     env2 = FakeEnvironment(max_steps=max_steps)
     env2.restore(snap)
 
     restored_seed = int(json.loads(snap.decode("utf-8"))["seed"])
     result_body: dict[str, Any] = {
-        "schema_version": "1",
+        "schema_version": "2",
         "unit_id": unit_id,
         "seed": seed + unit_index,
         "trajectory": trajectory,
         "commitment": commitment,
-        "verifier_accepted": decision,
+        "commitment_nonce": nonce,
+        "verifier_accepted": decision.accepted is True,
+        "verifier_status": decision.status,
+        "verifier_invocations": broker.event_dicts(),
+        "query_count": len(broker.events),
+        "gt_valid": None,
         "observation_initial": obs,
         "snapshot_restore_ok": restored_seed == trajectory["seed"] and env2._step == env._step,
         "snapshot_bytes": len(snap),
     }
-    result_body["unit_digest"] = digest_of(result_body)
+    from verifierlab.campaigns.episode import _stable_episode_digest_body
+
+    result_body["unit_digest"] = digest_of(_stable_episode_digest_body(result_body))
     return result_body
 
 
@@ -181,9 +212,7 @@ class LocalLauncher:
         self._executor = self._make_executor()
         try:
             pending_handles = [
-                h
-                for h, e in self._handles.items()
-                if e["status"] == WorkUnitStatus.PENDING.value
+                h for h, e in self._handles.items() if e["status"] == WorkUnitStatus.PENDING.value
             ]
 
             async def _one(handle: str) -> None:
@@ -201,23 +230,56 @@ class LocalLauncher:
                 entry = self._handles[handle]
                 entry["status"] = WorkUnitStatus.RUNNING.value
                 try:
-                    self.ledger.add_queries(1)
+                    # Exact remaining budget voucher for worker-side atomic reserve.
                     self.ledger.sync_wall_time()
+                    work_unit = dict(entry["work_unit"])
+                    if self.budget.max_queries is not None:
+                        remaining = int(self.budget.max_queries) - int(self.ledger.queries)
+                        if remaining <= 0 and self.budget.overrun_policy.value == "stop":
+                            self.ledger.add_queries(1)
+                        work_unit["query_budget_remaining"] = max(0, remaining)
+                        work_unit["budget_overrun_policy"] = self.budget.overrun_policy.value
                     result = await loop.run_in_executor(
                         self._executor,
                         fn,
-                        entry["work_unit"],
+                        work_unit,
                     )
-                    steps = len(result.get("trajectory", {}).get("steps", []))
+                    # Primary metering: broker events from the worker voucher path.
+                    query_count = int(
+                        result.get("query_count")
+                        or len(result.get("verifier_invocations") or [])
+                        or 0
+                    )
+                    if query_count:
+                        self.ledger.add_queries(query_count)
+                    for inv in result.get("verifier_invocations") or []:
+                        if isinstance(inv, dict):
+                            self.ledger.record_event(
+                                "verifier_query",
+                                **{
+                                    k: inv[k]
+                                    for k in (
+                                        "query_id",
+                                        "input_digest",
+                                        "output_digest",
+                                        "latency_ms",
+                                        "caller",
+                                        "access_model",
+                                        "profile_digest",
+                                        "status",
+                                    )
+                                    if k in inv
+                                },
+                            )
+                    steps = len((result.get("trajectory") or {}).get("steps", []))
                     if steps:
                         self.ledger.add_steps(steps)
                     digest = self._persist_unit(result)
                     result = {**result, "cas_digest": digest}
                     self._persist_unit(result)
-                    entry["status"] = WorkUnitStatus.DONE.value
-                    entry["result"] = result
                     results.append(result)
-                    completed[handle] = result["unit_digest"]
+                    if result.get("unit_digest"):
+                        completed[handle] = result["unit_digest"]
                     self._save_checkpoint(
                         {
                             "schema_version": "1",
@@ -225,6 +287,22 @@ class LocalLauncher:
                             "status": "running",
                         }
                     )
+                    if result.get("budget_stopped"):
+                        entry["status"] = WorkUnitStatus.CANCELLED.value
+                        entry["result"] = result
+                        record = OverrunRecord(
+                            dimension="queries",
+                            limit=float(self.budget.max_queries or 0),
+                            actual=float(self.ledger.queries),
+                            policy=self.budget.overrun_policy,
+                            stopped=True,
+                            message="worker budget voucher exhausted",
+                        )
+                        self.ledger.overruns.append(record)
+                        self.cancel()
+                        raise BudgetExceeded(record)
+                    entry["status"] = WorkUnitStatus.DONE.value
+                    entry["result"] = result
                 except BudgetExceeded:
                     entry["status"] = WorkUnitStatus.CANCELLED.value
                     self.cancel()
@@ -263,9 +341,7 @@ class LocalLauncher:
                 self._executor = None
 
         failed = sum(
-            1
-            for e in self._handles.values()
-            if e["status"] == WorkUnitStatus.FAILED.value
+            1 for e in self._handles.values() if e["status"] == WorkUnitStatus.FAILED.value
         )
         status = "cancelled" if self._cancel_requested else "completed"
         if self.ledger.overruns and self.ledger.stopped:
