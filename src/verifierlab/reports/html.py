@@ -11,8 +11,9 @@ from typing import Any
 from jinja2 import Template
 
 from verifierlab.artifacts.records import AssuranceReport
-from verifierlab.reports.metrics import MetricsReport, compute_metrics_iter
+from verifierlab.config.campaign import StatsPlan
 from verifierlab.security.secrets import assert_no_secrets, scan_for_secrets
+from verifierlab.statistics.plan import compile_stats_plan
 
 REPORT_TEMPLATE = Template(
     """<!DOCTYPE html>
@@ -38,33 +39,47 @@ REPORT_TEMPLATE = Template(
 <main>
   <h1>Assurance Report</h1>
   <p class="meta">Run <code>{{ run_id }}</code> · digest <code>{{ run_digest }}</code>
-     · access <code>{{ access_model }}</code></p>
-  <h2>Overall</h2>
+     · access <code>{{ access_model }}</code>
+     · StatsPlan <code>{{ stats_methods }}</code> alpha={{ alpha }}</p>
+  {% if overall %}
+  <h2>Overall <span class="meta">(explicitly pooled)</span></h2>
   <table>
-    <tr><th>n</th><th>FAR</th><th>FRR</th><th>FP</th><th>FN</th><th>Abstention</th></tr>
+    <tr><th>n</th><th>FAR</th><th>FAR CI</th><th>FRR</th><th>FRR CI</th><th>Missing</th></tr>
     <tr>
       <td>{{ overall.n }}</td>
       <td class="fp">{{ fmt(overall.far) }}</td>
+      <td>{{ fmt_ci(overall.far_ci) }}</td>
       <td>{{ fmt(overall.frr) }}</td>
-      <td class="fp">{{ overall.fp }}</td>
-      <td>{{ overall.fn }}</td>
-      <td>{{ fmt(overall.abstention_rate) }}</td>
+      <td>{{ fmt_ci(overall.frr_ci) }}</td>
+      <td>{{ overall.missing }} ({{ fmt(overall.missingness) }})</td>
     </tr>
   </table>
+  {% else %}
+  <h2>Overall</h2>
+  <p class="meta">Cohort pooling disabled by default (VAL-C14). Primary estimands are per-cohort.</p>
+  {% endif %}
   <h2>By cohort</h2>
   <table>
-    <tr><th>Cohort</th><th>n</th><th>FAR</th><th>FRR</th><th>FP</th><th>FN</th></tr>
+    <tr><th>Cohort</th><th>n</th><th>FAR</th><th>FAR CI</th><th>FAR denom</th>
+        <th>FRR</th><th>FRR CI</th><th>Missing</th></tr>
     {% for c in cohorts %}
     <tr>
       <td>{{ c.cohort }}</td>
       <td>{{ c.n }}</td>
       <td class="fp">{{ fmt(c.far) }}</td>
+      <td>{{ fmt_ci(c.far_ci) }}</td>
+      <td>{{ c.denominators.far }}</td>
       <td>{{ fmt(c.frr) }}</td>
-      <td class="fp">{{ c.fp }}</td>
-      <td>{{ c.fn }}</td>
+      <td>{{ fmt_ci(c.frr_ci) }}</td>
+      <td>{{ c.missing }} ({{ fmt(c.missingness) }})</td>
     </tr>
     {% endfor %}
   </table>
+  {% if gap %}
+  <h2>Optimization gap</h2>
+  <p>FAR(optimized) - FAR(ordinary) = <code>{{ fmt(gap.gap) }}</code>
+     · policy: {{ gap.multiplicity_policy }}</p>
+  {% endif %}
   <h2>Exploits</h2>
   <p>{{ exploit_count }} exploit case(s) recorded (accept ∧ invalid).</p>
   <p class="meta">Rebuilt offline from immutable artifacts. Report format v{{ report_version }}.</p>
@@ -81,6 +96,41 @@ def _fmt(value: float | None) -> str:
     return f"{value:.4f}"
 
 
+def _fmt_ci(ci: dict[str, Any] | None) -> str:
+    if not ci:
+        return "—"
+    intervals = ci.get("intervals") or {}
+    for method in ("wilson", "exact"):
+        iv = intervals.get(method)
+        if iv:
+            return f"[{iv['low']:.4f}, {iv['high']:.4f}] ({method})"
+    if intervals:
+        iv = next(iter(intervals.values()))
+        return f"[{iv['low']:.4f}, {iv['high']:.4f}]"
+    return "—"
+
+
+def _load_stats_plan(run_dir: Path, manifest: dict[str, Any]) -> StatsPlan:
+    """Resolve StatsPlan from campaign CAS tip or defaults."""
+    meta = manifest.get("metadata") or {}
+    if isinstance(meta.get("stats_plan"), dict):
+        return StatsPlan.model_validate(meta["stats_plan"])
+    # Try campaign digest in store.
+    dig = manifest.get("campaign_digest")
+    if dig:
+        try:
+            from verifierlab.artifacts.cas import ContentAddressedStore
+
+            ws = run_dir.parent.parent
+            store = ContentAddressedStore(ws / "store")
+            raw = store.get_json(str(dig))
+            if isinstance(raw.get("stats_plan"), dict):
+                return StatsPlan.model_validate(raw["stats_plan"])
+        except Exception:
+            pass
+    return StatsPlan()
+
+
 def build_report(
     run_dir: Path,
     *,
@@ -88,46 +138,60 @@ def build_report(
     access_model: str | None = None,
     run_id: str | None = None,
     run_digest: str | None = None,
+    require_labels_released: bool = True,
+    stats_plan: StatsPlan | None = None,
+    pool_overall: bool = False,
 ) -> dict[str, Any]:
-    """Write HTML + JSON + CSV sidecars under ``run_dir/report/``."""
+    """Write HTML + JSON + CSV sidecars under ``run_dir/report/``.
+
+    Driven by declared :class:`StatsPlan` (VAL-R12). Overall pooling is off
+    by default (VAL-C14).
+    """
     run_dir = Path(run_dir)
     manifest = {}
     manifest_path = run_dir / "manifest.json"
     if manifest_path.is_file():
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     run_id = run_id or str(manifest.get("run_id") or run_dir.name)
-    run_digest = run_digest or str(manifest.get("run_digest") or "")
+    run_digest = run_digest or str(manifest.get("tip_digest") or manifest.get("run_digest") or "")
     meta = manifest.get("metadata") or {}
-    # Prefer explicit arg, then manifest metadata, then first work-unit row.
+
+    if require_labels_released and results is None:
+        from verifierlab.campaigns.lifecycle import labels_released
+
+        if not labels_released(run_dir):
+            raise PermissionError(
+                "report blocked until labels are released "
+                "(valab campaign freeze → adjudicate → release-labels)"
+            )
+
     resolved_access = access_model or meta.get("access_model")
     if not resolved_access and results:
         resolved_access = results[0].get("access_model")
     if not resolved_access:
-        # Peek one work unit without loading the full campaign into memory.
         for row in iter_work_unit_rows(run_dir):
             resolved_access = row.get("access_model")
             break
     access_model = str(resolved_access or "black-box")
+    plan = stats_plan or _load_stats_plan(run_dir, manifest)
 
-    source: Iterator[dict[str, Any]] = (
-        iter(results) if results is not None else iter_work_unit_rows(run_dir)
-    )
-
-    # Stream metrics; collect only exploit unit ids (not full trajectories).
+    rows_list = list(results) if results is not None else list(iter_work_unit_rows(run_dir))
     exploit_unit_ids: list[str] = []
+    cleaned: list[dict[str, Any]] = []
+    for row in rows_list:
+        hits = scan_for_secrets(row)
+        if hits:
+            raise ValueError(f"secret patterns detected in work-unit {row.get('unit_id')}: {hits}")
+        if row.get("verifier_accepted") is True and row.get("gt_valid") is False:
+            exploit_unit_ids.append(str(row.get("unit_id") or ""))
+        cleaned.append(row)
 
-    def _rows() -> Iterator[dict[str, Any]]:
-        for row in source:
-            hits = scan_for_secrets(row)
-            if hits:
-                raise ValueError(
-                    f"secret patterns detected in work-unit {row.get('unit_id')}: {hits}"
-                )
-            if row.get("verifier_accepted") is True and row.get("gt_valid") is False:
-                exploit_unit_ids.append(str(row.get("unit_id") or ""))
-            yield row
-
-    metrics: MetricsReport = compute_metrics_iter(_rows(), access_model=access_model)
+    stats = compile_stats_plan(
+        cleaned,
+        plan=plan,
+        access_model=access_model,
+        pool_overall=pool_overall,
+    )
     out_dir = run_dir / "report"
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -135,26 +199,49 @@ def build_report(
         run_id=run_id,
         run_digest=run_digest,
         access_model=access_model,
-        metrics=metrics.as_dict(),
+        metrics=stats,
         exploit_count=len(exploit_unit_ids),
         exploit_unit_ids=exploit_unit_ids,
+        metadata={
+            "stats_plan": plan.model_dump(mode="json"),
+            "pool_overall": pool_overall,
+            "primary_estimands": stats.get("primary_estimands"),
+            "assurance_grade": (
+                "research_ungated" if not require_labels_released else "post_release"
+            ),
+            "labels_release_required": require_labels_released,
+        },
     )
     payload = report.model_dump(mode="json")
+    if not require_labels_released:
+        payload["assurance_disclaimer"] = (
+            "NON-ASSURANCE: report built with require_labels_released=False; "
+            "not a scientific release artifact."
+        )
     assert_no_secrets(payload)
     (out_dir / "report.json").write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    (out_dir / "stats.json").write_text(
+        json.dumps(stats, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
+    cohorts = list((stats.get("cohorts") or {}).values())
     html = REPORT_TEMPLATE.render(
         run_id=run_id,
         run_digest=run_digest,
         access_model=access_model,
-        overall=metrics.overall,
-        cohorts=list(metrics.cohorts.values()),
+        overall=stats.get("overall"),
+        cohorts=cohorts,
+        gap=stats.get("optimization_gap"),
         exploit_count=len(exploit_unit_ids),
         report_version=report.report_version,
+        stats_methods=",".join(plan.methods),
+        alpha=plan.alpha,
         fmt=_fmt,
+        fmt_ci=_fmt_ci,
     )
     (out_dir / "report.html").write_text(html, encoding="utf-8")
 
@@ -168,6 +255,12 @@ def build_report(
             "fn",
             "tp",
             "tn",
+            "far_denom",
+            "frr_denom",
+            "far_ci_low",
+            "far_ci_high",
+            "frr_ci_low",
+            "frr_ci_high",
             "abstentions",
             "abstention_rate",
             "missing",
@@ -176,16 +269,52 @@ def build_report(
         ]
         writer = csv.DictWriter(fh, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerow(metrics.overall.as_dict())
-        for c in metrics.cohorts.values():
-            writer.writerow(c.as_dict())
+
+        def _row(c: dict[str, Any]) -> dict[str, Any]:
+            far_iv = ((c.get("far_ci") or {}).get("intervals") or {}).get("wilson") or {}
+            frr_iv = ((c.get("frr_ci") or {}).get("intervals") or {}).get("wilson") or {}
+            den = c.get("denominators") or {}
+            return {
+                "cohort": c.get("cohort"),
+                "n": c.get("n"),
+                "far": c.get("far"),
+                "frr": c.get("frr"),
+                "fp": c.get("fp"),
+                "fn": c.get("fn"),
+                "tp": c.get("tp"),
+                "tn": c.get("tn"),
+                "far_denom": den.get("far"),
+                "frr_denom": den.get("frr"),
+                "far_ci_low": far_iv.get("low"),
+                "far_ci_high": far_iv.get("high"),
+                "frr_ci_low": frr_iv.get("low"),
+                "frr_ci_high": frr_iv.get("high"),
+                "abstentions": c.get("abstentions"),
+                "abstention_rate": c.get("abstention_rate"),
+                "missing": c.get("missing"),
+                "missingness": c.get("missingness"),
+                "failed": c.get("failed"),
+            }
+
+        if stats.get("overall"):
+            writer.writerow(_row(stats["overall"]))
+        for c in cohorts:
+            writer.writerow(_row(c))
 
     return payload
 
 
 def iter_work_unit_rows(run_dir: Path) -> Iterator[dict[str, Any]]:
-    """Yield work-unit JSON rows without materializing the full list."""
-    wu_dir = Path(run_dir) / "work_units"
+    """Yield work-unit JSON rows without materializing the full list.
+
+    Prefers post-release analysis copies (with ``gt_valid``) when present;
+    otherwise streams attack-plane work units.
+    """
+    run_dir = Path(run_dir)
+    analysis = run_dir / "analysis" / "work_units"
+    wu_dir = (
+        analysis if analysis.is_dir() and any(analysis.glob("*.json")) else run_dir / "work_units"
+    )
     if not wu_dir.is_dir():
         return
     for path in sorted(wu_dir.glob("*.json")):
