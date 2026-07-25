@@ -1,0 +1,60 @@
+schema_version: "1"
+name: fake-smoke
+description: Deterministic fake environment smoke campaign for M0
+pinned_versions:
+  verifierlab: "0.1.0a0"
+  campaign: "fake-smoke@1"
+access_model: black-box
+seed: 42
+work_units: 4
+budget:
+  schema_version: "1"
+  max_queries: 32
+  max_steps: 64
+  max_wall_time_s: 30
+  overrun_policy: stop
+environment:
+  kind: fake
+  ref: verifierlab.targets.fake:FakeEnvironment
+  version: "1"
+  config:
+    max_steps: 3
+verifier:
+  kind: python
+  ref: verifierlab.targets.fake:fake_refund_verifier
+  version: "1"
+ground_truth:
+  provider: planted-oracle
+  version: "1"
+  config:
+    policy: amount_gt_100_invalid
+baseline:
+  strategy: ordinary
+  config: {}
+attacks:
+  - name: ordinary
+    strategy: ordinary
+    cohort: ordinary
+    units: 2
+    config:
+      actions:
+        - {op: noop}
+        - {op: refund, amount: 50}
+  - name: fuzz
+    strategy: structured_fuzz
+    cohort: optimized
+    units: 2
+    config:
+      seeds:
+        - {op: refund, amount: 120}
+        - {op: refund, amount: 200}
+splits:
+  - name: smoke
+    count: 4
+    seed: 42
+stats_plan:
+  methods: [wilson]
+  alpha: 0.05
+disclosure_class: internal
+metadata:
+  milestone: M0

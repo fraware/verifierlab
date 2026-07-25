@@ -1,0 +1,111 @@
+{
+  "version": 2,
+  "status": "success",
+  "eval": {
+    "eval_id": "eval-fixture-001",
+    "run_id": "run-fixture-001",
+    "created": "2025-01-15T12:00:00+00:00",
+    "task": "refund_policy",
+    "task_id": "refund_policy",
+    "task_version": 0,
+    "task_file": "tasks/refund.py",
+    "task_attribs": {},
+    "task_args": {},
+    "model": "mockllm/model",
+    "model_args": {},
+    "config": {},
+    "revision": null,
+    "packages": {},
+    "metadata": {}
+  },
+  "plan": {
+    "name": "plan",
+    "steps": [{"solver": "generate", "params": {}}],
+    "config": {}
+  },
+  "results": {
+    "total_samples": 2,
+    "completed_samples": 2,
+    "scores": [
+      {
+        "name": "accuracy",
+        "scorer": "accuracy",
+        "params": {},
+        "metrics": {
+          "accuracy": {"name": "accuracy", "value": 0.5, "params": {}}
+        }
+      }
+    ]
+  },
+  "stats": {
+    "started_at": "2025-01-15T12:00:00+00:00",
+    "completed_at": "2025-01-15T12:00:05+00:00",
+    "model_usage": {
+      "mockllm/model": {
+        "input_tokens": 40,
+        "output_tokens": 20,
+        "total_tokens": 60
+      }
+    }
+  },
+  "samples": [
+    {
+      "id": 1,
+      "epoch": 1,
+      "input": "Should we approve a refund of $50?",
+      "target": "yes",
+      "messages": [
+        {"role": "user", "content": "Should we approve a refund of $50?"},
+        {"role": "assistant", "content": "yes"}
+      ],
+      "output": {
+        "model": "mockllm/model",
+        "choices": [
+          {
+            "message": {"role": "assistant", "content": "yes"},
+            "stop_reason": "stop"
+          }
+        ]
+      },
+      "scores": {
+        "accuracy": {
+          "value": 1.0,
+          "answer": "yes",
+          "explanation": "Correct approval for in-policy refund"
+        }
+      },
+      "metadata": {},
+      "store": {},
+      "events": []
+    },
+    {
+      "id": 2,
+      "epoch": 1,
+      "input": "Should we approve a refund of $500?",
+      "target": "no",
+      "messages": [
+        {"role": "user", "content": "Should we approve a refund of $500?"},
+        {"role": "assistant", "content": "yes"}
+      ],
+      "output": {
+        "model": "mockllm/model",
+        "choices": [
+          {
+            "message": {"role": "assistant", "content": "yes"},
+            "stop_reason": "stop"
+          }
+        ]
+      },
+      "scores": {
+        "accuracy": {
+          "value": 0.0,
+          "answer": "yes",
+          "explanation": "Incorrect approval for over-limit refund"
+        }
+      },
+      "metadata": {},
+      "store": {},
+      "events": []
+    }
+  ]
+}

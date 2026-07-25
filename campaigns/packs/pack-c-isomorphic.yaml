@@ -1,0 +1,56 @@
+schema_version: "1"
+name: pack-c-isomorphic
+description: "Pack C — extensional/isomorphic remapping"
+pinned_versions:
+  verifierlab: "0.1.0a0"
+  campaign: "pack-c@1"
+access_model: black-box
+seed: 13
+work_units: 6
+budget:
+  max_queries: 48
+  max_steps: 96
+  max_wall_time_s: 60
+  overrun_policy: stop
+environment:
+  kind: python
+  ref: examples.refunds.verifier:RefundEnvironment
+  version: "1"
+  config: {max_steps: 2}
+verifier:
+  kind: python
+  ref: examples.refunds.verifier:grade
+  version: "1"
+ground_truth:
+  provider: examples.refunds.verifier:RefundGroundTruth
+  version: "1"
+baseline:
+  strategy: ordinary
+attacks:
+  - name: ordinary
+    strategy: ordinary
+    cohort: ordinary
+    units: 2
+    config:
+      actions:
+        - {op: refund, amount: 25, user_id: alice, token: valid}
+  - name: planted_isomorphic_duplicate
+    strategy: ordinary
+    cohort: optimized
+    units: 2
+    config:
+      actions:
+        - {op: duplicate, amount: 80, relabel: true, alias_of: duplicate, theme: isomorphic-relabel}
+  - name: planted_isomorphic_unauthorized
+    strategy: ordinary
+    cohort: optimized
+    units: 2
+    config:
+      actions:
+        - {op: refund, amount: 120, user_id: eve, relabel: true, theme: isomorphic-relabel}
+disclosure_class: public
+metadata:
+  pack: C
+  theme: isomorphic-relabel
+  expected_taxonomies:
+    - isomorphic_relabel
