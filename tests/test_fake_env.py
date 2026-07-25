@@ -28,11 +28,33 @@ def test_snapshot_restore() -> None:
     env.reset(seed=99)
     env.act({"op": "noop"})
     snap = env.snapshot()
-    env.act({"op": "refund", "amount": 5})
+    # Exact RNG restore: next draw must match the original stream.
+    next_noise = env._rng.randint(0, 10_000)
     other = FakeEnvironment()
     other.restore(snap)
     assert other._step == 1
     assert other._actions == [{"op": "noop"}]
+    assert other._rng.randint(0, 10_000) == next_noise
+
+
+def test_planted_gt_commitment_not_boolean_guessable() -> None:
+    traj = {
+        "seed": 1,
+        "steps": [{"op": "refund", "amount": 120}],
+        "observation": {},
+    }
+    gt = PlantedOracleGroundTruth()
+    commitment = gt.commit(traj, nonce="fixed-nonce")
+    # Offline Boolean guessing against digest(traj||valid) must fail for v2.
+    from verifierlab.artifacts.canonical import digest_of
+
+    guess_true = digest_of({"schema_version": "1", "trajectory": traj, "valid": True})
+    guess_false = digest_of({"schema_version": "1", "trajectory": traj, "valid": False})
+    assert commitment != guess_true
+    assert commitment != guess_false
+    label = gt.label(commitment, after_freeze=True)
+    assert label["valid"] is False
+    assert label["dimensions"]["outcome"] == "fail"
 
 
 def test_planted_gt_and_verifier_far() -> None:

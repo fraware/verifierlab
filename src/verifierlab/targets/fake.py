@@ -1,18 +1,26 @@
-"""Deterministic fake environment and planted oracle ground truth."""
+"""Deterministic fake environment and planted oracle ground truth.
+
+Attack workers may import :class:`FakeEnvironment` and ``fake_refund_verifier``.
+Ground-truth evaluation belongs on the adjudicator path
+(:class:`PlantedOracleGroundTruth` / vault v2) — never in workers.
+"""
 
 from __future__ import annotations
 
 import json
 import random
+import secrets
+import warnings
 from typing import Any
 
 from verifierlab.api.verifier import verifier
 from verifierlab.artifacts.canonical import digest_of
 from verifierlab.artifacts.records import DecisionSpace
+from verifierlab.attacks.runtime import json_safe_rng_state, rng_state_from_json
 
 
 class FakeEnvironment:
-    """Deterministic discrete env with fixed seeds and snapshot/restore.
+    """Deterministic discrete env with fixed seeds and exact snapshot/restore.
 
     Planted rule: action ``{"op": "refund", "amount": n}`` with ``n > 100``
     is *invalid* for GT but the public verifier incorrectly accepts it when
@@ -78,25 +86,17 @@ class FakeEnvironment:
         }
 
     def snapshot(self) -> bytes:
-        state = {
-            "seed": self._seed,
-            "step": self._step,
-            "done": self._done,
-            "actions": self._actions,
-            "observation": self._observation,
-            "max_steps": self.max_steps,
-            "rng_state": self._rng.getstate(),
-        }
-        # rng state is not JSON-safe; use a dedicated encoding for restore stubs.
+        """Exact restore payload including ``random.Random`` state."""
         return json.dumps(
             {
-                "seed": state["seed"],
-                "step": state["step"],
-                "done": state["done"],
-                "actions": state["actions"],
-                "observation": state["observation"],
-                "max_steps": state["max_steps"],
-                "rng_seed_drawn": self._seed,
+                "schema_version": "2",
+                "seed": self._seed,
+                "step": self._step,
+                "done": self._done,
+                "actions": self._actions,
+                "observation": self._observation,
+                "max_steps": self.max_steps,
+                "rng_state": json_safe_rng_state(self._rng.getstate()),
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -106,23 +106,62 @@ class FakeEnvironment:
         state = json.loads(snapshot.decode("utf-8"))
         self.max_steps = int(state["max_steps"])
         self._seed = int(state["seed"])
-        self._rng = random.Random(self._seed)
-        # Advance RNG to approximate prior draws (stub fidelity for M0).
-        for _ in range(int(state["step"]) + 1):
-            self._rng.randint(0, 10_000)
         self._step = int(state["step"])
         self._done = bool(state["done"])
         self._actions = list(state["actions"])
         self._observation = dict(state["observation"])
+        if state.get("rng_state") is not None:
+            self._rng = random.Random(0)
+            self._rng.setstate(rng_state_from_json(state["rng_state"]))
+        else:
+            # Legacy snapshots without rng_state: approximate by replaying draws.
+            self._rng = random.Random(self._seed)
+            for _ in range(self._step + 1):
+                self._rng.randint(0, 10_000)
 
 
 class PlantedOracleGroundTruth:
-    """Oracle GT: refunds with amount > 100 are invalid; others valid."""
+    """Coordinator-only oracle GT: refunds with amount > 100 are invalid.
+
+    Commitments use schema v2 (trajectory + nonce only). Validity is stored
+    privately and must not be recoverable by offline Boolean guessing against
+    the public digest. Prefer :class:`~verifierlab.labels.vault.LabelVault`.
+    """
 
     def __init__(self) -> None:
         self._vault: dict[str, dict[str, Any]] = {}
 
-    def commit(self, trajectory: dict[str, Any]) -> str:
+    def commit(self, trajectory: dict[str, Any], *, nonce: str | None = None) -> str:
+        """Seal a label under a nonce commitment that does not embed validity."""
+        if nonce is None:
+            nonce = secrets.token_hex(16)
+        valid = self._is_valid(trajectory)
+        commitment = digest_of(
+            {
+                "schema_version": "2",
+                "trajectory": trajectory,
+                "nonce": nonce,
+            }
+        )
+        self._vault[commitment] = {
+            "valid": valid,
+            "reason": "amount_exceeds_policy" if not valid else "ok",
+            "nonce": nonce,
+            "dimensions": {"outcome": "pass" if valid else "fail"},
+        }
+        return commitment
+
+    def commit_v1_legacy(self, trajectory: dict[str, Any]) -> str:
+        """Deprecated: embeds validity in the digest (Boolean-guessable).
+
+        Kept only for migration tests. New code must use :meth:`commit`.
+        """
+        warnings.warn(
+            "PlantedOracleGroundTruth.commit_v1_legacy embeds validity in the "
+            "digest and is not scientifically sound; use commit() or LabelVault.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         valid = self._is_valid(trajectory)
         commitment = digest_of(
             {
