@@ -51,8 +51,7 @@ def _callable_source_digest(fn: Callable[..., Any]) -> tuple[SourceLocation, str
 
 
 @overload
-def verifier(fn: Callable[P, R]) -> Callable[P, R]:
-    ...
+def verifier(fn: Callable[P, R]) -> Callable[P, R]: ...
 
 
 @overload
@@ -64,8 +63,7 @@ def verifier(
     output_schema: dict[str, Any] | None = None,
     limitations: list[str] | None = None,
     metadata: dict[str, Any] | None = None,
-) -> Callable[[Callable[P, R]], Callable[P, R]]:
-    ...
+) -> Callable[[Callable[P, R]], Callable[P, R]]: ...
 
 
 def verifier(
