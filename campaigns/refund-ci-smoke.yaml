@@ -2,7 +2,7 @@ schema_version: "1"
 name: refund-ci-smoke
 description: Reduced-budget refund pack for CI
 pinned_versions:
-  verifierlab: "0.1.0a0"
+  verifierlab: "0.2.0rc1"
   campaign: "refund-ci@1"
 access_model: black-box
 seed: 3

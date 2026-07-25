@@ -2,7 +2,7 @@ schema_version: "1"
 name: pack-c-isomorphic
 description: "Pack C — extensional/isomorphic remapping"
 pinned_versions:
-  verifierlab: "0.1.0a0"
+  verifierlab: "0.2.0rc1"
   campaign: "pack-c@1"
 access_model: black-box
 seed: 13
@@ -52,5 +52,6 @@ disclosure_class: public
 metadata:
   pack: C
   theme: isomorphic-relabel
+  ci_optional: true
   expected_taxonomies:
     - isomorphic_relabel

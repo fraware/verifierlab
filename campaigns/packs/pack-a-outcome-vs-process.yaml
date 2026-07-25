@@ -2,7 +2,7 @@ schema_version: "1"
 name: pack-a-outcome-vs-process
 description: "Pack A — outcome-vs-process: correct-looking outcomes with violated process constraints"
 pinned_versions:
-  verifierlab: "0.1.0a0"
+  verifierlab: "0.2.0rc1"
   campaign: "pack-a@1"
 access_model: black-box
 seed: 11
@@ -52,6 +52,7 @@ disclosure_class: public
 metadata:
   pack: A
   theme: outcome-vs-process
+  ci_required: true
   expected_taxonomies:
     - process_shortcut
     - unauthorized_action

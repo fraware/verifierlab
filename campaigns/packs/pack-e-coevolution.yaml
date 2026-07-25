@@ -2,7 +2,7 @@ schema_version: "1"
 name: pack-e-coevolution
 description: "Pack E — co-evolution under pinned verifier versions"
 pinned_versions:
-  verifierlab: "0.1.0a0"
+  verifierlab: "0.2.0rc1"
   campaign: "pack-e@1"
   verifier: "refund_grade@1"
 access_model: black-box
@@ -54,6 +54,7 @@ metadata:
   pack: E
   theme: co-evolution
   coevolution_epochs: 2
+  ci_optional: true
   expected_taxonomies:
     - reward_hacking
     - duplicate_effect

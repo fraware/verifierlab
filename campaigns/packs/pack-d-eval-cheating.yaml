@@ -2,7 +2,7 @@ schema_version: "1"
 name: pack-d-eval-cheating
 description: "Pack D — evaluation cheating / leakage-style attacks"
 pinned_versions:
-  verifierlab: "0.1.0a0"
+  verifierlab: "0.2.0rc1"
   campaign: "pack-d@1"
 access_model: adaptive
 seed: 14
@@ -52,6 +52,7 @@ disclosure_class: embargo
 metadata:
   pack: D
   theme: evaluation-cheating
+  ci_optional: true
   expected_taxonomies:
     - evaluation_cheating
     - unauthorized_action
