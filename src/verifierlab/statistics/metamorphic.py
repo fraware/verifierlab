@@ -70,9 +70,7 @@ def assert_gt_invariance(
     before = bool(is_valid(trajectory))
     after = bool(is_valid(transformed))
     if before != after:
-        raise AssertionError(
-            f"GT metamorphic invariance violated: before={before} after={after}"
-        )
+        raise AssertionError(f"GT metamorphic invariance violated: before={before} after={after}")
     return {
         "invariant": "gt_validity",
         "before": before,
@@ -90,11 +88,13 @@ def verifier_invariance_report(
     remap: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Compare verifier decisions before/after remap against GT invariance."""
+    from verifierlab.api.verifier import normalize_decision
+
     transformed = (remap or isomorphic_remap)(trajectory)
     gt_before = bool(is_valid(trajectory))
     gt_after = bool(is_valid(transformed))
-    v_before = bool(verifier(trajectory))
-    v_after = bool(verifier(transformed))
+    v_before = normalize_decision(verifier(trajectory)).accepted is True
+    v_after = normalize_decision(verifier(transformed)).accepted is True
     return {
         "gt_invariant": gt_before == gt_after,
         "gt_before": gt_before,
