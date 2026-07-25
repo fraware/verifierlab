@@ -12,6 +12,7 @@ from rich.table import Table
 from verifierlab import __version__
 from verifierlab.api.verifier import get_verifier_spec
 from verifierlab.campaigns.engine import (
+    adjudicate_campaign,
     default_workspace,
     freeze_run,
     init_workspace,
@@ -139,7 +140,11 @@ def run_cmd(
     path: Path = typer.Argument(..., exists=True, readable=True, help="Campaign YAML/JSON"),
     workspace: Path | None = typer.Option(None, "--workspace"),
     workers: int = typer.Option(2, "--workers", min=1),
-    threads: bool = typer.Option(True, "--threads/--processes", help="Thread workers (default)"),
+    threads: bool = typer.Option(
+        False,
+        "--threads/--processes",
+        help="Use thread workers; default is process pool",
+    ),
     format: str = typer.Option("text", "--format"),
 ) -> None:
     """Alias for ``valab campaign run`` (tutorial path)."""
@@ -194,9 +199,9 @@ def campaign_run(
     ),
     workers: int = typer.Option(2, "--workers", min=1, help="Process/thread pool size"),
     threads: bool = typer.Option(
-        True,
+        False,
         "--threads/--processes",
-        help="Use thread workers (default; safer smoke). Pass --processes for process pool.",
+        help="Use thread workers. Default is process pool (picklable worker entry).",
     ),
     format: str = typer.Option("text", "--format", help="Output format: text|json"),
 ) -> None:
@@ -237,8 +242,7 @@ def campaign_run(
             console.print(f"Exploits:    {payload['exploit_count']}")
     raise typer.Exit(
         0
-        if result.manifest.status
-        in {"completed", "budget_exceeded", "completed_with_failures"}
+        if result.manifest.status in {"completed", "budget_exceeded", "completed_with_failures"}
         else 1
     )
 
@@ -247,16 +251,36 @@ def campaign_run(
 def campaign_freeze(
     run_dir: Path = typer.Argument(..., exists=True, file_okay=False, help="Run bundle directory"),
 ) -> None:
-    """Freeze a run: seal label vault and write FreezeRecord."""
+    """Freeze a run: seal label vault and append FreezeRecord tip."""
     freeze = freeze_run(run_dir)
     typer.echo(json.dumps(freeze.model_dump(mode="json"), indent=2, sort_keys=True))
+
+
+@campaign_app.command("adjudicate")
+def campaign_adjudicate(
+    run_dir: Path = typer.Argument(..., exists=True, file_okay=False, help="Run bundle directory"),
+    campaign: Path | None = typer.Option(
+        None,
+        "--campaign",
+        exists=True,
+        readable=True,
+        help="Campaign YAML/JSON (optional if campaign_digest is in the store)",
+    ),
+) -> None:
+    """Hidden-GT adjudication after freeze (coordinator-only; not in workers)."""
+    try:
+        record = adjudicate_campaign(run_dir, campaign_path=campaign)
+    except Exception as exc:
+        console.print(f"[red]Adjudication failed:[/red] {exc}")
+        raise typer.Exit(2) from exc
+    typer.echo(json.dumps(record.model_dump(mode="json"), indent=2, sort_keys=True))
 
 
 @campaign_app.command("release-labels")
 def campaign_release_labels(
     run_dir: Path = typer.Argument(..., exists=True, file_okay=False, help="Run bundle directory"),
 ) -> None:
-    """Release sealed labels after freeze."""
+    """Release sealed labels after adjudication."""
     release_labels(run_dir)
     typer.echo(f"Labels released for {run_dir}")
 
@@ -266,8 +290,15 @@ def report_builds(
     run_dir: Path = typer.Argument(..., exists=True, file_okay=False, help="Run bundle directory"),
     format: str = typer.Option("text", "--format"),
 ) -> None:
-    """Rebuild static HTML/JSON/CSV report from immutable run artifacts."""
-    payload = build_report(run_dir)
+    """Rebuild static HTML/JSON/CSV report from immutable run artifacts.
+
+    Blocked until ``freeze → adjudicate → release-labels``.
+    """
+    try:
+        payload = build_report(run_dir)
+    except PermissionError as exc:
+        console.print(f"[red]Report blocked:[/red] {exc}")
+        raise typer.Exit(3) from exc
     if format == "json":
         _print_json(payload)
     else:
