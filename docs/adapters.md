@@ -34,10 +34,17 @@ Or with uv: `uv sync --extra gym` (and similarly for other extras).
 
 ## CI posture
 
+- Default CI: format, mypy, pytest with coverage threshold, packs A/B/F,
+  process + thread smokes, refund lifecycle smoke, reproducible bundle check.
+- Multi-OS process matrix (Windows may `continue-on-error` initially).
 - Inspect / Harbor: fixture log-format regression always; live SDK paths when
-  installed.
+  installed (extras matrix / schedule).
 - NeMo / OpenEnv: live client against local reference HTTP servers in CI.
 - Gym: skip or `ImportError` without gymnasium; tiny discrete env when present.
+- CodeQL on PR/push; pip-audit + SBOM on release tags.
+
+Shared conformance: `verifierlab.targets.conformance.run_conformance` covers
+decision normalization, timeout/error mapping, and hidden-label isolation.
 
 Details and non-claims: [limitations.md](limitations.md).
 

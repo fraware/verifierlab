@@ -1,7 +1,7 @@
 # VerifierLab documentation
 
 Package `verifierlab`, CLI `valab`, version aligned with `pyproject.toml`
-(`0.1.0a0` alpha).
+(`0.2.0rc1` release candidate).
 
 | Doc | Audience |
 | --- | -------- |
@@ -14,6 +14,8 @@ Package `verifierlab`, CLI `valab`, version aligned with `pyproject.toml`
 | [Attacks](attacks.md) | Researchers |
 | [Labels and statistics](labels-and-stats.md) | Researchers |
 | [Disclosure](disclosure.md) | Security / maintainers |
+| [Disclosure template](templates/disclosure.md) | Community |
+| [Incident template](templates/incident.md) | Operators |
 | [Threat model](threat-model.md) | Security reviewers |
 | [Reproduction checklist](reproduction-checklist.md) | Independent reproducers |
 | [Beta acceptance](beta-acceptance.md) | Maintainers |

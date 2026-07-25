@@ -9,6 +9,11 @@ Module: `verifierlab.disclosure` (`DisclosureRegistry`, `DisclosureRecord`,
 
 CLI wrappers (`valab disclose *`) are intentionally deferred; use the Python API.
 
+Community templates:
+
+- [templates/disclosure.md](templates/disclosure.md) — third-party verifier finding
+- [templates/incident.md](templates/incident.md) — VerifierLab integrity incident
+
 ## States
 
 | State | Meaning |
