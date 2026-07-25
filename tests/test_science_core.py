@@ -1,7 +1,5 @@
 """Property, adjudication, bootstrap, lifecycle, and artifact round-trip tests."""
 
-
-
 from __future__ import annotations
 
 import pytest
@@ -26,21 +24,13 @@ from verifierlab.statistics import (
 
 
 @given(
-
     st.dictionaries(
-
         st.text(min_size=1, max_size=8, alphabet="abcdef"),
-
         st.one_of(st.integers(min_value=-100, max_value=100), st.booleans(), st.none()),
-
         max_size=6,
-
     )
-
 )
-
 @settings(max_examples=40, deadline=None)
-
 def test_canonicalize_digest_stable(obj: dict) -> None:
 
     a = digest_of(obj)
@@ -52,105 +42,61 @@ def test_canonicalize_digest_stable(obj: dict) -> None:
     assert digest_of(obj) == a
 
 
-
-
-
 def test_artifact_round_trips() -> None:
 
     traj = TrajectoryRecord(trajectory_id="t1", seed=1, steps=[{"op": "noop"}])
 
     assert TrajectoryRecord.model_validate(traj.model_dump(mode="json")).trajectory_id == "t1"
 
-
-
     inv = VerifierInvocation(
-
         invocation_id="i1",
-
         trajectory_digest="a" * 64,
-
         decision=True,
-
         accepted=True,
-
     )
 
     assert VerifierInvocation.model_validate(inv.model_dump(mode="json")).accepted is True
 
-
-
     fr = FreezeRecord(
-
         freeze_id="f1",
-
         run_id="r1",
-
         campaign_digest="b" * 64,
-
         commitment_digests=["c" * 64],
-
         frozen_at=1.0,
-
     )
 
     assert FreezeRecord.model_validate(fr.model_dump(mode="json")).freeze_id == "f1"
 
-
-
     case = build_exploit_case(
-
         unit_id="u1",
-
         trajectory={"steps": [{"op": "refund", "amount": 120}]},
-
         cohort="optimized",
-
         access_model="black-box",
-
     )
 
     assert ExploitCase.model_validate(case.model_dump(mode="json")).exploit_id == case.exploit_id
 
-
-
     report = AssuranceReport(
-
         run_id="r1",
-
         run_digest="d" * 64,
-
         access_model="black-box",
-
         metrics={"overall": {"n": 1}},
-
         exploit_count=0,
-
     )
 
     assert AssuranceReport.model_validate(report.model_dump(mode="json")).report_version == "1"
 
 
-
-
-
 def test_adjudication_records_role_and_dimensions() -> None:
 
     adj = adjudicate(
-
         adjudication_id="a1",
-
         unit_id="u1",
-
         role="senior_labeler",
-
         decision="confirm_exploit",
-
         dimensions={"authorization": "fail", "amount": "over_limit"},
-
         exploit_id="e1",
-
         notes="unauthorized refund",
-
     )
 
     assert adj.role == "senior_labeler"
@@ -160,9 +106,6 @@ def test_adjudication_records_role_and_dimensions() -> None:
     roundtrip = type(adj).model_validate(adj.model_dump(mode="json"))
 
     assert roundtrip.decision == "confirm_exploit"
-
-
-
 
 
 def test_bootstrap_and_robustness() -> None:
@@ -179,45 +122,25 @@ def test_bootstrap_and_robustness() -> None:
     assert km[0]["survival"] == 1.0
 
 
-
-
-
 def test_access_model_pool_rejected() -> None:
 
     rows = [
-
         {
-
             "cohort": "ordinary",
-
             "access_model": "black-box",
-
             "verifier_accepted": True,
-
             "gt_valid": True,
-
         },
-
         {
-
             "cohort": "ordinary",
-
             "access_model": "white-box",
-
             "verifier_accepted": True,
-
             "gt_valid": False,
-
         },
-
     ]
 
     with pytest.raises(AccessModelPoolError):
-
         compute_metrics(rows, access_model="black-box")
-
-
-
 
 
 def test_lifecycle_transitions() -> None:
@@ -226,14 +149,14 @@ def test_lifecycle_transitions() -> None:
 
     assert not can_transition(LifecycleState.DRAFT, LifecycleState.DISCLOSURE)
 
-    assert_transition(LifecycleState.FREEZE, LifecycleState.LABEL_RELEASE)
+    assert_transition(LifecycleState.FREEZE, LifecycleState.ADJUDICATION)
+
+    assert_transition(LifecycleState.ADJUDICATION, LifecycleState.LABEL_RELEASE)
+
+    assert not can_transition(LifecycleState.FREEZE, LifecycleState.LABEL_RELEASE)
 
     with pytest.raises(ValueError, match="illegal"):
-
         assert_transition(LifecycleState.ATTACK, LifecycleState.DISCLOSURE)
-
-
-
 
 
 def test_sandbox_profile_declarative() -> None:
@@ -247,29 +170,34 @@ def test_sandbox_profile_declarative() -> None:
     assert profile["profile"] == SandboxProfile.LOCAL_NO_NETWORK.value
 
     assert profile["integration_status"] == "declarative"
-
-
-
+    assert "trust_boundary" in profile
+    assert profile["schema_version"] == "2"
 
 
 def test_inference_query_accounting() -> None:
-
+    """Candidate-level queries require a bound broker — not bare propose()."""
     from verifierlab.attacks import create_strategy
-
-
+    from verifierlab.targets.fake import FakeEnvironment, fake_refund_verifier
+    from verifierlab.verifiers.broker import VerifierBroker
+    from verifierlab.verifiers.profile import VerifierProfile
 
     s = create_strategy("best_of_n", {"seed": 3, "n": 3})
-
+    # Brokerless proposes must not invent verifier query counts.
     for _ in range(3):
-
         action = s.propose()
-
         s.observe({"score": 1.0, "reward": 0.0, "verifier_accepted": False})
-
         assert action.get("_strategy") == "best_of_n"
+    assert s.checkpoint()["queries"] == 0
 
-    cp = s.checkpoint()
-
-    assert cp["queries"] == 3
-
-
+    env = FakeEnvironment(max_steps=2)
+    env.reset(seed=3)
+    broker = VerifierBroker(
+        profile=VerifierProfile.for_callable(fake_refund_verifier),
+        verifier=fake_refund_verifier,
+        access_model="black-box",
+    )
+    s2 = create_strategy("best_of_n", {"seed": 3, "n": 3})
+    s2.bind_runtime(broker=broker, env=env, learning=True)
+    s2.propose()
+    assert s2.checkpoint()["queries"] == 3
+    assert len(broker.events) == 3

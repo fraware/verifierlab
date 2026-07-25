@@ -26,7 +26,6 @@ from verifierlab.campaigns.episode import (
     run_episode,
 )
 from verifierlab.labels.freeze import FreezeRecord, assert_freeze_immutable
-from verifierlab.labels.vault import LabelVault
 from verifierlab.reports.html import build_report
 from verifierlab.reports.metrics import compute_metrics
 from verifierlab.statistics.intervals import exact_clopper_pearson, wilson_interval
@@ -101,21 +100,28 @@ def test_strategies_ignore_injected_gt_keys() -> None:
 
 
 def test_run_episode_does_not_evaluate_gt() -> None:
+    from verifierlab.verifiers.broker import VerifierBroker
+    from verifierlab.verifiers.profile import VerifierProfile
+
     env = FakeEnvironment(max_steps=1)
-    gt = PlantedOracleGroundTruth()
     strategy = StructuredFuzzAttack()
+    broker = VerifierBroker(
+        profile=VerifierProfile.for_callable(fake_refund_verifier),
+        verifier=fake_refund_verifier,
+        access_model="black-box",
+    )
     result = run_episode(
         unit_id="u-integrity",
         seed=7,
         max_steps=1,
         env=env,
-        verifier=fake_refund_verifier,
-        gt=gt,
+        broker=broker,
         strategy=strategy,
         strategy_config={"seed": 7, "seeds": [{"op": "refund", "amount": 120}]},
         cohort="optimized",
         access_model="black-box",
         strategy_name="structured_fuzz",
+        commitment_nonce="n-integrity",
     )
     assert result["gt_valid"] is None
     assert result["exploit"] is None
@@ -132,8 +138,44 @@ def test_run_episode_does_not_evaluate_gt() -> None:
     assert enriched["exploit"] is not None
 
 
+def test_run_episode_reject_string_not_accept() -> None:
+    """Episode path must route through normalize_decision (no bool(\"reject\"))."""
+
+    def reject_verifier(_trajectory: dict) -> dict:  # type: ignore[type-arg]
+        return {"decision": "reject"}
+
+    from verifierlab.verifiers.broker import VerifierBroker
+    from verifierlab.verifiers.profile import VerifierProfile
+
+    env = FakeEnvironment(max_steps=1)
+    strategy = StructuredFuzzAttack()
+    broker = VerifierBroker(
+        profile=VerifierProfile.for_callable(reject_verifier, name="reject_verifier"),
+        verifier=reject_verifier,
+        access_model="black-box",
+    )
+    result = run_episode(
+        unit_id="u-reject-str",
+        seed=3,
+        max_steps=1,
+        env=env,
+        broker=broker,
+        strategy=strategy,
+        strategy_config={"seed": 3, "seeds": [{"op": "noop"}]},
+        cohort="ordinary",
+        access_model="black-box",
+        strategy_name="structured_fuzz",
+        commitment_nonce="n-reject",
+    )
+    assert bool("reject") is True
+    assert result["verifier_accepted"] is False
+    assert result["verifier_status"] == "reject"
+
+
 def test_label_vault_isolation_and_freeze(tmp_path: Path) -> None:
-    vault = LabelVault(tmp_path / "vault")
+    from verifierlab.labels.vault import fresh_ephemeral_vault
+
+    vault = fresh_ephemeral_vault(tmp_path / "vault")
     c = vault.commit({"steps": [{"op": "refund", "amount": 120}]}, {"valid": False})
     payload = vault.worker_payload(c)
     assert payload["label"] is None
@@ -144,7 +186,7 @@ def test_label_vault_isolation_and_freeze(tmp_path: Path) -> None:
 
     vault.freeze()
     with pytest.raises(RuntimeError, match="post-freeze"):
-        vault.commit({"steps": []}, {"valid": True})
+        vault.commit({"steps": []}, {"valid": True}, role="coordinator")
 
     with pytest.raises(PermissionError):
         vault.get_label(c)
@@ -196,7 +238,9 @@ def test_metrics_abstention_vs_missing_vs_failed() -> None:
     assert optimized.fp == 1
     assert optimized.failed == 1
     assert optimized.far == 1.0
-    assert report.overall.failed == 1
+    assert optimized.failed == 1
+    pooled = compute_metrics(rows, access_model="black-box", pool_overall=True)
+    assert pooled.overall.failed == 1
 
 
 def test_clopper_pearson_known_vector() -> None:
@@ -249,8 +293,8 @@ def test_report_rebuild_deterministic(tmp_path: Path) -> None:
         + "\n",
         encoding="utf-8",
     )
-    a = build_report(run_dir)
-    b = build_report(run_dir)
+    a = build_report(run_dir, require_labels_released=False)
+    b = build_report(run_dir, require_labels_released=False)
     assert a == b
     assert a["exploit_count"] == 1
     assert digest_of(a["metrics"]) == digest_of(b["metrics"])
@@ -326,29 +370,36 @@ def test_secret_scan_blocks_report_emit(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="secret patterns"):
-        build_report(run_dir)
+        build_report(run_dir, require_labels_released=False)
 
 
 def test_label_leakage_absent_from_worker_and_public_feedback() -> None:
     """§30.2: sealed labels / gt must not appear in worker-safe or public feedback."""
+    from verifierlab.verifiers.broker import VerifierBroker
+    from verifierlab.verifiers.profile import VerifierProfile
+
     env = FakeEnvironment(max_steps=1)
-    gt = PlantedOracleGroundTruth()
     strategy = StructuredFuzzAttack()
+    broker = VerifierBroker(
+        profile=VerifierProfile.for_callable(fake_refund_verifier),
+        verifier=fake_refund_verifier,
+        access_model="black-box",
+    )
     result = run_episode(
         unit_id="u-leak",
         seed=1,
         max_steps=1,
         env=env,
-        verifier=fake_refund_verifier,
-        gt=gt,
+        broker=broker,
         strategy=strategy,
         strategy_config={"seed": 1, "seeds": [{"op": "refund", "amount": 120}]},
         cohort="optimized",
         access_model="black-box",
         strategy_name="structured_fuzz",
+        commitment_nonce="n-leak",
     )
     blob = json.dumps(result, sort_keys=True, default=str)
-    assert "gt_valid\": null" in blob or '"gt_valid": null' in blob
+    assert 'gt_valid": null' in blob or '"gt_valid": null' in blob
     assert result["worker_safe"]["label"] is None
     assert result.get("label") is None
     # Public feedback path must strip injected GT even if smuggled.
@@ -374,8 +425,12 @@ def test_label_leakage_absent_from_worker_and_public_feedback() -> None:
 
 
 def test_vault_worker_credentials_isolation(tmp_path: Path) -> None:
-    vault = LabelVault(tmp_path / "vault")
-    c = vault.commit({"steps": [{"op": "refund", "amount": 120}]}, {"valid": False, "secret": "nope"})
+    from verifierlab.labels.vault import fresh_ephemeral_vault
+
+    vault = fresh_ephemeral_vault(tmp_path / "vault")
+    c = vault.commit(
+        {"steps": [{"op": "refund", "amount": 120}]}, {"valid": False, "secret": "nope"}
+    )
     payload = vault.worker_payload(c)
     assert payload["label"] is None
     # Worker view must not serialize sealed label fields.
