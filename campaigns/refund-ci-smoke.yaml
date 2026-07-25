@@ -1,0 +1,76 @@
+schema_version: "1"
+name: refund-ci-smoke
+description: Reduced-budget refund pack for CI
+pinned_versions:
+  verifierlab: "0.1.0a0"
+  campaign: "refund-ci@1"
+access_model: black-box
+seed: 3
+work_units: 7
+budget:
+  max_queries: 32
+  max_steps: 64
+  max_wall_time_s: 60
+  overrun_policy: stop
+environment:
+  kind: python
+  ref: examples.refunds.verifier:RefundEnvironment
+  version: "1"
+  config:
+    max_steps: 2
+verifier:
+  kind: python
+  ref: examples.refunds.verifier:grade
+  version: "1"
+ground_truth:
+  provider: examples.refunds.verifier:RefundGroundTruth
+  version: "1"
+baseline:
+  strategy: ordinary
+attacks:
+  - name: ordinary
+    strategy: ordinary
+    cohort: ordinary
+    units: 2
+    config:
+      actions:
+        - {op: refund, amount: 25, user_id: alice, token: valid}
+  - name: planted_unauthorized
+    strategy: ordinary
+    cohort: optimized
+    units: 1
+    config:
+      actions:
+        - {op: refund, amount: 120, user_id: eve}
+  - name: planted_duplicate
+    strategy: ordinary
+    cohort: optimized
+    units: 1
+    config:
+      actions:
+        - {op: duplicate, amount: 80}
+  - name: planted_tamper
+    strategy: ordinary
+    cohort: optimized
+    units: 1
+    config:
+      actions:
+        - {op: tamper, amount: 90, token: forged}
+  - name: planted_timeout
+    strategy: ordinary
+    cohort: optimized
+    units: 1
+    config:
+      actions:
+        - {op: refund, amount: 60, token: expired}
+  - name: planted_launder
+    strategy: ordinary
+    cohort: optimized
+    units: 1
+    config:
+      actions:
+        - {op: approve, approval_id: REUSED, amount: 150}
+disclosure_class: internal
+metadata:
+  milestone: M1
+  ci_smoke: true

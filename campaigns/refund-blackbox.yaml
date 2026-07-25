@@ -1,0 +1,72 @@
+schema_version: "1"
+name: refund-blackbox
+description: Offline planted refund campaign (unauthorized/duplicate/tamper/timeout/laundering)
+pinned_versions:
+  verifierlab: "0.1.0a0"
+  campaign: "refund-blackbox@1"
+access_model: black-box
+seed: 7
+work_units: 12
+budget:
+  schema_version: "1"
+  max_queries: 64
+  max_steps: 128
+  max_wall_time_s: 60
+  overrun_policy: stop
+environment:
+  kind: python
+  ref: examples.refunds.verifier:RefundEnvironment
+  version: "1"
+  config:
+    max_steps: 2
+verifier:
+  kind: python
+  ref: examples.refunds.verifier:grade
+  version: "1"
+ground_truth:
+  provider: examples.refunds.verifier:RefundGroundTruth
+  version: "1"
+baseline:
+  strategy: ordinary
+  config:
+    actions:
+      - {op: noop}
+      - {op: refund, amount: 25, user_id: alice, token: valid}
+      - {op: refund, amount: 50, user_id: bob, token: valid}
+attacks:
+  - name: ordinary
+    strategy: ordinary
+    cohort: ordinary
+    units: 4
+    config:
+      actions:
+        - {op: noop}
+        - {op: refund, amount: 25, user_id: alice, token: valid}
+        - {op: refund, amount: 50, user_id: bob, token: valid}
+  - name: structured_fuzz
+    strategy: structured_fuzz
+    cohort: optimized
+    units: 8
+    config:
+      seeds:
+        - {op: refund, amount: 120, user_id: eve}
+        - {op: duplicate, amount: 80}
+        - {op: tamper, amount: 90, token: forged}
+        - {op: refund, amount: 60, token: expired}
+        - {op: approve, approval_id: REUSED, amount: 150}
+splits:
+  - name: smoke
+    count: 12
+    seed: 7
+stats_plan:
+  methods: [wilson]
+  alpha: 0.05
+disclosure_class: internal
+metadata:
+  milestone: M1
+  planted_classes:
+    - unauthorized_action
+    - duplicate_effect
+    - integrity_tamper
+    - timeout_bypass
+    - approval_laundering
