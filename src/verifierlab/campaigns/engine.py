@@ -3,26 +3,35 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import time
 import uuid
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from verifierlab.artifacts.cas import ContentAddressedStore
+from verifierlab.artifacts.lifecycle_records import (
+    AdjudicationReleaseRecord,
+    AttackRunManifest,
+)
 from verifierlab.artifacts.records import RunManifest
-from verifierlab.attacks.registry import create_strategy
-from verifierlab.campaigns.episode import enrich_episode_with_gt, run_episode
-from verifierlab.campaigns.lifecycle import LifecycleState, assert_transition
+from verifierlab.attacks.runtime import attacker_store_path, is_learning_strategy
+from verifierlab.campaigns.lifecycle import (
+    LifecycleState,
+    assert_transition,
+    labels_released,
+    lifecycle_of,
+    read_tip_index,
+    write_tip_index,
+)
+from verifierlab.campaigns.splits import materialize_split_manifest, split_lookup
+from verifierlab.campaigns.worker import execute_work_unit
 from verifierlab.config.campaign import AttackSpec, CampaignSpec, load_campaign
 from verifierlab.execution.local import LocalLauncher
+from verifierlab.labels.adjudication_service import adjudicate_run, resolve_is_valid
 from verifierlab.labels.freeze import FreezeRecord
 from verifierlab.labels.vault import LabelVault
-from verifierlab.plugins.loader import load_object
-from verifierlab.reports.html import build_report
 
 
 @dataclass(frozen=True)
@@ -42,43 +51,29 @@ def init_workspace(root: Path, *, force: bool = False) -> Path:
     root = root.resolve()
     (root / "store").mkdir(parents=True, exist_ok=True)
     (root / "runs").mkdir(parents=True, exist_ok=True)
+    (root / "keys").mkdir(parents=True, exist_ok=True)
     marker = root / "README.txt"
     if not marker.exists() or force:
         marker.write_text(
-            "VerifierLab local workspace\nstore/ — content-addressed artifacts\nruns/ — campaign run bundles\n",
+            "VerifierLab local workspace\n"
+            "store/ — content-addressed artifacts\n"
+            "runs/ — campaign run bundles\n"
+            "keys/ — vault keyring (coordinator-only)\n",
             encoding="utf-8",
         )
     return root
 
 
-def _resolve_is_valid(spec: CampaignSpec) -> Callable[[dict[str, Any]], bool] | None:
-    provider = spec.ground_truth.provider
-    # Prefer module-level helpers for planted packs.
-    candidates = []
-    if ":" in provider:
-        mod = provider.split(":", 1)[0]
-        candidates.append(f"{mod}:refund_is_valid")
-        candidates.append(f"{mod}:_is_valid")
-    if spec.environment.kind == "fake" or "fake" in spec.environment.ref:
-        candidates.append("verifierlab.targets.fake:PlantedOracleGroundTruth._is_valid")
-    for ref in candidates:
-        try:
-            fn = load_object(ref)
-            if callable(fn):
-                return fn  # type: ignore[no-any-return]
-        except Exception:
-            continue
-    # Fallback: instantiate GT and use private static if present.
-    try:
-        gt_cls = load_object(provider) if ":" in provider or "." in provider else None
-        if gt_cls is not None and hasattr(gt_cls, "_is_valid"):
-            return gt_cls._is_valid  # type: ignore[no-any-return]
-    except Exception:
-        return None
-    return None
+def _build_work_units(
+    spec: CampaignSpec,
+    *,
+    run_dir: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Build work units with split assignment and persistent attacker paths.
 
-
-def _build_work_units(spec: CampaignSpec) -> list[dict[str, Any]]:
+    Split manifests are materialized before attack. Holdout units get
+    ``learning=False`` so the training attacker cannot update on them.
+    """
     attacks = list(spec.attacks)
     if not attacks:
         attacks = [
@@ -90,81 +85,71 @@ def _build_work_units(spec: CampaignSpec) -> list[dict[str, Any]]:
                 config=dict(spec.baseline.config),
             )
         ]
-    units: list[dict[str, Any]] = []
+    draft: list[dict[str, Any]] = []
     idx = 0
     max_steps = int(spec.environment.config.get("max_steps", 3))
     for attack in attacks:
+        attacker_seed = int(attack.config.get("seed", spec.seed))
         for _ in range(attack.units):
             unit_id = f"{spec.name}-{attack.name}-{spec.seed}-{idx:04d}"
-            units.append(
-                {
-                    "unit_id": unit_id,
-                    "seed": spec.seed + idx,
-                    "unit_index": idx,
-                    "max_steps": max_steps,
-                    "campaign_name": spec.name,
-                    "access_model": spec.access_model.value,
-                    "strategy": attack.strategy,
-                    "strategy_config": dict(attack.config),
+            commitment_nonce = f"{unit_id}:{uuid.uuid4().hex}"
+            persistent = is_learning_strategy(attack.strategy)
+            unit: dict[str, Any] = {
+                "unit_id": unit_id,
+                "seed": spec.seed + idx,
+                "unit_index": idx,
+                "max_steps": max_steps,
+                "campaign_name": spec.name,
+                "access_model": spec.access_model.value,
+                "strategy": attack.strategy,
+                "strategy_config": {
+                    **dict(attack.config),
                     "cohort": attack.cohort,
-                    "environment_ref": spec.environment.ref,
-                    "environment_kind": spec.environment.kind,
-                    "environment_config": dict(spec.environment.config),
-                    "verifier_ref": spec.verifier.ref,
-                    "ground_truth_ref": spec.ground_truth.provider,
-                }
-            )
-            # Propagate cohort into strategy config so strategies that stamp
-            # action metadata stay consistent with campaign stratification.
-            units[-1]["strategy_config"] = {
-                **units[-1]["strategy_config"],
+                    "seed": attacker_seed,
+                },
                 "cohort": attack.cohort,
+                "attacker_seed": attacker_seed,
+                "persistent": persistent,
+                "environment_ref": spec.environment.ref,
+                "environment_kind": spec.environment.kind,
+                "environment_config": dict(spec.environment.config),
+                "verifier_ref": spec.verifier.ref,
+                "commitment_nonce": commitment_nonce,
+                # Intentionally omitted: ground_truth_ref (VAL-R03).
             }
+            if persistent and run_dir is not None:
+                unit["attacker_dir"] = str(
+                    attacker_store_path(run_dir, attack.strategy, attacker_seed)
+                )
+            draft.append(unit)
             idx += 1
-    return units
+
+    # Materialize splits from CampaignSpec.splits before attack (VAL-R11).
+    unit_ids = [u["unit_id"] for u in draft]
+    split_manifest = materialize_split_manifest(spec, unit_ids=unit_ids, run_dir=run_dir)
+    lookup = split_lookup(split_manifest)
+    for unit in draft:
+        info = lookup.get(unit["unit_id"], {"split": "train", "learning": True})
+        unit["split"] = info["split"]
+        # Holdout inaccessible to training updates.
+        unit["learning"] = bool(info["learning"])
+        if not unit["learning"] and unit.get("attacker_dir"):
+            # Holdout may load frozen weights but must not write.
+            unit["learning"] = False
+    return draft
 
 
-def _make_executor_fn(spec: CampaignSpec) -> Callable[[dict[str, Any]], dict[str, Any]]:
-    """Build a worker entry point that never evaluates ground truth."""
+def _order_units_for_persistence(units: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Run learning units for the same attacker sequentially (train before holdout)."""
 
-    def _execute(payload: dict[str, Any]) -> dict[str, Any]:
-        env_kind = payload.get("environment_kind") or spec.environment.kind
-        max_steps = int(payload.get("max_steps", 3))
-        if env_kind == "fake":
-            from verifierlab.targets.fake import (
-                FakeEnvironment,
-                PlantedOracleGroundTruth,
-                fake_refund_verifier,
-            )
+    def _key(u: dict[str, Any]) -> tuple[Any, ...]:
+        persistent = 1 if u.get("persistent") else 0
+        attacker = (u.get("strategy"), u.get("attacker_seed"))
+        # Train (learning=True) before holdout within the same attacker.
+        holdout = 0 if u.get("learning", True) else 1
+        return (persistent, attacker, holdout, int(u.get("unit_index", 0)))
 
-            env = FakeEnvironment(max_steps=max_steps)
-            gt: Any = PlantedOracleGroundTruth()
-            verifier = fake_refund_verifier
-        else:
-            env_cls = load_object(payload["environment_ref"])
-            env_cfg = dict(payload.get("environment_config") or {})
-            env_cfg.pop("max_steps", None)
-            env = env_cls(max_steps=max_steps, **env_cfg) if env_cfg else env_cls(max_steps=max_steps)
-            gt_cls = load_object(payload["ground_truth_ref"])
-            gt = gt_cls() if isinstance(gt_cls, type) else gt_cls
-            verifier = load_object(payload["verifier_ref"])
-
-        strategy = create_strategy(payload["strategy"], dict(payload.get("strategy_config") or {}))
-        return run_episode(
-            unit_id=payload["unit_id"],
-            seed=int(payload["seed"]),
-            max_steps=max_steps,
-            env=env,
-            verifier=verifier,
-            gt=gt,
-            strategy=strategy,
-            strategy_config=dict(payload.get("strategy_config") or {}),
-            cohort=str(payload.get("cohort") or "optimized"),
-            access_model=str(payload.get("access_model") or spec.access_model.value),
-            strategy_name=str(payload["strategy"]),
-        )
-
-    return _execute
+    return sorted(units, key=_key)
 
 
 async def run_campaign_async(
@@ -175,8 +160,9 @@ async def run_campaign_async(
     max_workers: int = 2,
     resume: bool = True,
     use_processes: bool = True,
-    build_report_on_complete: bool = True,
+    build_report_on_complete: bool = False,
 ) -> CampaignRunResult:
+    """Run the attack plane only. Reports require freeze → adjudicate → release."""
     started = time.perf_counter()
     workspace = init_workspace(workspace)
     store = ContentAddressedStore(workspace / "store")
@@ -188,7 +174,9 @@ async def run_campaign_async(
         raise FileExistsError(f"run directory already exists: {run_dir}")
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    vault = LabelVault(run_dir / "vault")
+    # Ensure vault keyring exists on coordinator; workers never open it.
+    LabelVault.open(run_dir / "vault", workspace=workspace)
+
     launcher = LocalLauncher(
         store=store,
         run_dir=run_dir,
@@ -196,14 +184,23 @@ async def run_campaign_async(
         max_workers=max_workers,
         use_processes=use_processes,
     )
-    work_units = _build_work_units(spec)
-    executor_fn = _make_executor_fn(spec)
-    outcome = await launcher.run_all(work_units, executor_fn=executor_fn)
+    work_units = _order_units_for_persistence(_build_work_units(spec, run_dir=run_dir))
+    # Persistent attackers share filesystem checkpoints — serialize those units.
+    if any(u.get("persistent") for u in work_units):
+        launcher.max_workers = 1
+    outcome = await launcher.run_all(work_units, executor_fn=execute_work_unit)
 
-    # Coordinator-only GT enrichment (workers never see labels / gt_valid).
-    is_valid = _resolve_is_valid(spec)
+    # Freeze learning attackers after the attack plane completes (holdout seal).
+    from verifierlab.attacks.runtime import AttackerStore
+
+    frozen_dirs: set[str] = set()
+    for unit in work_units:
+        adir = unit.get("attacker_dir")
+        if adir and adir not in frozen_dirs:
+            AttackerStore(Path(adir)).freeze()
+            frozen_dirs.add(adir)
+
     work_digests: list[str] = []
-    exploit_count = 0
     failed_count = 0
     for row in outcome["results"]:
         if row.get("error") and "trajectory" not in row:
@@ -211,33 +208,63 @@ async def run_campaign_async(
             if row.get("unit_digest") or row.get("cas_digest"):
                 work_digests.append(str(row.get("cas_digest") or row.get("unit_digest")))
             continue
-        if is_valid is not None and row.get("trajectory") is not None:
-            row = enrich_episode_with_gt(
-                row,
-                is_valid=is_valid,
-                cohort=str(row.get("cohort") or "optimized"),
-                access_model=spec.access_model.value,
-            )
-            # Persist enriched coordinator record (idempotent overwrite).
-            launcher.persist_unit(row)
-        traj = row.get("trajectory") or {}
-        gt_valid = row.get("gt_valid")
-        if row.get("commitment") and gt_valid is not None and not vault.frozen:
-            with contextlib.suppress(RuntimeError):
-                vault.commit(traj, {"valid": gt_valid, "reason": "coordinator"})
-        if row.get("exploit"):
-            exploit_count += 1
+        # Attack artifacts only — no gt_valid, no vault commits, no exploits.
+        if row.get("gt_valid") is not None:
+            raise RuntimeError("integrity violation: gt_valid present on attack artifact")
         if row.get("error"):
             failed_count += 1
         digest = row.get("cas_digest") or row.get("unit_digest")
         if digest:
             work_digests.append(str(digest))
-    # Drop in-memory trajectories; report rebuild streams from work_units/.
     outcome.pop("results", None)
 
     status = outcome["status"]
     if failed_count and status == "completed":
         status = "completed_with_failures"
+
+    attack = AttackRunManifest(
+        run_id=run_id,
+        campaign_digest=campaign_digest,
+        status=status,
+        work_unit_digests=work_digests,
+        ledger_digest=outcome.get("ledger_digest"),
+        overrun=bool(outcome.get("overrun")),
+        prev_digest=None,
+        metadata={
+            "campaign_name": spec.name,
+            "access_model": spec.access_model.value,
+            "seed": spec.seed,
+            "completed_units": len(outcome.get("completed") or {}),
+            "failed_units": failed_count,
+            "exploit_count": 0,
+            "lifecycle": LifecycleState.ATTACK.value,
+            "gt_evaluated_on": None,
+            "plane": "attack",
+            "stats_plan": spec.stats_plan.model_dump(mode="json"),
+        },
+    )
+    tip_payload = attack.model_dump(mode="json")
+    tip_digest, index = write_tip_index(
+        run_dir,
+        store=store,
+        tip_payload=tip_payload,
+        tip_kind="attack_run",
+        lifecycle=LifecycleState.ATTACK,
+        run_id=run_id,
+        prev_chain=[],
+    )
+
+    if build_report_on_complete and labels_released(run_dir):
+        from verifierlab.reports.html import build_report
+
+        build_report(
+            run_dir,
+            access_model=spec.access_model.value,
+            run_id=run_id,
+            run_digest=tip_digest,
+        )
+
+    # Compatibility wrapper for CampaignRunResult.manifest
     manifest = RunManifest(
         run_id=run_id,
         campaign_digest=campaign_digest,
@@ -245,49 +272,13 @@ async def run_campaign_async(
         work_unit_digests=work_digests,
         ledger_digest=outcome.get("ledger_digest"),
         overrun=bool(outcome.get("overrun")),
-        metadata={
-            "campaign_name": spec.name,
-            "access_model": spec.access_model.value,
-            "seed": spec.seed,
-            "completed_units": len(outcome.get("completed") or {}),
-            "failed_units": failed_count,
-            "exploit_count": exploit_count,
-            "lifecycle": LifecycleState.ATTACK.value,
-            "gt_evaluated_on": "coordinator",
-        },
+        metadata=dict(index.get("metadata") or {}),
     )
-    manifest_digest = store.put_json(manifest.model_dump(mode="json"))
-    (run_dir / "manifest.json").write_text(
-        json.dumps(
-            {
-                **manifest.model_dump(mode="json"),
-                "run_digest": manifest_digest,
-            },
-            indent=2,
-            sort_keys=True,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-    if build_report_on_complete and status in {
-        "completed",
-        "budget_exceeded",
-        "completed_with_failures",
-    }:
-        # Stream from disk — do not re-materialize all trajectories in RAM.
-        build_report(
-            run_dir,
-            access_model=spec.access_model.value,
-            run_id=run_id,
-            run_digest=manifest_digest,
-        )
-
 
     elapsed = time.perf_counter() - started
     return CampaignRunResult(
         run_id=run_id,
-        run_digest=manifest_digest,
+        run_digest=tip_digest,
         manifest=manifest,
         run_dir=run_dir,
         elapsed_s=elapsed,
@@ -295,52 +286,154 @@ async def run_campaign_async(
 
 
 def freeze_run(run_dir: Path, *, store: ContentAddressedStore | None = None) -> FreezeRecord:
-    """Freeze a completed run: seal vault and write FreezeRecord."""
+    """Freeze a completed run: seal vault and append FreezeRecord tip."""
     run_dir = Path(run_dir)
-    manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
-    current = (manifest.get("metadata") or {}).get("lifecycle", LifecycleState.ATTACK.value)
+    index = read_tip_index(run_dir)
+    current = lifecycle_of(run_dir)
     assert_transition(current, LifecycleState.FREEZE)
-    vault = LabelVault(run_dir / "vault")
-    vault.freeze()
+
+    ws = run_dir.parent.parent
+    if store is None:
+        store = ContentAddressedStore(ws / "store")
+
+    vault = LabelVault.open(run_dir / "vault", workspace=ws)
+    vault.freeze(role="coordinator")
     commitments = [p.stem for p in (run_dir / "vault" / "commitments").glob("*.json")]
+    prev = str(index.get("tip_digest") or index.get("run_digest") or "")
     freeze = FreezeRecord(
-        freeze_id=f"freeze-{manifest['run_id']}",
-        run_id=manifest["run_id"],
-        campaign_digest=manifest["campaign_digest"],
+        freeze_id=f"freeze-{index['run_id']}",
+        run_id=str(index["run_id"]),
+        campaign_digest=str(index.get("campaign_digest") or ""),
+        prev_digest=prev,
         commitment_digests=sorted(commitments),
         frozen_at=time.time(),
-        metadata={"run_digest": manifest.get("run_digest")},
+        metadata={"attack_tip": prev},
     )
-    payload = freeze.model_dump(mode="json")
-    (run_dir / "freeze.json").write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    if store is not None:
-        store.put_json(payload)
-    manifest["metadata"] = {
-        **(manifest.get("metadata") or {}),
-        "lifecycle": LifecycleState.FREEZE.value,
-    }
-    (run_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    tip_payload = freeze.model_dump(mode="json")
+    tip_digest, _ = write_tip_index(
+        run_dir,
+        store=store,
+        tip_payload=tip_payload,
+        tip_kind="freeze",
+        lifecycle=LifecycleState.FREEZE,
+        run_id=str(index["run_id"]),
+        prev_chain=list(index.get("chain") or [prev]),
+        extra_index={
+            "campaign_digest": index.get("campaign_digest"),
+            "work_unit_digests": index.get("work_unit_digests") or [],
+            "ledger_digest": index.get("ledger_digest"),
+            "status": index.get("status"),
+            "overrun": index.get("overrun", False),
+            "metadata": dict(index.get("metadata") or {}),
+        },
+    )
+    (run_dir / "freeze.json").write_text(
+        json.dumps({**tip_payload, "content_digest": tip_digest}, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     return freeze
 
 
-def release_labels(run_dir: Path) -> None:
+def adjudicate_campaign(
+    run_dir: Path,
+    *,
+    campaign_path: Path | str | None = None,
+    store: ContentAddressedStore | None = None,
+) -> Any:
+    """CLI/engine entry: adjudicate after freeze."""
     run_dir = Path(run_dir)
-    manifest_path = run_dir / "manifest.json"
-    if manifest_path.is_file():
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        current = (manifest.get("metadata") or {}).get("lifecycle", LifecycleState.FREEZE.value)
-        assert_transition(current, LifecycleState.LABEL_RELEASE)
-        manifest["metadata"] = {
-            **(manifest.get("metadata") or {}),
-            "lifecycle": LifecycleState.LABEL_RELEASE.value,
-        }
-        manifest_path.write_text(
-            json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+    index = read_tip_index(run_dir)
+    spec: CampaignSpec | None = None
+    if campaign_path is not None:
+        spec, _ = load_campaign(campaign_path)
+    else:
+        # Reload campaign from CAS.
+        ws = run_dir.parent.parent
+        store = store or ContentAddressedStore(ws / "store")
+        dig = index.get("campaign_digest")
+        if dig:
+            raw = store.get_json(str(dig))
+            spec = CampaignSpec.model_validate(raw)
+    if spec is None:
+        raise ValueError("cannot resolve campaign spec for adjudication")
+    return adjudicate_run(run_dir, spec=spec, store=store, workspace=run_dir.parent.parent)
+
+
+def release_labels(
+    run_dir: Path, *, store: ContentAddressedStore | None = None
+) -> AdjudicationReleaseRecord:
+    """Release sealed labels and append AdjudicationReleaseRecord tip."""
+    run_dir = Path(run_dir)
+    index = read_tip_index(run_dir)
+    current = lifecycle_of(run_dir)
+    assert_transition(current, LifecycleState.LABEL_RELEASE)
+
+    ws = run_dir.parent.parent
+    if store is None:
+        store = ContentAddressedStore(ws / "store")
+
+    vault = LabelVault.open(run_dir / "vault", workspace=ws)
+    vault.release(role="coordinator")
+
+    # Materialize gt_valid into analysis copies (attack work_units stay immutable).
+    analysis_wu = run_dir / "analysis" / "work_units"
+    analysis_wu.mkdir(parents=True, exist_ok=True)
+    adj_dir = run_dir / "adjudications"
+    commitments: list[str] = []
+    for adj_path in sorted(adj_dir.glob("*.json")) if adj_dir.is_dir() else []:
+        adj = json.loads(adj_path.read_text(encoding="utf-8"))
+        unit_id = adj.get("unit_id")
+        src = run_dir / "work_units" / f"{unit_id}.json"
+        if not src.is_file():
+            continue
+        row = json.loads(src.read_text(encoding="utf-8"))
+        row["gt_valid"] = adj.get("gt_valid")
+        row["exploit"] = adj.get("exploit")
+        row["vault_commitment"] = adj.get("vault_commitment")
+        row["labels_released"] = True
+        (analysis_wu / f"{unit_id}.json").write_text(
+            json.dumps(row, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
-    vault = LabelVault(run_dir / "vault")
-    vault.release()
+        if adj.get("vault_commitment"):
+            commitments.append(str(adj["vault_commitment"]))
 
+    prev = str(index.get("tip_digest") or index.get("run_digest") or "")
+    release = AdjudicationReleaseRecord(
+        release_id=f"release-{index['run_id']}",
+        run_id=str(index["run_id"]),
+        prev_digest=prev,
+        adjudication_digest=prev if index.get("tip_kind") == "adjudication" else None,
+        released_at=time.time(),
+        commitment_digests=sorted(commitments),
+        metadata={"analysis_work_units": str(analysis_wu)},
+    )
+    tip_payload = release.model_dump(mode="json")
+    tip_digest, _ = write_tip_index(
+        run_dir,
+        store=store,
+        tip_payload=tip_payload,
+        tip_kind="adjudication_release",
+        lifecycle=LifecycleState.LABEL_RELEASE,
+        run_id=str(index["run_id"]),
+        prev_chain=list(index.get("chain") or [prev]),
+        extra_index={
+            "campaign_digest": index.get("campaign_digest"),
+            "work_unit_digests": index.get("work_unit_digests") or [],
+            "ledger_digest": index.get("ledger_digest"),
+            "status": index.get("status"),
+            "overrun": index.get("overrun", False),
+            "metadata": {
+                **dict(index.get("metadata") or {}),
+                "labels_released": True,
+            },
+        },
+    )
+    (run_dir / "release.json").write_text(
+        json.dumps({**tip_payload, "content_digest": tip_digest}, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return release
 
 
 def run_campaign(
@@ -362,3 +455,7 @@ def run_campaign(
             use_processes=use_processes,
         )
     )
+
+
+# Re-export for callers that imported resolve helpers from engine.
+_resolve_is_valid = resolve_is_valid

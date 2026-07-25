@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from verifierlab.campaigns.engine import (
     CampaignRunResult,
+    adjudicate_campaign,
     default_workspace,
     freeze_run,
     init_workspace,
@@ -15,6 +16,7 @@ from verifierlab.campaigns.lifecycle import LifecycleState, assert_transition, c
 __all__ = [
     "CampaignRunResult",
     "LifecycleState",
+    "adjudicate_campaign",
     "assert_transition",
     "can_transition",
     "default_workspace",
