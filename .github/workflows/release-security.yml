@@ -1,0 +1,46 @@
+name: Release security
+
+# Dependency audit + SBOM on tagged releases / manual dispatch.
+# Intentionally not on every PR so local/day-to-day CI stays lean.
+
+on:
+  release:
+    types: [published]
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  audit-sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        run: uv sync --extra dev
+
+      - name: Dependency audit (pip-audit)
+        continue-on-error: true
+        run: |
+          uv pip install pip-audit
+          uv run pip-audit --desc
+
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          uv pip install cyclonedx-bom
+          uv run cyclonedx-py environment -o sbom.cdx.json
+          test -s sbom.cdx.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: verifierlab-sbom
+          path: sbom.cdx.json
