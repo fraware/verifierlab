@@ -12,8 +12,38 @@ with pre-release tags (`a` = alpha, `b` = beta, `rc` = release candidate).
 ### Planned
 
 - Optional `[stats]` extra with SciPy-backed exact intervals
-- Stronger sandbox enforcement for untrusted verifier code
+- Stronger OS/sandbox enforcement for untrusted plugins (default remains process-local)
 - CLI surfaces for disclosure and adapter routing (today: Python APIs)
+
+## [0.2.0rc1] — 2026-07-25
+
+Release candidate: scientifically gated ordinary-vs-optimized studies with
+hidden adjudication, broker metering, and StatsPlan analysis. Executable
+acceptance suite: `tests/test_acceptance_gates.py` (gates 1–6).
+
+### Added / hardened
+
+- Attack-worker budget vouchers: atomic `broker.query` reserve against
+  remaining campaign query budget; exact event merge on the coordinator
+- Fail-closed typed decisions on repair / minimization / metamorphic paths
+  (no `bool("reject")` accept)
+- RL tabular candidate probes on by default when a broker is bound
+- BoN/beam brokerless paths no longer invent verifier query counts
+- StatsPlan optimization-gap bootstrap CI (`bootstrap_samples`)
+- Adjudication seals outcome dimensions; ungated reports stamped
+  `research_ungated` / NON-ASSURANCE
+- PlantedOracle commitments v2 (nonce; not Boolean-guessable); exact env
+  RNG snapshot/restore
+- Worker refuse of GT-like plugin refs; acceptance gate suite for RC sign-off
+- Reproducible campaign bundle check (`scripts/repro_bundle_check.py`)
+
+### Notes
+
+- Still research-grade: default trust boundary is process-local Python;
+  Docker sandbox remains optional (`[sandbox]`). Do not claim soundness
+  from “no exploit found.”
+- See [docs/limitations.md](docs/limitations.md) and
+  [docs/beta-acceptance.md](docs/beta-acceptance.md).
 
 ## [0.1.0a0] — 2026-07-25
 
@@ -50,5 +80,6 @@ acceptance documentation (milestones M0–M6 in-tree).
 - See [docs/limitations.md](docs/limitations.md) for the Solid / Thin split and
   non-claims.
 
-[Unreleased]: https://github.com/fraware/verifierlab/compare/v0.1.0a0...HEAD
+[Unreleased]: https://github.com/fraware/verifierlab/compare/v0.2.0rc1...HEAD
+[0.2.0rc1]: https://github.com/fraware/verifierlab/compare/v0.1.0a0...v0.2.0rc1
 [0.1.0a0]: https://github.com/fraware/verifierlab/releases/tag/v0.1.0a0
