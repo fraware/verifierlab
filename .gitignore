@@ -1,0 +1,84 @@
+# Python bytecode / packaging
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.eggs/
+dist/
+build/
+MANIFEST
+pip-wheel-metadata/
+wheels/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Test / type / lint caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
+.tox/
+.nox/
+.pytype/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.cache/
+
+# VerifierLab local workspace and run artifacts
+.valab/
+runs/
+logs/
+*.eval
+
+# Lockfiles (library consumers pin their own env; keep local)
+uv.lock
+poetry.lock
+
+# IDE / editor
+.idea/
+.vscode/
+*.code-workspace
+*.swp
+*.swo
+*~
+.cursor/
+
+# OS junk
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# Secrets / local credentials
+.env
+.env.*
+!.env.example
+credentials.json
+*.pem
+*.key
+id_rsa
+id_rsa.pub
+secrets.yaml
+secrets.yml
+
+# Jupyter / notebooks checkpoints
+.ipynb_checkpoints/
+
+# Temporary / scratch
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+*.orig
+*.log
