@@ -47,4 +47,4 @@ uv run valab report builds <run_dir>
 - [ ] Public summary / full (`public_summary` / `public_full`)
 
 Do **not** auto-publish. See [disclosure.md](../disclosure.md) and
-[SECURITY.md](../../SECURITY.md).
+[SECURITY.md](https://github.com/fraware/verifierlab/blob/main/SECURITY.md).

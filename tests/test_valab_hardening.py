@@ -441,7 +441,7 @@ def test_split_manifest_binds_tiers() -> None:
             SplitSpec(name="train", count=2, label_tier="development"),
             SplitSpec(name="private_holdout", count=1, label_tier="private_holdout"),
         ],
-        pinned_versions={"verifierlab": "0.2.0rc1", "campaign": "t"},
+        pinned_versions={"verifierlab": "0.2.0rc2", "campaign": "t"},
     )
     manifest = materialize_split_manifest(spec, unit_ids=["u0", "u1", "u2"])
     tiers = {u["unit_id"]: u["label_tier"] for u in manifest["units"]}
@@ -619,7 +619,9 @@ def test_stats_schema_fails_when_required_missing() -> None:
 
 
 def test_trainer_adapter_broker_only() -> None:
-    ledger = ProvenanceLedger(budget=Budget(max_queries=20, max_candidates=10, max_compute_units=10))
+    ledger = ProvenanceLedger(
+        budget=Budget(max_queries=20, max_candidates=10, max_compute_units=10)
+    )
     broker = VerifierBroker(
         profile=VerifierProfile.for_callable(fake_refund_verifier),
         verifier=fake_refund_verifier,
@@ -744,6 +746,7 @@ def test_score_only_episode_feedback_strips_accepted() -> None:
     assert seen
     assert seen[0].get("verifier_accepted") is None
     assert seen[0].get("score") is not None
+
 
 def test_stateful_rejects_gt_episode_state() -> None:
     broker = VerifierBroker(

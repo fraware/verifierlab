@@ -1,0 +1,20 @@
+{
+  "campaign": "pack-e-coevolution",
+  "content_digest": "2d3167741096f789f3895d576d0e81de2fc94fb387849dca3f5d5c3e9c55a56a",
+  "custodian_held": [
+    "ground_truth",
+    "unreleased_labels",
+    "vault_keys"
+  ],
+  "kind": "hidden_adjudication_protocol",
+  "labels_in_public_pack": false,
+  "release_gate": "freeze_then_adjudicate_then_release_labels",
+  "schema_version": "1",
+  "steps": [
+    "freeze",
+    "adjudicate",
+    "release_labels",
+    "compile_stats_plan"
+  ],
+  "summary": "Internal pack: freeze, adjudicate with pinned verifier ground truth, release labels for StatsPlan; public tree has protocol + digests only."
+}

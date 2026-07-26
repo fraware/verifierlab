@@ -15,6 +15,7 @@ from verifierlab.artifacts.records import AccessModel
 from verifierlab.budgets.ledger import ProvenanceLedger
 from verifierlab.verifiers.capabilities import AccessCapabilities, AccessDenied, capabilities_for
 from verifierlab.verifiers.profile import VerifierProfile
+from verifierlab.verifiers.runner import PythonVerifierRunner
 
 _KNOWN_ACCESS = frozenset(m.value for m in AccessModel)
 
@@ -74,6 +75,11 @@ class VerifierBroker:
     (when a ledger is attached), records query provenance, and returns typed
     decisions. Verifier invocations are metered as ``ledger.add_queries`` —
     equivalent to the ``max_queries`` budget dimension (VALAB-04).
+
+    When ``runner`` is set (packaged native verifiers), invocations prefer the
+    :class:`~verifierlab.verifiers.runner.PythonVerifierRunner` subprocess
+    boundary. Trusted local ``@verifier`` callables remain in-process when
+    ``runner`` is omitted.
     """
 
     profile: VerifierProfile
@@ -83,6 +89,7 @@ class VerifierBroker:
     ledger: ProvenanceLedger | None = None
     events: list[QueryEvent] = field(default_factory=list)
     capabilities: AccessCapabilities | None = None
+    runner: PythonVerifierRunner | None = None
     _episode_state: dict[str, Any] = field(default_factory=dict, repr=False)
 
     def __post_init__(self) -> None:
@@ -90,6 +97,9 @@ class VerifierBroker:
             raise ValueError(f"unknown access model: {self.access_model!r}")
         if self.capabilities is None:
             self.capabilities = capabilities_for(self.access_model)
+        if self.runner is not None and self.profile.name == self.runner.ref:
+            # Prefer runner profile digests when broker was constructed with a stub.
+            self.profile = self.runner.profile or self.profile
 
     @property
     def profile_digest(self) -> str:
@@ -126,8 +136,11 @@ class VerifierBroker:
 
         started = time.perf_counter()
         try:
-            raw = self.verifier(trajectory)
-            decision = normalize_decision(raw)
+            if self.runner is not None:
+                decision = self.runner.invoke(trajectory)
+            else:
+                raw = self.verifier(trajectory)
+                decision = normalize_decision(raw)
         except Exception as exc:
             decision = Decision.from_raw(
                 {

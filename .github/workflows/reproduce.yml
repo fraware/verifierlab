@@ -1,0 +1,83 @@
+name: Reproduce
+
+# Verify a published reproducibility bundle without relying on unverified
+# source edits. Until a release asset exists, falls back to the in-repo
+# local verify path (scripts/repro_bundle_check.py).
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_url:
+        description: "HTTPS URL of a published repro bundle archive (optional)"
+        required: false
+        type: string
+      bundle_tag:
+        description: "GitHub release tag whose repro-bundle asset to download (optional)"
+        required: false
+        type: string
+        default: ""
+  schedule:
+    - cron: "11 5 * * 2" # weekly Tuesday
+  push:
+    tags: ["v*"]
+
+jobs:
+  verify-bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        run: uv sync --extra dev
+
+      - name: Resolve published bundle (optional)
+        id: bundle
+        env:
+          INPUT_URL: ${{ inputs.bundle_url }}
+          INPUT_TAG: ${{ inputs.bundle_tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/repro-download
+          RESOLVED=""
+          if [[ -n "${INPUT_URL:-}" ]]; then
+            curl -fsSL "$INPUT_URL" -o /tmp/repro-download/bundle.tgz
+            RESOLVED="/tmp/repro-download/bundle.tgz"
+            echo "source=url" >> "$GITHUB_OUTPUT"
+          elif [[ -n "${INPUT_TAG:-}" ]]; then
+            # Best-effort: look for a release asset named *repro*bundle*.
+            ASSET=$(gh release view "$INPUT_TAG" --json assets \
+              --jq '.assets[] | select(.name | test("repro.*bundle"; "i")) | .url' \
+              | head -n 1 || true)
+            if [[ -n "$ASSET" ]]; then
+              gh release download "$INPUT_TAG" -p '*repro*bundle*' -D /tmp/repro-download
+              RESOLVED=$(ls /tmp/repro-download/*repro*bundle* 2>/dev/null | head -n 1 || true)
+              echo "source=release-asset" >> "$GITHUB_OUTPUT"
+            else
+              echo "source=missing-asset" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "source=none" >> "$GITHUB_OUTPUT"
+          fi
+          echo "path=${RESOLVED}" >> "$GITHUB_OUTPUT"
+          echo "Resolved bundle path: ${RESOLVED:-<none>}"
+
+      - name: Verify published bundle
+        if: steps.bundle.outputs.path != ''
+        run: |
+          uv run python scripts/verify_repro_bundle.py "${{ steps.bundle.outputs.path }}"
+
+      - name: Local verify path (no published bundle yet)
+        if: steps.bundle.outputs.path == ''
+        run: |
+          echo "No published repro bundle URL/asset resolved; running local verify path."
+          uv run python scripts/repro_bundle_check.py campaigns/fake-smoke.yaml
+          uv run python scripts/verify_repro_bundle.py --local-campaign campaigns/fake-smoke.yaml

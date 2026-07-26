@@ -1,0 +1,283 @@
+name: Release
+
+# Signed-tag oriented release pipeline. Builds wheel/sdist once, checksums,
+# CycloneDX SBOM, release-manifest.json, and attaches artifacts to a GitHub
+# Release. Trusted PyPI publish runs only when OIDC / environment is configured.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      skip_publish:
+        description: "Skip PyPI trusted publish even if configured"
+        required: false
+        type: boolean
+        default: true
+      ref:
+        description: "Optional git ref to checkout (defaults to triggering ref)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+  packages: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  gate-tag:
+    name: Tag / dispatch gate
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      is_tag: ${{ steps.meta.outputs.is_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Resolve version metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          IS_TAG=false
+          TAG=""
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            IS_TAG=true
+            TAG="${GITHUB_REF_NAME}"
+          elif [[ -n "${{ inputs.ref }}" && "${{ inputs.ref }}" == v* ]]; then
+            IS_TAG=true
+            TAG="${{ inputs.ref }}"
+          fi
+          VERSION=$(python3 - <<'PY'
+          import tomllib
+          from pathlib import Path
+          data = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+          print(data["project"]["version"])
+          PY
+          )
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "is_tag=${IS_TAG}" >> "$GITHUB_OUTPUT"
+          echo "Resolved version=${VERSION} tag=${TAG:-<none>} is_tag=${IS_TAG}"
+
+      - name: Annotated tag sanity (informational)
+        if: steps.meta.outputs.is_tag == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.meta.outputs.tag }}"
+          # Prefer annotated tags for releases; warn (do not hard-fail dispatch)
+          # if lightweight so workflow_dispatch remains usable during RC dry-runs.
+          if git cat-file -t "refs/tags/${TAG}" 2>/dev/null | grep -q tag; then
+            echo "OK: annotated tag ${TAG}"
+            git tag -l --format='%(taggername) %(taggeremail) %(contents:subject)' "$TAG" || true
+          else
+            echo "::warning::Tag ${TAG} is not annotated. Prefer signed annotated tags for production releases."
+          fi
+          EXPECTED="v${{ steps.meta.outputs.version }}"
+          if [[ "$TAG" != "$EXPECTED" ]]; then
+            echo "::warning::Tag ${TAG} does not match pyproject version ${EXPECTED}."
+          fi
+
+  smoke:
+    name: Smoke (${{ matrix.os }} / py${{ matrix.python-version }})
+    needs: gate-tag
+    runs-on: ${{ matrix.os }}
+    # Windows path smoke prefers hard-fail; soft-fail documented in docs/limitations.md
+    # until process-worker path is fully qualified on Windows runners.
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python-version: "3.11"
+          - os: ubuntu-latest
+            python-version: "3.12"
+          - os: ubuntu-latest
+            python-version: "3.13"
+          - os: macos-latest
+            python-version: "3.12"
+          - os: windows-latest
+            python-version: "3.12"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Sync dependencies
+        run: uv sync --extra dev
+
+      - name: Core pytest
+        shell: bash
+        run: uv run pytest -m "not pack_heavy" -q
+
+      - name: Thread + process smoke
+        shell: bash
+        run: |
+          uv run valab init --force
+          uv run valab campaign run campaigns/fake-smoke.yaml --threads --format json
+          uv run valab campaign run campaigns/fake-smoke.yaml --processes --format json
+
+      - name: Separation checks
+        shell: bash
+        run: >
+          uv run pytest
+          tests/test_acceptance_gates.py::TestGate1Isolation
+          tests/test_docker_trust_boundaries.py
+          -q
+
+  build-artifacts:
+    name: Build wheel / sdist / manifest
+    needs: [gate-tag, smoke]
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ needs.gate-tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        run: uv sync --extra dev
+
+      - name: Build wheel and sdist
+        run: |
+          rm -rf dist
+          uv build --out-dir dist
+          ls -la dist
+
+      - name: Fresh wheel install smoke
+        run: |
+          set -euo pipefail
+          WHL=$(ls dist/verifierlab-*.whl | head -n 1)
+          uv venv /tmp/vl-release --python 3.12
+          uv pip install --python /tmp/vl-release "$WHL"
+          /tmp/vl-release/bin/valab --version
+          /tmp/vl-release/bin/valab doctor
+          /tmp/vl-release/bin/python -c "import verifierlab; print(verifierlab.__version__)"
+          /tmp/vl-release/bin/python scripts/check_wheel_contents.py "$WHL"
+
+      - name: Release-qualified adapter smokes
+        run: |
+          set -euo pipefail
+          uv sync --extra dev --extra gym --extra inspect --extra openenv
+          uv run pytest -m "gym or inspect or openenv" -q
+
+      - name: Checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum verifierlab-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: SBOM (CycloneDX)
+        run: |
+          uv pip install cyclonedx-bom
+          uv run cyclonedx-py environment -o dist/sbom.cdx.json
+          test -s dist/sbom.cdx.json
+
+      - name: Adapter matrix + release manifest
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ needs.gate-tag.outputs.tag }}
+        run: |
+          uv run python scripts/generate_adapter_matrix.py
+          uv run python scripts/build_release_manifest.py \
+            --dist-dir dist \
+            --output dist/release-manifest.json \
+            --tag "${RELEASE_TAG}" \
+            --commit "${GITHUB_SHA}"
+          python -c "import json; json.load(open('dist/release-manifest.json', encoding='utf-8'))"
+          python -c "import json; m=json.load(open('dist/adapter-matrix.json', encoding='utf-8')); assert m['adapters']"
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dist
+          path: |
+            dist/verifierlab-*.whl
+            dist/verifierlab-*.tar.gz
+            dist/SHA256SUMS.txt
+            dist/sbom.cdx.json
+            dist/release-manifest.json
+            dist/adapter-matrix.json
+
+  publish-pypi:
+    name: Trusted publish (PyPI)
+    needs: [gate-tag, build-artifacts]
+    if: >
+      needs.gate-tag.outputs.is_tag == 'true' &&
+      (github.event_name != 'workflow_dispatch' || inputs.skip_publish == false)
+    runs-on: ubuntu-latest
+    environment: pypi
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-dist
+          path: dist
+
+      - name: Publish to PyPI (trusted publishing)
+        continue-on-error: true
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          skip-existing: true
+
+  github-release:
+    name: GitHub Release attach
+    needs: [gate-tag, build-artifacts]
+    if: needs.gate-tag.outputs.is_tag == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-dist
+          path: dist
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.gate-tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --title "$TAG" \
+              --notes "Automated release artifacts for ${TAG}. See CHANGELOG.md and release-manifest.json." \
+              --verify-tag || \
+            gh release create "$TAG" dist/* \
+              --title "$TAG" \
+              --notes "Automated release artifacts for ${TAG}. See CHANGELOG.md and release-manifest.json."
+          fi

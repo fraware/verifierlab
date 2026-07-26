@@ -1,10 +1,11 @@
 # Known limitations (honest non-claims)
 
-This document records where VerifierLab (`0.2.0rc1` release candidate) is **solid** versus
+This document records where VerifierLab (`0.2.0rc2` release candidate) is **solid** versus
 **intentionally thin**. Do not treat thin surfaces as production SDK
 integrations or as a soundness proof. Cross-links:
 [adapters.md](adapters.md), [methodology.md](methodology.md),
-[threat-model.md](threat-model.md), [SECURITY.md](../SECURITY.md),
+[threat-model.md](threat-model.md),
+[SECURITY](https://github.com/fraware/verifierlab/blob/main/SECURITY.md),
 [beta-acceptance.md](beta-acceptance.md).
 
 ## Achieved (Phases 0–E) — RC gates met; still not SOTA claims
@@ -22,7 +23,7 @@ integrations or as a soundness proof. Cross-links:
 | RC acceptance suite | `tests/test_acceptance_gates.py` encodes gates 1–6 |
 | Sealed runs | `SealedRunManifest`; tip index only advances via lifecycle transitions after seal |
 
-Package version is **`0.2.0rc1`**. Remaining thin surfaces below are intentional non-claims, not untested scaffolding.
+Package version is **`0.2.0rc2`**. Remaining thin surfaces below are intentional non-claims, not untested scaffolding.
 
 ## Phase D (exploits / repair / audit / sandbox)
 
@@ -93,7 +94,7 @@ Package version is **`0.2.0rc1`**. Remaining thin surfaces below are intentional
 | OpenEnv Docker / Spaces | Protocol + reference env live; upstream providers optional. |
 | Clopper–Pearson | Pure-Python incomplete beta; extreme params may differ from SciPy. |
 | RL path | Local tabular Q-learning in base; `TrainerAdapter` is broker-only step loop (not a product RL trainer); heavy trainers optional/external. |
-| Concurrent vouchers | Process workers snapshot remaining budget at submit; coordinator merges without refund. Parallel workers can race remaining quota (serialized merge, not distributed reservation). |
+| Concurrent vouchers | Coordinator **atomically reserves** disjoint query vouchers before submit (`reserve_query_voucher`); merge releases the reservation after spend. Parallel workers can no longer oversubscribe remaining quota. Unused reservation returns to the pool. |
 | Sandbox profiles | Declarative tags + optional Docker runner (`[sandbox]`); default local path trusts host Python. |
 | Threat model doc | Research-draft, expanded beyond M0. |
 

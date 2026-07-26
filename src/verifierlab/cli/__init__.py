@@ -37,10 +37,20 @@ campaign_app = typer.Typer(help="Campaign validate / run commands.", no_args_is_
 report_app = typer.Typer(help="Build assurance reports.", no_args_is_help=True)
 stats_app = typer.Typer(help="Statistics and power analysis.", no_args_is_help=True)
 plugins_app = typer.Typer(help="Plugin discovery.", no_args_is_help=True)
+verifier_app = typer.Typer(
+    help="Verifier inspect / test / package / conformance.",
+    no_args_is_help=True,
+)
+pack_app = typer.Typer(
+    help="Benchmark pack lint / verify / run / reproduce / inspect.",
+    no_args_is_help=True,
+)
 app.add_typer(campaign_app, name="campaign")
 app.add_typer(report_app, name="report")
 app.add_typer(stats_app, name="stats")
 app.add_typer(plugins_app, name="plugins")
+app.add_typer(verifier_app, name="verifier")
+app.add_typer(pack_app, name="pack")
 
 
 def _print_json(payload: object) -> None:
@@ -115,35 +125,358 @@ def inspect_cmd(
     target: str = typer.Argument(..., help="Dotted ref module:attr to a @verifier callable"),
     format: str = typer.Option("text", "--format", help="Output format: text|json"),
 ) -> None:
+    """Inspect a Python verifier and print its VerifierSpec.
+
+    Same implementation as ``valab verifier inspect``.
+    """
+    verifier_inspect(target=target, format=format)
+
+
+def _inspect_verifier_payload(target: str) -> dict[str, object]:
+    fn = load_object(target)
+    spec = get_verifier_spec(fn)
+    return spec.model_dump(mode="json")
+
+
+def _print_verifier_spec_text(payload: dict[str, object]) -> None:
+    console.print(f"name: {payload.get('name')}")
+    console.print(f"version: {payload.get('version')}")
+    console.print(f"decision_space: {payload.get('decision_space')}")
+    console.print(f"access_model: {payload.get('access_model')}")
+    console.print(f"stochastic: {payload.get('stochastic')}")
+    console.print(f"abstention: {payload.get('abstention')}")
+    console.print(f"side_effects: {payload.get('side_effects')}")
+    console.print(f"timeout_s: {payload.get('timeout_s')}")
+    console.print(f"score_range: {payload.get('score_range')}")
+    console.print(f"allowed_exceptions: {payload.get('allowed_exceptions')}")
+    console.print(f"external_resources: {payload.get('external_resources')}")
+    console.print(f"input_schema: {payload.get('input_schema') is not None}")
+    console.print(f"output_schema: {payload.get('output_schema') is not None}")
+    console.print(f"callable_digest: {payload.get('callable_digest')}")
+    source = payload.get("source") or {}
+    if isinstance(source, dict):
+        console.print(f"source: {source.get('module')}:{source.get('qualname')}")
+    for lim in payload.get("limitations") or []:
+        console.print(f"limitation: {lim}")
+
+
+@verifier_app.command("inspect")
+def verifier_inspect(
+    target: str = typer.Argument(..., help="Dotted ref module:attr to a @verifier callable"),
+    format: str = typer.Option("text", "--format", help="Output format: text|json"),
+) -> None:
     """Inspect a Python verifier and print its VerifierSpec."""
     try:
-        fn = load_object(target)
-        spec = get_verifier_spec(fn)
+        payload = _inspect_verifier_payload(target)
     except Exception as exc:
         console.print(f"[red]inspect failed:[/red] {exc}")
         raise typer.Exit(1) from exc
-    payload = spec.model_dump(mode="json")
     if format == "json":
         _print_json(payload)
     else:
-        console.print(f"name: {spec.name}")
-        console.print(f"version: {spec.version}")
-        console.print(f"decision_space: {spec.decision_space.value}")
-        console.print(f"access_model: {spec.access_model.value}")
-        console.print(f"stochastic: {spec.stochastic}")
-        console.print(f"abstention: {spec.abstention.value}")
-        console.print(f"side_effects: {spec.side_effects.value}")
-        console.print(f"timeout_s: {spec.timeout_s}")
-        console.print(f"score_range: {spec.score_range}")
-        console.print(f"allowed_exceptions: {spec.allowed_exceptions}")
-        console.print(f"external_resources: {spec.external_resources}")
-        console.print(f"input_schema: {spec.input_schema is not None}")
-        console.print(f"output_schema: {spec.output_schema is not None}")
+        _print_verifier_spec_text(payload)
+        fn = load_object(target)
+        spec = get_verifier_spec(fn)
         console.print(f"contract_complete: {spec.contract_complete()}")
-        console.print(f"callable_digest: {spec.callable_digest}")
-        console.print(f"source: {spec.source.module}:{spec.source.qualname}")
-        for lim in spec.limitations:
-            console.print(f"limitation: {lim}")
+    raise typer.Exit(0)
+
+
+@verifier_app.command("test")
+def verifier_test(
+    target: str = typer.Argument(..., help="Dotted ref module:attr"),
+    input_json: Path | None = typer.Option(
+        None,
+        "--input",
+        exists=True,
+        readable=True,
+        help="JSON trajectory/observation file (default: minimal empty trajectory)",
+    ),
+    isolation: str = typer.Option(
+        "auto",
+        "--isolation",
+        help="auto|inprocess|subprocess — packaged path prefers subprocess",
+    ),
+    timeout_s: float = typer.Option(30.0, "--timeout"),
+    format: str = typer.Option("text", "--format"),
+) -> None:
+    """Invoke a verifier once and print the normalized decision."""
+    from verifierlab.api.verifier import normalize_decision
+    from verifierlab.verifiers.runner import PythonVerifierRunner
+
+    trajectory: dict[str, object]
+    if input_json is not None:
+        trajectory = json.loads(input_json.read_text(encoding="utf-8"))
+    else:
+        trajectory = {"steps": [], "schema_version": "1"}
+
+    try:
+        if isolation == "inprocess":
+            use_sub = False
+        elif isolation == "subprocess":
+            use_sub = True
+        else:
+            # auto: prefer subprocess boundary (packaged path).
+            use_sub = True
+        if use_sub:
+            runner = PythonVerifierRunner.from_ref(target, timeout_s=timeout_s)
+            decision = runner.invoke(trajectory)
+            mode = "subprocess"
+        else:
+            fn = load_object(target)
+            decision = normalize_decision(fn(trajectory))
+            mode = "inprocess"
+    except Exception as exc:
+        console.print(f"[red]verifier test failed:[/red] {exc}")
+        raise typer.Exit(1) from exc
+
+    payload = {
+        "mode": mode,
+        "decision": decision.model_dump(mode="json"),
+    }
+    if format == "json":
+        _print_json(payload)
+    else:
+        console.print(f"mode: {mode}")
+        console.print(f"status: {decision.status}")
+        console.print(f"accepted: {decision.accepted}")
+        console.print(f"score: {decision.score}")
+        console.print(f"reason_codes: {decision.reason_codes}")
+    raise typer.Exit(0 if decision.status != "error" else 1)
+
+
+@verifier_app.command("package")
+def verifier_package(
+    target: str = typer.Argument(..., help="Dotted ref module:attr"),
+    out: Path = typer.Option(..., "--out", help="Output directory for packaged verifier"),
+    force: bool = typer.Option(False, "--force"),
+) -> None:
+    """Write a minimal packaged-verifier layout (profile + mount config)."""
+    from verifierlab.verifiers.profile import VerifierProfile
+    from verifierlab.verifiers.runner import PythonVerifierRunner
+
+    try:
+        fn = load_object(target)
+        profile = VerifierProfile.for_callable(
+            fn,
+            name=target,
+            applicability={"isolation": "subprocess", "runner": "PythonVerifierRunner"},
+            access_surface={"may_read_hidden_labels": False, "subprocess": True},
+        )
+    except Exception as exc:
+        console.print(f"[red]package failed:[/red] {exc}")
+        raise typer.Exit(1) from exc
+
+    if out.exists() and any(out.iterdir()) and not force:
+        console.print(f"[red]refusing to overwrite non-empty {out}; pass --force[/red]")
+        raise typer.Exit(2)
+
+    out.mkdir(parents=True, exist_ok=True)
+    runner = PythonVerifierRunner.from_ref(target, config={"packaged": True})
+    manifest = {
+        "schema_version": "1",
+        "ref": target,
+        "isolation": "subprocess",
+        "runner": "PythonVerifierRunner",
+        "digests": runner.digests(),
+        "profile_digest": profile.content_digest(),
+        "mount": {
+            "kind": "packaged",
+            "ref": target,
+            "config": {"isolation": "subprocess", "packaged": True},
+        },
+    }
+    (out / "profile.json").write_text(
+        json.dumps(
+            {**profile.model_dump(mode="json"), "content_digest": profile.content_digest()},
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (out / "package.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    typer.echo(str(out))
+    raise typer.Exit(0)
+
+
+@verifier_app.command("conformance")
+def verifier_conformance(
+    target: str | None = typer.Argument(
+        None,
+        help="Optional verifier ref (decision suite runs regardless)",
+    ),
+    format: str = typer.Option("text", "--format"),
+) -> None:
+    """Run shared decision-normalization conformance checks."""
+    from verifierlab.targets.conformance import check_decision_normalization
+
+    checks = check_decision_normalization()
+    details: dict[str, object] = {"decision_normalization": checks}
+    if target:
+        try:
+            from verifierlab.verifiers.runner import PythonVerifierRunner
+
+            runner = PythonVerifierRunner.from_ref(target, timeout_s=15.0)
+            # Smoke: empty trajectory must return a typed decision (not crash).
+            decision = runner.invoke({"steps": []})
+            checks["subprocess_smoke"] = decision.status in {
+                "accept",
+                "reject",
+                "abstain",
+                "indeterminate",
+                "error",
+            }
+            details["subprocess_decision"] = decision.model_dump(mode="json")
+            details["digests"] = runner.digests()
+        except Exception as exc:
+            checks["subprocess_smoke"] = False
+            details["subprocess_error"] = str(exc)
+
+    ok = all(checks.values()) if checks else False
+    payload = {"ok": ok, "checks": checks, "details": details}
+    if format == "json":
+        _print_json(payload)
+    else:
+        for name, passed in checks.items():
+            console.print(f"{'PASS' if passed else 'FAIL'}: {name}")
+        console.print("[green]OK[/green]" if ok else "[red]FAIL[/red]")
+    raise typer.Exit(0 if ok else 1)
+
+
+@pack_app.command("lint")
+def pack_lint(
+    path: Path = typer.Argument(..., help="Pack YAML or sidecar directory"),
+    format: str = typer.Option("text", "--format"),
+) -> None:
+    """Validate pack campaign YAML and required sidecars (A-E)."""
+    from verifierlab.campaigns.packs import lint_pack
+
+    ok, diags, info = lint_pack(path)
+    payload = {
+        "ok": ok,
+        "info": info,
+        "diagnostics": [d.model_dump(mode="json") for d in diags],
+    }
+    if format == "json":
+        _print_json(payload)
+    else:
+        console.print(f"pack: {info.get('campaign') or path}")
+        for d in diags:
+            console.print(f"[{d.severity.value}] {d.code}: {d.message} ({d.path})")
+        console.print("[green]OK[/green]" if ok else "[red]FAIL[/red]")
+    raise typer.Exit(0 if ok else 1)
+
+
+@pack_app.command("verify")
+def pack_verify(
+    path: Path = typer.Argument(..., help="Pack YAML or sidecar directory"),
+    format: str = typer.Option("text", "--format"),
+) -> None:
+    """Lint plus pin / digest verification for pack sidecars."""
+    from verifierlab.campaigns.packs import verify_pack
+
+    ok, diags, info = verify_pack(path)
+    payload = {
+        "ok": ok,
+        "info": info,
+        "diagnostics": [d.model_dump(mode="json") for d in diags],
+    }
+    if format == "json":
+        _print_json(payload)
+    else:
+        console.print(f"pack: {info.get('campaign') or path}")
+        if info.get("signing"):
+            console.print(f"signing: {info['signing']}")
+        for d in diags:
+            console.print(f"[{d.severity.value}] {d.code}: {d.message} ({d.path})")
+        console.print("[green]OK[/green]" if ok else "[red]FAIL[/red]")
+    raise typer.Exit(0 if ok else 1)
+
+
+@pack_app.command("run")
+def pack_run(
+    path: Path = typer.Argument(..., help="Pack YAML or sidecar directory"),
+    workspace: Path | None = typer.Option(None, "--workspace"),
+    workers: int = typer.Option(2, "--workers", min=1),
+    threads: bool = typer.Option(False, "--threads/--processes"),
+    format: str = typer.Option("text", "--format"),
+) -> None:
+    """Run a pack campaign (resolves sidecar dirs to YAML)."""
+    from verifierlab.campaigns.packs import discover_pack_yaml
+
+    try:
+        yaml_path = discover_pack_yaml(path)
+    except FileNotFoundError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    campaign_run(
+        path=yaml_path,
+        workspace=workspace,
+        workers=workers,
+        threads=threads,
+        format=format,
+    )
+
+
+@pack_app.command("reproduce")
+def pack_reproduce(
+    path: Path = typer.Argument(..., help="Pack YAML or sidecar directory"),
+    format: str = typer.Option("text", "--format"),
+) -> None:
+    """Verify pack digests/pins (reproduction gate without re-running attacks)."""
+    from verifierlab.campaigns.packs import inspect_pack, verify_pack
+
+    ok, diags, info = verify_pack(path)
+    inspected = inspect_pack(path)
+    payload = {
+        "ok": ok,
+        "mode": "digest_and_pins",
+        "info": info,
+        "inspect": inspected,
+        "diagnostics": [d.model_dump(mode="json") for d in diags],
+        "note": (
+            "Pack reproduce checks content-addressed campaign digest + pins. "
+            "Full sealed-run reproduction uses valab campaign freeze artifacts / "
+            "scripts/verify_repro_bundle.py."
+        ),
+    }
+    if format == "json":
+        _print_json(payload)
+    else:
+        console.print(f"campaign_digest: {inspected.get('campaign_digest')}")
+        console.print(f"signing: {inspected.get('signing')}")
+        for d in diags:
+            console.print(f"[{d.severity.value}] {d.code}: {d.message}")
+        console.print("[green]OK[/green]" if ok else "[red]FAIL[/red]")
+    raise typer.Exit(0 if ok else 1)
+
+
+@pack_app.command("inspect")
+def pack_inspect(
+    path: Path = typer.Argument(..., help="Pack YAML or sidecar directory"),
+    format: str = typer.Option("text", "--format"),
+) -> None:
+    """Inspect pack metadata, digests, and sidecar presence."""
+    from verifierlab.campaigns.packs import inspect_pack
+
+    try:
+        payload = inspect_pack(path)
+    except Exception as exc:
+        console.print(f"[red]pack inspect failed:[/red] {exc}")
+        raise typer.Exit(1) from exc
+    if format == "json":
+        _print_json(payload)
+    else:
+        console.print(f"campaign: {payload.get('campaign')}")
+        console.print(f"pack: {payload.get('pack')}")
+        console.print(f"access_model: {payload.get('access_model')}")
+        console.print(f"work_units: {payload.get('work_units')}")
+        console.print(f"campaign_digest: {payload.get('campaign_digest')}")
+        console.print(f"signing: {payload.get('signing')}")
+        if payload.get("sidecars_present") is not None:
+            console.print(f"sidecars: {payload.get('sidecars_present')}")
     raise typer.Exit(0)
 
 

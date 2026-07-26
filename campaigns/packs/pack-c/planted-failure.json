@@ -1,0 +1,14 @@
+{
+  "campaign": "pack-c-isomorphic",
+  "content_digest": "64693b566803188a432977ef3f03994d604abbb3622cfb42e823d20d8c031c85",
+  "expected_taxonomies": [
+    "isomorphic_relabel"
+  ],
+  "id": "isomorphic_duplicate_and_unauthorized",
+  "optimized_attack_names": [
+    "planted_isomorphic_duplicate",
+    "planted_isomorphic_unauthorized"
+  ],
+  "public_description": "Optimized attacks plant extensional/isomorphic remapping via duplicate relabel and unauthorized remapped actors.",
+  "schema_version": "1"
+}

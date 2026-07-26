@@ -43,7 +43,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 @pytest.mark.inspect
 def test_inspect_log_format_regression() -> None:
-    """Fixture eval-log JSON round-trip (labeled log-format regression)."""
+    """Fixture eval-log JSON round-trip (eval_log_import; never live)."""
     path = FIXTURES / "inspect_eval_log.json"
     log = load_inspect_eval_log(path)
     assert log["version"] == 2
@@ -55,23 +55,72 @@ def test_inspect_log_format_regression() -> None:
     assert len(native["steps"]) == 2
     assert native["steps"][0]["verifier_accepted"] is True
     assert native["steps"][1]["verifier_accepted"] is False
+    assert "sample_commitment" in native["steps"][0]
     blob = str(native)
     assert "hidden_label" not in blob
     assert "gt_label" not in blob
-    assert "inspect_target" in native["steps"][0]
+    # Worker-facing native omits hidden targets.
+    assert "inspect_target" not in native["steps"][0]
 
-    rebuilt = native_to_inspect_log(native)
+    full = inspect_log_to_native(log, include_hidden_targets=True)
+    assert "inspect_target" in full["steps"][0]
+    rebuilt = native_to_inspect_log(full)
     assert rebuilt["version"] == 2
     assert len(rebuilt["samples"]) == 2
     assert rebuilt["samples"][0]["target"] == "yes"
     assert rebuilt["eval"]["task"] == "refund_policy"
 
     adapter = InspectAdapter(eval_log_path=path)
-    assert adapter.integration_status == "log_format_regression"
+    assert adapter.integration_status == "eval_log_import"
+    assert adapter.mode == "eval_log_import"
+    # Alias still normalizes.
+    alias = InspectAdapter(eval_log_path=path, mode="log_format_regression")
+    assert alias.integration_status == "eval_log_import"
     result = run_conformance(adapter, seed=1)
     assert result.ok, result.as_dict()
     traj = adapter.finalize()
     assert traj["steps"][0]["op"] == "inspect_sample"
+    assert "inspect_target" not in traj["steps"][0]
+    assert adapter.adjudication_targets()
+
+
+@pytest.mark.inspect
+def test_inspect_score_policies() -> None:
+    from verifierlab.targets.inspect_adapter import (
+        AbstentionMapScorePolicy,
+        CategoricalMapScorePolicy,
+        MultiScoreCompositionPolicy,
+        NumericThresholdScorePolicy,
+        apply_score_policy,
+        build_score_policy,
+    )
+
+    assert apply_score_policy({"s": {"value": True}}).accepted is True
+    assert (
+        apply_score_policy({"s": {"value": 0.8}}, NumericThresholdScorePolicy(threshold=0.5)).accepted
+        is True
+    )
+    assert (
+        apply_score_policy({"s": {"value": "C"}}, CategoricalMapScorePolicy()).accepted is True
+    )
+    multi = apply_score_policy(
+        {"a": {"value": True}, "b": {"value": False}},
+        MultiScoreCompositionPolicy(require_all=True),
+    )
+    assert multi.accepted is False
+    abstain = apply_score_policy({"s": {"value": "A"}}, AbstentionMapScorePolicy())
+    assert abstain.accepted is None and abstain.status == "abstain"
+    assert build_score_policy("boolean").name == "boolean"
+
+    path = FIXTURES / "inspect_eval_log.json"
+    adapter = InspectAdapter(
+        eval_log_path=path,
+        mode="scorer_verifier",
+        score_policy="numeric_threshold",
+    )
+    assert adapter.integration_status == "scorer_verifier"
+    traj = adapter.finalize()
+    assert traj["mode"] == "scorer_verifier"
 
 
 @pytest.mark.inspect
@@ -91,15 +140,17 @@ def test_inspect_live_minimal_task(tmp_path: Path) -> None:
     assert native["framework"] == "inspect"
     assert len(native["steps"]) >= 1
 
-    adapter = InspectAdapter(inspect_task=build_minimal_task(), model="mockllm/model")
-    assert adapter.integration_status == "live"
+    adapter = InspectAdapter(inspect_task=build_minimal_task(), model="mockllm/model", mode="live_task")
+    assert adapter.integration_status == "live_task"
     obs = adapter.reset(seed=0)
     assert obs["seed"] == 0
     step = adapter.step({"model": "mockllm/model"})
     assert "resources" in step
     traj = adapter.finalize()
-    assert traj["integration_status"] == "live"
+    assert traj["integration_status"] == "live_task"
     assert isinstance(traj["steps"], list)
+    for s in traj["steps"]:
+        assert "inspect_target" not in s
     result = run_conformance(
         InspectAdapter(eval_log=log_dict),
         seed=2,
@@ -111,7 +162,7 @@ def test_inspect_live_minimal_task(tmp_path: Path) -> None:
 def test_inspect_adapter_requires_log_or_sdk() -> None:
     if inspect_sdk_available():
         adapter = InspectAdapter()
-        assert adapter.integration_status == "live"
+        assert adapter.integration_status == "live_task"
         return
     with pytest.raises(ImportError, match="inspect-ai"):
         InspectAdapter()
@@ -232,8 +283,13 @@ def test_openenv_live_http_reference() -> None:
     try:
         client = OpenEnvHttpClient(server.base_url)
         assert client.health()["status"] == "ok"
+        identity = client.identity()
+        assert "identity" in identity
+        schemas = client.schemas()
+        assert schemas["capabilities"]["snapshot"] is True
         reset = client.reset(seed=7)
         assert "observation" in reset
+        assert reset.get("episode_id") or client.state().get("episode_id")
         stepped = client.step({"action": 1})
         assert "reward" in stepped
         state = client.state()
@@ -242,9 +298,15 @@ def test_openenv_live_http_reference() -> None:
         env = OpenEnvEnvironment(client, env_name="ref", max_steps=4)
         env.reset(seed=1)
         env.act({"action": 1})
+        snap = env.snapshot()
+        assert snap
         traj = env.finalize()
         assert traj["framework"] == "openenv"
         assert traj["integration_status"] == "live"
+        assert traj["snapshot_capable"] is True
+        assert "identity" in traj
+        assert "schemas" in traj
+        assert "trajectory" in traj
     finally:
         server.shutdown()
         server.server_close()

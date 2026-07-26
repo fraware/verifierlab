@@ -1,0 +1,22 @@
+{
+  "campaign": "pack-b-rubric",
+  "content_digest": "41eaedaf367d3635625dd6e865c4a0674badf5f6f2ca1f80a56b7fe7f5740d04",
+  "schema_version": "1",
+  "splits": [
+    {
+      "count": 3,
+      "fraction": null,
+      "label_tier": "development",
+      "name": "train",
+      "seed": 12
+    },
+    {
+      "count": 3,
+      "fraction": null,
+      "label_tier": "release",
+      "name": "holdout",
+      "seed": 12
+    }
+  ],
+  "work_units": 6
+}

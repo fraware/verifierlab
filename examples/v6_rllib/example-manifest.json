@@ -1,0 +1,20 @@
+{
+  "schema_version": "1",
+  "example_id": "v6_rllib",
+  "title": "RLlib",
+  "requires": {
+    "verifierlab": ">=0.2.0rc2",
+    "extras": [
+      "rllib"
+    ]
+  },
+  "install": "pip install 'verifierlab[rllib]'",
+  "entrypoints": {
+    "run": "run.sh",
+    "verify": "verify.sh"
+  },
+  "campaign": "campaign.yaml",
+  "integration_status": "live_when_ray_installed",
+  "claim": "integration_conformance",
+  "not_a_capability_result": true
+}

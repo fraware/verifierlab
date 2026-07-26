@@ -9,6 +9,69 @@ with pre-release tags (`a` = alpha, `b` = beta, `rc` = release candidate).
 
 ## [Unreleased]
 
+### Planned
+
+- Optional `[stats]` extra with SciPy-backed exact intervals
+- Stronger OS/sandbox enforcement for untrusted plugins (default remains process-local)
+- CLI surfaces for disclosure and adapter routing (today: Python APIs)
+
+## [0.2.0rc2] — 2026-07-26
+
+Public beta RC gate: Milestones A–E (release integrity, scientific runtime,
+integrations, research assets, docs/governance) on the SemVer RC line. Do not
+rebrand to `0.2.0b1`. Tag: `v0.2.0rc2`.
+
+### Added (Milestone D — research assets)
+
+- Science packs A–E completeness: splits + StatsPlan in YAML; sidecars for
+  `planted-failure.json`, `adjudication-protocol.json`, primary estimand /
+  interval method in expected public digests; pack lint enforces ≥2 optimized
+  attacks, baseline, and no labels in the public pack tree (Pack F remains
+  integrity-only)
+- Reproducibility bundle layout (`scripts/repro_bundle_layout.py`), builder
+  (`scripts/build_repro_bundle.py`), and verifier extensions
+  (`scripts/verify_repro_bundle.py` directory/archive/download paths);
+  `CITATION.cff`; `reproduce.yml` download path stays graceful when unpublished
+- Adapter matrix generator (`scripts/generate_adapter_matrix.py`) from
+  `registry/adapter-matrix-v1.json` → `docs/adapters/matrix.md` +
+  `dist/adapter-matrix.json`; release-manifest loads the same registry rows
+  (EnvAssure **not-live**, RLlib **partial** / skip-if-missing)
+- Examples V1–V6 READMEs document released-wheel install paths alongside
+  editable development installs
+
+### Added (Milestone C — integrations)
+
+- Examples V1–V6 under `examples/v{1..6}_*/` with the example contract
+  (`README`, `campaign.yaml`, `verifier/`, `environment/`, `expected/`,
+  `run.sh`, `verify.sh`, `example-manifest.json`)
+- Gymnasium matrix expansion: Dict spaces, terminated/truncated, invalid
+  action, non-JSON obs, fixed-seed replay, wrapper stack capture; legacy
+  `gym` removed from release-qualified claims (`[gym]` → gymnasium only,
+  pin `>=0.29,<1.3`)
+- Inspect modes `live_task` / `scorer_verifier` / `eval_log_import` (aliases
+  `live`, `log_format_regression`); configurable score policies; hidden
+  targets adjudication-only with sample ID commitments on worker artifacts
+- OpenEnv identity/schemas/health/timeout-retry/episode ID/trajectory/snapshot
+  capture; prefer official client when available
+- EnvAssure adapter + `[envassure]` extra (`envassure>=0.2.0b1,<0.3`); package
+  not yet on PyPI → protocol/fixture **not-live** (never claim live from fixtures)
+- RLlib: expanded `ExternalTrainerAdapter` protocol + aliases; `[rllib]` pin
+  `ray[rllib]==2.48.0`; `trainers/rllib_adapter.py` + `rllib_env.py` (PPO,
+  broker-only rewards, freeze before holdout); PR-tier skip-if-missing tests;
+  Docker image marked partial-qualification / integration conformance
+
+### Added (Milestone A — release integrity)
+
+- Normalized GitHub workflows: `ci.yml`, `adapters.yml`, `security.yml`,
+  `docs.yml`, `reproduce.yml`, `release.yml` (watch `main` + `release/0.2-rc`)
+- `scripts/build_release_manifest.py` → `release-manifest.json`
+- Trust-boundary Dockerfiles under `docker/{cli,worker,adjudicator}/` plus
+  post-qualification `docker/rllib/` stub; structure tests in
+  `tests/test_docker_trust_boundaries.py`
+- MkDocs Material site (`mkdocs.yml`, `[docs]` extra) with per-adapter pages
+- Package acceptance: `Documentation` / `Changelog` URLs; wheel force-includes
+  campaigns + disclosure templates; metadata/wheel check scripts
+
 ### Added / hardened (VALAB-01…09 experimental framework)
 
 - **VALAB-01:** Documented baseline gate (ruff/mypy/pytest/doctor/fake-smoke);
@@ -38,13 +101,25 @@ with pre-release tags (`a` = alpha, `b` = beta, `rc` = release candidate).
   release matrix; gym fixture mandatory in `adapter-fixtures` CI; `[adapters]`
   includes `[trainer]`
 
-### Planned
+### Added (Milestone B — scientific runtime polish)
 
-- Optional `[stats]` extra with SciPy-backed exact intervals
-- Stronger OS/sandbox enforcement for untrusted plugins (default remains process-local)
-- CLI surfaces for disclosure and adapter routing (today: Python APIs)
-- Cross-process voucher issuance under concurrent workers still snapshots
-  remaining budget at submit time (serialized merge; not a distributed lock)
+- Public `VerifierDecision` alias for `Decision`
+- `VerifierProfile` applicability + access_surface contract fields
+- `PythonVerifierRunner` subprocess boundary (timeout, best-effort CPU/memory
+  limits, structured stdin/stdout, typed errors, deterministic env, digests,
+  no label imports); broker prefers runner for packaged native verifiers
+- CLI: `valab verifier inspect|test|package|conformance` and
+  `valab pack lint|verify|run|reproduce|inspect` (`valab inspect` shares one path)
+- Pack sidecars for A–E: `profile.json`, `splits.json`,
+  `expected-public-digests.json` under `campaigns/packs/pack-{a-e}/`
+- Atomic disjoint query voucher reservation (`reserve_query_voucher`) to close
+  concurrent oversubscribe races
+- Documented campaign “signing” = content-addressed digest + pins + sealed run
+
+### Added (Milestone E lite — docs / governance)
+
+- `ROADMAP.md`, `CODEOWNERS`, `MAINTAINERS.md`, contributing guides, plugin /
+  defect registries, governance charter, good-first-issue templates
 
 ## [0.2.0rc1] — 2026-07-25
 
@@ -111,6 +186,7 @@ acceptance documentation (milestones M0–M6 in-tree).
 - See [docs/limitations.md](docs/limitations.md) for the Solid / Thin split and
   non-claims.
 
-[Unreleased]: https://github.com/fraware/verifierlab/compare/v0.2.0rc1...HEAD
+[Unreleased]: https://github.com/fraware/verifierlab/compare/v0.2.0rc2...HEAD
+[0.2.0rc2]: https://github.com/fraware/verifierlab/compare/v0.2.0rc1...v0.2.0rc2
 [0.2.0rc1]: https://github.com/fraware/verifierlab/compare/v0.1.0a0...v0.2.0rc1
 [0.1.0a0]: https://github.com/fraware/verifierlab/releases/tag/v0.1.0a0

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import uuid
 from collections.abc import Callable
@@ -270,14 +271,41 @@ class LocalLauncher:
                 entry["status"] = WorkUnitStatus.RUNNING.value
                 try:
                     # Exact remaining budget voucher for worker-side atomic reserve.
+                    # Concurrent issuance uses disjoint reservations so parallel
+                    # workers cannot race the same remaining quota (Milestone B).
                     self.ledger.sync_wall_time()
                     work_unit = dict(entry["work_unit"])
+                    reserved = 0
                     if self.budget.max_queries is not None:
-                        remaining = int(self.budget.max_queries) - int(self.ledger.queries)
-                        if remaining <= 0 and self.budget.overrun_policy.value == "stop":
-                            self.ledger.add_queries(1)
-                        work_unit["query_budget_remaining"] = max(0, remaining)
+                        pending_left = sum(
+                            1
+                            for h, e in self._handles.items()
+                            if e["status"]
+                            in {
+                                WorkUnitStatus.PENDING.value,
+                                WorkUnitStatus.RUNNING.value,
+                            }
+                        )
+                        available = self.ledger.available_queries()
+                        if available is not None and available <= 0:
+                            if self.budget.overrun_policy.value == "stop":
+                                # Force a STOP path consistent with prior behaviour.
+                                self.ledger.add_queries(1)
+                            remaining = 0
+                        else:
+                            remaining = int(available if available is not None else 0)
+                        reserved = self.ledger.reserve_query_voucher(
+                            remaining,
+                            pending_workers=max(1, pending_left),
+                        )
+                        work_unit["query_budget_remaining"] = reserved
+                        work_unit["query_budget_reserved"] = reserved
                         work_unit["budget_overrun_policy"] = self.budget.overrun_policy.value
+                        # Persist reservation metadata on the handle for crash/fail release.
+                        entry["work_unit"] = {
+                            **entry["work_unit"],
+                            "query_budget_reserved": reserved,
+                        }
                     result = await loop.run_in_executor(
                         self._executor,
                         fn,
@@ -286,13 +314,22 @@ class LocalLauncher:
                     # Prefer atomic voucher merge (all dimensions, no mid-batch
                     # drop). Fallback reconstructs meters when workers omit events.
                     voucher_events = result.get("ledger_events")
+                    reserved_for_merge = int(
+                        result.get("budget_voucher_reserved")
+                        or work_unit.get("query_budget_reserved")
+                        or reserved
+                        or 0
+                    )
                     if isinstance(voucher_events, list) and voucher_events:
-                        self.ledger.merge_events(voucher_events, refund=False)
+                        self.ledger.merge_events(
+                            voucher_events,
+                            refund=False,
+                            reserved_queries=reserved_for_merge or None,
+                        )
                         # Workers meter queries/candidates/compute; steps are often
                         # coordinator-side when the voucher never saw env steps.
                         if not any(
-                            isinstance(e, dict) and e.get("kind") == "steps"
-                            for e in voucher_events
+                            isinstance(e, dict) and e.get("kind") == "steps" for e in voucher_events
                         ):
                             steps = len((result.get("trajectory") or {}).get("steps", []))
                             if steps:
@@ -333,6 +370,11 @@ class LocalLauncher:
                         compute = float(result.get("compute_units") or 0.0)
                         if compute:
                             self.ledger.add_compute_units(compute)
+                        if reserved_for_merge:
+                            self.ledger.release_query_reservation(reserved_for_merge)
+                    # Clear handle reservation once settled so fail paths do not double-release.
+                    if "query_budget_reserved" in entry["work_unit"]:
+                        entry["work_unit"]["query_budget_reserved"] = 0
                     # Persist spend before continuing so a crash cannot refund.
                     self.ledger.flush()
                     self.ledger.assert_consistent()
@@ -366,10 +408,22 @@ class LocalLauncher:
                     entry["status"] = WorkUnitStatus.DONE.value
                     entry["result"] = result
                 except BudgetExceeded:
+                    # If STOP fired before merge settled the reservation, release it.
+                    leaked = int(entry.get("work_unit", {}).get("query_budget_reserved") or 0)
+                    if leaked and self.ledger.reserved_queries > 0:
+                        with contextlib.suppress(Exception):
+                            self.ledger.release_query_reservation(leaked)
+                        entry["work_unit"]["query_budget_reserved"] = 0
                     entry["status"] = WorkUnitStatus.CANCELLED.value
                     self.cancel()
                     raise
                 except Exception as exc:
+                    # Release any outstanding reservation so capacity is not leaked.
+                    leaked = int(entry.get("work_unit", {}).get("query_budget_reserved") or 0)
+                    if leaked:
+                        with contextlib.suppress(Exception):
+                            self.ledger.release_query_reservation(leaked)
+                        entry["work_unit"]["query_budget_reserved"] = 0
                     # Persist failed units so campaigns remain inspectable.
                     fail_result: dict[str, Any] = {
                         "schema_version": "1",

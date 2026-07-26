@@ -10,7 +10,7 @@ Use this checklist when reproducing a published VerifierLab campaign offline
 3. Confirm base import guard: `uv run python scripts/check_base_imports.py`
 4. `uv run valab doctor` reports OK (heavy ML deps may warn if present globally)
 5. Confirm `uv run valab --version` matches the campaign’s pinned `verifierlab`
-   version when applicable (`0.2.0rc1` on this line)
+   version when applicable (`0.2.0rc2` on this line)
 
 ## Author a verifier (external path)
 
@@ -47,6 +47,39 @@ Optional digest parity helper:
 uv run python scripts/repro_bundle_check.py campaigns/fake-smoke.yaml
 ```
 
+## Reproducibility bundle (Milestone D)
+
+Standard layout (see `scripts/repro_bundle_layout.py`): README, CITATION.cff,
+MANIFEST, campaign plan, verifier/env profiles, attack checkpoints, query
+ledger, freeze record, public adjudication release, analysis/stats/tables,
+container + source/release digests, dependency locks, seeds, hardware metadata,
+`verify.sh`, `reproduce.sh`.
+
+Build from a sealed run:
+
+```bash
+uv run python scripts/build_repro_bundle.py \
+  --run-dir .valab/runs/<run-id> \
+  --campaign campaigns/fake-smoke.yaml \
+  --out dist/repro-bundle \
+  --archive dist/repro-bundle.tgz
+```
+
+Verify:
+
+```bash
+uv run python scripts/verify_repro_bundle.py dist/repro-bundle
+uv run python scripts/verify_repro_bundle.py dist/repro-bundle.tgz
+# Published asset (graceful when not yet published):
+uv run python scripts/verify_repro_bundle.py \
+  --download-url https://example.invalid/repro-bundle.tgz \
+  --allow-missing-download \
+  --local-campaign campaigns/fake-smoke.yaml
+```
+
+Bundles must exclude vault keys, unreleased labels, confidential trajectories,
+and secrets.
+
 ## Integrity checks
 
 1. Re-run the same campaign with the same seed; compare cohort metrics within tolerance
@@ -65,4 +98,4 @@ uv run python scripts/repro_bundle_check.py campaigns/fake-smoke.yaml
 2. Public views must omit private detail refs until `public_full`
 
 See [disclosure.md](disclosure.md), [templates/disclosure.md](templates/disclosure.md),
-and [SECURITY.md](../SECURITY.md).
+and [SECURITY.md](https://github.com/fraware/verifierlab/blob/main/SECURITY.md).

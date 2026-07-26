@@ -1,0 +1,16 @@
+{
+  "schema_version": "1",
+  "example_id": "v1_native_verifier",
+  "title": "Native Python verifier",
+  "requires": {
+    "verifierlab": ">=0.2.0rc2",
+    "extras": []
+  },
+  "install": "pip install verifierlab",
+  "entrypoints": {
+    "run": "run.sh",
+    "verify": "verify.sh"
+  },
+  "campaign": "campaign.yaml",
+  "integration_status": "live"
+}

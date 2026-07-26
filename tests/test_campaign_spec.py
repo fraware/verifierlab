@@ -47,7 +47,7 @@ def test_invalid_budget_raises() -> None:
         "environment": {"kind": "fake", "ref": "x"},
         "verifier": {"kind": "python", "ref": "y"},
         "ground_truth": {"provider": "planted-oracle"},
-        "pinned_versions": {"verifierlab": "0.2.0rc1", "campaign": "x"},
+        "pinned_versions": {"verifierlab": "0.2.0rc2", "campaign": "x"},
     }
     spec, diags = load_campaign_dict(data)
     assert spec is None

@@ -1,0 +1,96 @@
+name: Docs
+
+on:
+  push:
+    branches: [main, release/0.2-rc]
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "README.md"
+      - "CHANGELOG.md"
+      - "pyproject.toml"
+      - "registry/adapter-matrix-v1.json"
+      - "scripts/generate_adapter_matrix.py"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    branches: [main, release/0.2-rc]
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "README.md"
+      - "CHANGELOG.md"
+      - "pyproject.toml"
+      - "registry/adapter-matrix-v1.json"
+      - "scripts/generate_adapter_matrix.py"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Sync with docs extra
+        run: uv sync --extra docs
+
+      - name: MkDocs Material strict build
+        run: uv run mkdocs build --strict
+
+      - name: Upload site artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mkdocs-site
+          path: site
+
+  # Optional Pages deploy — skipped unless Pages is enabled for the repo.
+  # Strict MkDocs build above is the acceptance gate for PRs.
+  deploy:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' &&
+       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/0.2-rc'))
+    needs: build
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - name: Download site
+        uses: actions/download-artifact@v4
+        with:
+          name: mkdocs-site
+          path: site
+
+      - name: Setup Pages
+        id: pages
+        uses: actions/configure-pages@v5
+        continue-on-error: true
+
+      - name: Upload Pages artifact
+        if: steps.pages.outcome == 'success'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        if: steps.pages.outcome == 'success'
+        uses: actions/deploy-pages@v4
+        continue-on-error: true

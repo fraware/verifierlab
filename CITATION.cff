@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+title: VerifierLab
+message: If you use this software, please cite it using these metadata.
+type: software
+authors:
+  - name: VerifierLab Contributors
+repository-code: "https://github.com/fraware/verifierlab"
+url: "https://fraware.github.io/verifierlab/"
+abstract: >-
+  Verifier Assurance Lab (valab / verifierlab) — local-first campaigns for
+  verifier robustness evaluation with metered broker access, hidden
+  adjudication, and stratified StatsPlan analysis.
+license: Apache-2.0
+version: 0.2.0rc2

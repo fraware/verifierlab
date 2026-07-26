@@ -116,6 +116,8 @@ def _build_work_units(
                 "environment_kind": spec.environment.kind,
                 "environment_config": dict(spec.environment.config),
                 "verifier_ref": spec.verifier.ref,
+                "verifier_kind": spec.verifier.kind,
+                "verifier_config": dict(spec.verifier.config),
                 "commitment_nonce": commitment_nonce,
                 # Intentionally omitted: ground_truth_ref (VAL-R03).
             }

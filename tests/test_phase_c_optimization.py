@@ -359,7 +359,7 @@ def test_e2e_persistent_attacker_campaign(tmp_path: Path) -> None:
     data = {
         "schema_version": "1",
         "name": "phase-c-bon",
-        "pinned_versions": {"verifierlab": "0.2.0rc1", "campaign": "phase-c@1"},
+        "pinned_versions": {"verifierlab": "0.2.0rc2", "campaign": "phase-c@1"},
         "access_model": "black-box",
         "seed": 5,
         "work_units": 2,

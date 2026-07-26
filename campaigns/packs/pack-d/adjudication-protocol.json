@@ -1,0 +1,20 @@
+{
+  "campaign": "pack-d-eval-cheating",
+  "content_digest": "bec72d46d4dbddd043313754358580a5521826b3871f466cf1edc80d6de14413",
+  "custodian_held": [
+    "ground_truth",
+    "unreleased_labels",
+    "vault_keys"
+  ],
+  "kind": "hidden_adjudication_protocol",
+  "labels_in_public_pack": false,
+  "release_gate": "freeze_then_adjudicate_then_release_labels",
+  "schema_version": "1",
+  "steps": [
+    "freeze",
+    "adjudicate",
+    "release_labels",
+    "compile_stats_plan"
+  ],
+  "summary": "Embargo disclosure class: adjudicate privately after freeze; public pack never includes holdout labels or oracle hints."
+}

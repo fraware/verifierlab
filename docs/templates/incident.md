@@ -2,7 +2,7 @@
 
 Use when operators suspect a **VerifierLab** integrity failure (label leak,
 freeze bypass, CAS mutation, capability violation)—not a third-party verifier
-exploit. For product vulns, also follow [SECURITY.md](../../SECURITY.md).
+exploit. For product vulns, also follow [SECURITY.md](https://github.com/fraware/verifierlab/blob/main/SECURITY.md).
 
 ## Incident metadata
 

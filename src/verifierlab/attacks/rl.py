@@ -16,11 +16,34 @@ from verifierlab.attacks.runtime import evaluate_candidate_trajectory
 
 @runtime_checkable
 class ExternalTrainerAdapter(Protocol):
-    """Adapter contract for external RL trainers (RLlib, CleanRL, custom)."""
+    """Adapter contract for external RL trainers (RLlib, CleanRL, custom).
 
-    def start(self, config: dict[str, Any]) -> None: ...
+    Spec protocol (Milestone C): ``initialize`` / ``train`` / ``act`` /
+    ``checkpoint`` / ``restore`` / ``freeze`` / ``evaluate`` / ``close``.
+
+    Legacy aliases remain part of the runtime-checkable surface so existing
+    callers keep working: ``start``→``initialize``, ``learn``→``train``,
+    ``save``→``checkpoint``, ``load``→``restore``.
+    """
+
+    def initialize(self, config: dict[str, Any]) -> None: ...
+
+    def train(self, transition: dict[str, Any]) -> dict[str, Any]: ...
 
     def act(self, observation: dict[str, Any]) -> dict[str, Any]: ...
+
+    def checkpoint(self) -> dict[str, Any]: ...
+
+    def restore(self, state: dict[str, Any]) -> None: ...
+
+    def freeze(self) -> None: ...
+
+    def evaluate(self, observation: dict[str, Any]) -> dict[str, Any]: ...
+
+    def close(self) -> None: ...
+
+    # Legacy aliases
+    def start(self, config: dict[str, Any]) -> None: ...
 
     def learn(self, transition: dict[str, Any]) -> dict[str, Any]: ...
 
@@ -39,8 +62,10 @@ class TabularQTrainer:
         self.gamma = 0.9
         self.epsilon = 0.2
         self._rng = random.Random(0)
+        self._frozen = False
 
-    def start(self, config: dict[str, Any]) -> None:
+    def initialize(self, config: dict[str, Any]) -> None:
+        self._frozen = False
         self.alpha = float(config.get("alpha", 0.3))
         self.gamma = float(config.get("gamma", 0.9))
         self.epsilon = float(config.get("epsilon", 0.2))
@@ -58,6 +83,10 @@ class TabularQTrainer:
         if not self.actions:
             self.actions = [{"op": "noop"}]
 
+    def start(self, config: dict[str, Any]) -> None:
+        """Alias for :meth:`initialize`."""
+        self.initialize(config)
+
     def _key(self, observation: dict[str, Any]) -> str:
         return f"{observation.get('step', 0)}:{observation.get('balance', 0)}"
 
@@ -65,6 +94,8 @@ class TabularQTrainer:
         return f"{action.get('op')}:{action.get('amount', '')}"
 
     def act(self, observation: dict[str, Any]) -> dict[str, Any]:
+        if self._frozen:
+            return self.evaluate(observation)
         state = self._key(observation)
         if self._rng.random() < self.epsilon or state not in self.q:
             return dict(self._rng.choice(self.actions))
@@ -74,7 +105,9 @@ class TabularQTrainer:
                 return dict(action)
         return dict(self._rng.choice(self.actions))
 
-    def learn(self, transition: dict[str, Any]) -> dict[str, Any]:
+    def train(self, transition: dict[str, Any]) -> dict[str, Any]:
+        if self._frozen:
+            raise RuntimeError("TabularQTrainer is frozen; refuse train/learn")
         s = self._key(transition["obs"])
         a = self._action_key(transition["action"])
         r = float(transition.get("reward", 0.0))
@@ -85,7 +118,11 @@ class TabularQTrainer:
         self.q[s][a] = old + self.alpha * (r + self.gamma * next_max - old)
         return {"td_error": abs(r + self.gamma * next_max - old)}
 
-    def save(self) -> dict[str, Any]:
+    def learn(self, transition: dict[str, Any]) -> dict[str, Any]:
+        """Alias for :meth:`train`."""
+        return self.train(transition)
+
+    def checkpoint(self) -> dict[str, Any]:
         return {
             "q": self.q,
             "actions": self.actions,
@@ -93,9 +130,14 @@ class TabularQTrainer:
             "gamma": self.gamma,
             "epsilon": self.epsilon,
             "rng_state": self._rng.getstate(),
+            "frozen": self._frozen,
         }
 
-    def load(self, state: dict[str, Any]) -> None:
+    def save(self) -> dict[str, Any]:
+        """Alias for :meth:`checkpoint`."""
+        return self.checkpoint()
+
+    def restore(self, state: dict[str, Any]) -> None:
         self.q = dict(state.get("q") or {})
         self.actions = list(state.get("actions") or self.actions)
         if "alpha" in state:
@@ -106,6 +148,31 @@ class TabularQTrainer:
             self.epsilon = float(state["epsilon"])
         if state.get("rng_state") is not None:
             self._rng.setstate(state["rng_state"])
+        self._frozen = bool(state.get("frozen", False))
+
+    def load(self, state: dict[str, Any]) -> None:
+        """Alias for :meth:`restore`."""
+        self.restore(state)
+
+    def freeze(self) -> None:
+        """Freeze policy before holdout evaluation."""
+        self._frozen = True
+        self.epsilon = 0.0
+
+    def evaluate(self, observation: dict[str, Any]) -> dict[str, Any]:
+        """Greedy act without exploration (holdout path)."""
+        state = self._key(observation)
+        if state not in self.q or not self.q[state]:
+            return dict(self.actions[0]) if self.actions else {"op": "noop"}
+        best_key = max(self.q[state].items(), key=lambda kv: kv[1])[0]
+        for action in self.actions:
+            if self._action_key(action) == best_key:
+                return dict(action)
+        return dict(self.actions[0]) if self.actions else {"op": "noop"}
+
+    def close(self) -> None:
+        self.q.clear()
+        self._frozen = False
 
 
 @register("rl_tabular")

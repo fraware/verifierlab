@@ -1,0 +1,28 @@
+# Git
+.git
+.github
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.valab
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+dist
+site
+*.egg-info
+
+# Local IDE / OS
+.idea
+.vscode
+.cursor
+*.swp
+Thumbs.db
+
+# Tests and docs are not required inside runtime images
+tests
+docs
+examples
+mkdocs.yml

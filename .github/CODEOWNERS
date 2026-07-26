@@ -1,0 +1,64 @@
+# CODEOWNERS — VerifierLab
+#
+# Default owner for unmatched paths. Subsystem owners should be expanded with
+# named GitHub handles as the maintainer set grows (see MAINTAINERS.md).
+#
+# Dual-review policy (branch protection + human process): changes under the
+# "Trust-critical" sections below require TWO approving reviews before merge.
+# Do not treat a single CODEOWNER approval as sufficient for those paths.
+
+* @fraware
+
+# --- Docs, community, registries -------------------------------------------
+/ROADMAP.md                          @fraware
+/MAINTAINERS.md                      @fraware
+/CONTRIBUTING.md                     @fraware
+/docs/                               @fraware
+/docs/contributing/                  @fraware
+/docs/governance/                    @fraware
+/docs/community/                     @fraware
+/registry/                           @fraware
+/schemas/                            @fraware
+
+# --- Campaigns and packs ---------------------------------------------------
+/campaigns/                          @fraware
+/campaigns/packs/                    @fraware
+
+# --- CI / release (light ownership; Milestone A owns workflow rewrites) ----
+/.github/workflows/                  @fraware
+/scripts/                            @fraware
+
+# =============================================================================
+# Trust-critical — dual review required (decision / labels / budgets /
+# statistics / sandbox / cryptography)
+# =============================================================================
+
+# Decisions and public API contracts
+/src/verifierlab/api/decision.py     @fraware
+/src/verifierlab/api/               @fraware
+
+# Labels, vault, freeze, adjudication
+/src/verifierlab/labels/             @fraware
+
+# Budgets and metering ledgers
+/src/verifierlab/budgets/            @fraware
+
+# Statistics / intervals / StatsPlan
+/src/verifierlab/statistics/         @fraware
+
+# Sandbox and Docker isolation
+/src/verifierlab/security/sandbox.py       @fraware
+/src/verifierlab/security/docker_runner.py @fraware
+/src/verifierlab/security/                 @fraware
+
+# Cryptography / secrets (vault + keyring overlap with labels/)
+/src/verifierlab/labels/vault.py     @fraware
+/src/verifierlab/labels/keyring.py   @fraware
+/src/verifierlab/security/secrets.py @fraware
+
+# Broker / capabilities (metering boundary)
+/src/verifierlab/verifiers/broker.py       @fraware
+/src/verifierlab/verifiers/capabilities.py @fraware
+
+# Lifecycle freeze / release (append-only integrity)
+/src/verifierlab/campaigns/lifecycle.py @fraware

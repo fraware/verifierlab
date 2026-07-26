@@ -208,7 +208,9 @@ def run_episode(
         accepted_value = None
 
     # Capability-gated feedback score (VALAB-03): never synthesize a score from
-    # accept/reject under label_only; never drop the real score under score_only.
+    # accept/reject under label_only; never invent 0.0 when the score channel
+    # is empty; never drop a real score under score_only (broker may synthesize
+    # score from accept when score_only strips the hard label).
     caps = capabilities_for(access_model)
     feedback_score: float | None = None
     if caps.may_read_score:
@@ -216,8 +218,6 @@ def run_episode(
             feedback_score = float(decision.score)
         elif caps.may_read_decision and accepted_value is not None:
             feedback_score = 1.0 if accepted_value else 0.0
-    # Attack-visible reward stays environmental; score channel is separate.
-    observe_score = feedback_score if feedback_score is not None else 0.0
 
     commitment = trajectory_commitment(trajectory, commitment_nonce)
 
@@ -266,7 +266,7 @@ def run_episode(
         "coverage": public_coverage,
         "reason_codes": public_coverage if caps.may_read_reason_codes else [],
         "cost": float(max_steps),
-        "score": observe_score if caps.may_read_score else None,
+        "score": feedback_score if caps.may_read_score else None,
         "novel": False,
     }
     strategy.observe(public_attack_feedback(raw_feedback))

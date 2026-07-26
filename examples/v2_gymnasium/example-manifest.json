@@ -1,0 +1,19 @@
+{
+  "schema_version": "1",
+  "example_id": "v2_gymnasium",
+  "title": "Gymnasium",
+  "requires": {
+    "verifierlab": ">=0.2.0rc2",
+    "extras": [
+      "gym"
+    ]
+  },
+  "install": "pip install 'verifierlab[gym]'",
+  "entrypoints": {
+    "run": "run.sh",
+    "verify": "verify.sh"
+  },
+  "campaign": "campaign.yaml",
+  "integration_status": "live",
+  "legacy_gym_claimed": false
+}

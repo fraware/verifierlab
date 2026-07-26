@@ -26,6 +26,7 @@ from verifierlab.plugins.loader import load_object
 from verifierlab.verifiers.broker import VerifierBroker
 from verifierlab.verifiers.capabilities import capabilities_for
 from verifierlab.verifiers.profile import VerifierProfile
+from verifierlab.verifiers.runner import PythonVerifierRunner, prefers_subprocess_isolation
 
 # Refs that must never be loaded on the attack-worker plane.
 _FORBIDDEN_REF_MARKERS = (
@@ -110,6 +111,8 @@ def _run_work_unit(payload: dict[str, Any]) -> dict[str, Any]:
 
         env = FakeEnvironment(max_steps=max_steps)
         verifier = fake_refund_verifier
+        runner = None
+        profile = VerifierProfile.for_callable(verifier)
     else:
         env_ref = str(payload.get("environment_ref") or "")
         ver_ref = str(payload.get("verifier_ref") or "")
@@ -119,9 +122,27 @@ def _run_work_unit(payload: dict[str, Any]) -> dict[str, Any]:
         env_cfg = dict(payload.get("environment_config") or {})
         env_cfg.pop("max_steps", None)
         env = env_cls(max_steps=max_steps, **env_cfg) if env_cfg else env_cls(max_steps=max_steps)
-        verifier = load_object(payload["verifier_ref"])
+        ver_kind = str(payload.get("verifier_kind") or "python")
+        ver_cfg = dict(payload.get("verifier_config") or {})
+        use_runner = prefers_subprocess_isolation(kind=ver_kind, config=ver_cfg) or bool(
+            payload.get("verifier_isolation") == "subprocess"
+        )
+        if use_runner:
+            timeout_s = float(ver_cfg.get("timeout_s") or payload.get("verifier_timeout_s") or 30.0)
+            runner = PythonVerifierRunner.from_ref(
+                ver_ref,
+                timeout_s=timeout_s,
+                config=ver_cfg,
+                cpu_seconds=ver_cfg.get("cpu_seconds"),
+                memory_bytes=ver_cfg.get("memory_bytes"),
+            )
+            verifier = runner.as_callable()
+            profile = runner.profile or VerifierProfile.for_callable(verifier, name=ver_ref)
+        else:
+            runner = None
+            verifier = load_object(payload["verifier_ref"])
+            profile = VerifierProfile.for_callable(verifier)
 
-    profile = VerifierProfile.for_callable(verifier)
     caps = capabilities_for(access_model)
     voucher = _worker_ledger(payload)
     broker = VerifierBroker(
@@ -131,6 +152,7 @@ def _run_work_unit(payload: dict[str, Any]) -> dict[str, Any]:
         caller=f"worker:{payload['unit_id']}",
         ledger=voucher,
         capabilities=caps,
+        runner=runner,
     )
 
     strategy_name = str(payload.get("strategy") or "ordinary")
@@ -195,6 +217,7 @@ def _run_work_unit(payload: dict[str, Any]) -> dict[str, Any]:
         result["budget_voucher_queries"] = voucher.queries
         result["budget_metered"] = True
         result["ledger_events"] = list(voucher.events)
+        result["budget_voucher_reserved"] = int(payload.get("query_budget_reserved") or 0)
         # Persist spend before return so crash after reserve cannot refund
         # completed queries (VALAB-04).
         spend_dir = payload.get("run_dir") or payload.get("attacker_dir")

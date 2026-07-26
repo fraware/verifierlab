@@ -1,8 +1,9 @@
 # Adapters
 
-External system adapters live under `verifierlab.targets` and are gated by
-optional extras. When an SDK is missing, imports fail with an install hint or
-tests skip with an explicit reason—never a silent stub pass.
+External system adapters live under `verifierlab.targets` (and
+`verifierlab.trainers` for RLlib) and are gated by optional extras. When an SDK
+is missing, imports fail with an install hint or tests skip with an explicit
+reason—never a silent stub pass. Fixture-only paths are never labeled live.
 
 ## Install
 
@@ -12,49 +13,77 @@ pip install "verifierlab[inspect]"       # pins inspect-ai
 pip install "verifierlab[harbor]"        # pins harbor; Python >=3.12
 pip install "verifierlab[nemo]"          # HTTP client + stdlib reference server
 pip install "verifierlab[openenv]"       # optional heavy SDK; reference path works without it
+pip install "verifierlab[envassure]"     # forward pin; may be unpublished
+pip install "verifierlab[rllib]"         # exact ray[rllib]==2.48.0
 pip install "verifierlab[objectstore]"   # boto3 S3-compatible CAS
 pip install "verifierlab[kubernetes]"
 pip install "verifierlab[adapters]"      # gym + inspect + harbor + openenv + nemo
+# Opt-in (not in [adapters] composite): envassure (may be unpublished), rllib (heavy)
 ```
 
 Or with uv: `uv sync --extra gym` (and similarly for other extras).
 
-## Matrix
+## Per-adapter pages
 
-| Adapter | Extra | What is live | What is not claimed |
-| ------- | ----- | ------------ | ------------------- |
-| Native `@verifier` | (base) | Python callable + VALAB-02 contract | — |
-| Gymnasium | `[gym]` | Wrap `gymnasium.Env` as `EnvironmentTarget` | Full RL training stack |
-| Inspect | `[inspect]` | Task / eval / eval-log mapping via `inspect-ai` | Hosting Inspect’s full product surface |
-| Harbor | `[harbor]` | ATIF parse/validate via Harbor types (Py≥3.12); stateful episode | In-process Harbor sandbox/agent orchestration |
-| NeMo Gym HTTP | `[nemo]` | HTTP client + in-repo reference resources server | NVIDIA training containers / Ray loops |
-| OpenEnv | `[openenv]` | HTTP `/reset` `/step` `/state` + reference env | HF Spaces / Docker provider automation |
-| Trainer | `[rl]` / `[trainer]` | Broker-only trainer step loop (`TrainerAdapter`) | Heavy external trainer SDKs |
-| S3 CAS | `[objectstore]` | boto3 client (AWS / MinIO) | Default remains filesystem CAS |
-| Slurm | `[slurm]` | Live when `sbatch`/`squeue`/`scancel` exist | Otherwise explicit dry-run |
-| Kubernetes | `[kubernetes]` | Live Job create/status/delete when client works | Otherwise explicit dry-run |
+Each page lists supported versions, live vs fixture, boundary, mapping,
+unsupported semantics, conformance command, CI status, example, and
+troubleshooting:
 
-VALAB-09 release matrix (six integrations): native, Gymnasium, Inspect, OpenEnv,
-Harbor (stateful), trainer. See [reproduction-checklist.md](reproduction-checklist.md).
+- [Native](adapters/native.md) — Example V1
+- [Gymnasium](adapters/gymnasium.md) — Example V2
+- [Inspect](adapters/inspect.md) — Example V3
+- [OpenEnv](adapters/openenv.md) — Example V4
+- [Harbor](adapters/harbor.md)
+- [NeMo](adapters/nemo.md)
+- [Trainer](adapters/trainer.md)
+- [EnvAssure](adapters/envassure.md) — Example V5 (not-live until installable)
+- [RLlib](adapters/rllib.md) — Example V6 (integration conformance)
+
+## Matrix (honest live vs fixture)
+
+The publishable matrix is generated from
+[`registry/adapter-matrix-v1.json`](https://github.com/fraware/verifierlab/blob/main/registry/adapter-matrix-v1.json):
+
+```bash
+python scripts/generate_adapter_matrix.py
+python scripts/generate_adapter_matrix.py --check
+```
+
+See the full generated table: [adapters/matrix.md](adapters/matrix.md).
+Release manifests embed the same rows under `adapter_matrix`.
+
+| Adapter | Extra | Live? | What is not claimed |
+| ------- | ----- | ----- | ------------------- |
+| Native `@verifier` | (base) | Live | OS sandbox / soundness |
+| Gymnasium | `[gym]` | Live with gymnasium | Legacy `gym`; full RL stacks |
+| Inspect | `[inspect]` | `live_task` / `scorer_verifier` when SDK present; `eval_log_import` fixture | Fixture labeled as live |
+| Harbor | `[harbor]` | ATIF fixture always; live SDK on Py≥3.12 | Full Harbor orchestration |
+| NeMo Gym HTTP | `[nemo]` | Live vs in-repo reference server | NVIDIA training containers |
+| OpenEnv | `[openenv]` | Live HTTP reference; prefer official client when present | Hosted Spaces automation |
+| Trainer | `[rl]` / `[trainer]` | Broker-only trainer loop (base) | Heavy external SDKs |
+| EnvAssure | `[envassure]` | **Not live** until package installable | Fixture-as-live |
+| RLlib | `[rllib]` | Live when Ray installed (conformance) | Capability / SOTA results |
+| S3 CAS | `[objectstore]` | Live with boto3 | Default remains filesystem CAS |
+| Slurm / Kubernetes | optional | Live when tools/client work | Otherwise explicit dry-run |
+
+## Examples V1–V6
+
+| Example | Path | Extra |
+| --- | --- | --- |
+| V1 Native | `examples/v1_native_verifier/` | (base) |
+| V2 Gymnasium | `examples/v2_gymnasium/` | `[gym]` |
+| V3 Inspect | `examples/v3_inspect/` | `[inspect]` |
+| V4 OpenEnv | `examples/v4_openenv/` | `[openenv]` (optional) |
+| V5 EnvAssure | `examples/v5_envassure/` | `[envassure]` (not-live fixture) |
+| V6 RLlib | `examples/v6_rllib/` | `[rllib]` |
 
 ## CI posture
 
-- Default CI: format, mypy, pytest with coverage threshold, packs A/B/F,
-  process + thread smokes, refund lifecycle smoke, reproducible bundle check.
-- Multi-OS process matrix (Windows may `continue-on-error` initially).
-- Inspect / Harbor: fixture log-format regression always; live SDK paths when
-  installed (extras matrix / schedule).
-- NeMo / OpenEnv: live client against local reference HTTP servers in CI.
-- Gym: skip or `ImportError` without gymnasium; tiny discrete env when present.
-- CodeQL on PR/push; pip-audit + SBOM on release tags.
+- Gym / Inspect / OpenEnv: release-qualified hard-fail in `adapters.yml`
+- EnvAssure: fixture always; live hard-fail only when installable
+- RLlib: soft-fail / skip-if-missing; image partial-qualification
+- Harbor / NeMo: existing extras; no parallel APIs invented
 
-Shared conformance: `verifierlab.targets.conformance.run_conformance` covers
-decision normalization, timeout/error mapping, and hidden-label isolation.
+Shared conformance: `verifierlab.targets.conformance.run_conformance`.
 
 Details and non-claims: [limitations.md](limitations.md).
-
-## Library usage
-
-There is no `valab adapter` subcommand in this alpha. Import adapters from
-Python (for example `verifierlab.targets.gym_adapter`) after installing the
-matching extra. Fake / in-tree tutorial targets need no extra.

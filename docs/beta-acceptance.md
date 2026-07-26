@@ -1,8 +1,8 @@
 # Beta / RC acceptance (§38)
 
-Public research release-candidate gate for Verifier Assurance Lab (`0.2.0rc1`).
+Public research release-candidate gate for Verifier Assurance Lab (`0.2.0rc2`).
 
-> **Version gate:** Package version is **`0.2.0rc1`** after executable acceptance
+> **Version gate:** Package version is **`0.2.0rc2`** after executable acceptance
 > gates 1–6 pass (`tests/test_acceptance_gates.py`). Do **not** claim SOTA
 > verifier assurance or soundness from “no exploit found.” See
 > [limitations.md](limitations.md) for trust-boundary notes (Docker sandbox
@@ -50,7 +50,7 @@ Pytest wrapper: `tests/test_valab01_baseline.py`.
 
 ## Versioning surfaces
 
-- Package version (`pyproject.toml`) — **`0.2.0rc1`**
+- Package version (`pyproject.toml`) — **`0.2.0rc2`**
 - Artifact `schema_version`
 - Plugin API (`verifierlab.plugins` entry points)
 - Exploit taxonomy (`ExploitClass`)
@@ -68,6 +68,6 @@ CI), **OpenEnv** (HTTP protocol + reference env in CI), and the **trainer**
 adapter (broker-only feedback). Missing SDKs skip or raise install hints —
 never stub passes. See [limitations.md](limitations.md).
 
-**0.2.0rc1** ships with gates 1–6 encoded as tests plus VALAB-01…09 hardening.
+**0.2.0rc2** ships with gates 1–6 encoded as tests plus VALAB-01…09 hardening.
 Residual non-claims: default process-local trust boundary (not OS isolation),
 research-grade attack depth, optional Docker sandbox. Still not SOTA assurance.

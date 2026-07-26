@@ -45,7 +45,7 @@ registry state.
 
 ## Reporting vulnerabilities *in* VerifierLab
 
-See [SECURITY.md](../SECURITY.md). Do not confuse product vulnerability reports
+See [SECURITY.md](https://github.com/fraware/verifierlab/blob/main/SECURITY.md). Do not confuse product vulnerability reports
 with campaign disclosures of third-party verifier failures.
 
 ## Related

@@ -1,0 +1,19 @@
+{
+  "schema_version": "1",
+  "example_id": "v4_openenv",
+  "title": "OpenEnv",
+  "requires": {
+    "verifierlab": ">=0.2.0rc2",
+    "extras": [
+      "openenv"
+    ]
+  },
+  "install": "pip install 'verifierlab[openenv]'",
+  "entrypoints": {
+    "run": "run.sh",
+    "verify": "verify.sh"
+  },
+  "campaign": "campaign.yaml",
+  "integration_status": "live",
+  "containerized_smoke": "optional"
+}

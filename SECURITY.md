@@ -4,11 +4,12 @@
 
 | Version | Supported |
 | ------- | --------- |
-| `0.2.0rc1` (release candidate) | Yes — best-effort for research RC |
-| `0.1.x` (alpha) | Best-effort; prefer upgrading to `0.2.0rc1` |
+| `0.2.0rc2` (release candidate) | Yes — best-effort for research RC |
+| `0.2.0rc1` (prior RC) | Superseded — upgrade to `0.2.0rc2` |
+| `0.1.x` (alpha) | Best-effort; prefer upgrading to `0.2.0rc2` |
 
 There is no long-term support channel yet. Prefer reporting against the latest
-`main` / `release/0.2-rc` commit. Package version is **`0.2.0rc1`** with
+`main` / `release/0.2-rc` commit. Package version is **`0.2.0rc2`** with
 executable gates in `tests/test_acceptance_gates.py` — still not a soundness
 or SOTA assurance claim.
 

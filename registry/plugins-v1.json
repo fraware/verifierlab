@@ -1,0 +1,216 @@
+{
+  "schema_version": "plugin-registry-v1",
+  "updated": "2026-07-26",
+  "notes": "Curated metadata only. Inclusion in this file never grants automatic execution or installation. Catalog renderers must parse metadata only and must not import plugin code.",
+  "plugins": [
+    {
+      "id": "native-python-verifier",
+      "kind": "verifier",
+      "version": "0.2.0rc2",
+      "status": "reference",
+      "distribution": "in-tree",
+      "source": "src/verifierlab/api/verifier.py",
+      "owner": "fraware/verifierlab",
+      "api_range": ">=1.0,<2",
+      "core_range": ">=0.2.0rc2,<0.3",
+      "required_capabilities": [],
+      "network_access": "none",
+      "filesystem_access": "none",
+      "hidden_label_declaration": {
+        "accesses_hidden_labels": false,
+        "notes": "Attack-plane verifiers must not access hidden labels; adjudication is separate."
+      },
+      "digests": {
+        "artifact": "in-tree"
+      },
+      "conformance": {
+        "level": "reference",
+        "report": "docs/beta-acceptance.md"
+      },
+      "security_review": {
+        "status": "passed",
+        "notes": "In-tree reference path; dual-review on decision/broker changes.",
+        "date": "2026-07-01"
+      },
+      "limitations": [
+        "In-process @verifier is for trusted local use; prefer subprocess runner for packaged untrusted code when available."
+      ],
+      "license": "Apache-2.0",
+      "last_tested": "2026-07-26"
+    },
+    {
+      "id": "gymnasium-adapter",
+      "kind": "adapter",
+      "version": "0.2.0rc2",
+      "status": "conformance_tested",
+      "distribution": "extra:gym",
+      "source": "src/verifierlab/targets/gym_adapter.py",
+      "owner": "fraware/verifierlab",
+      "api_range": ">=1.0,<2",
+      "core_range": ">=0.2.0rc2,<0.3",
+      "required_capabilities": ["environment.step"],
+      "network_access": "none",
+      "filesystem_access": "none",
+      "hidden_label_declaration": {
+        "accesses_hidden_labels": false,
+        "notes": "Environment observations only; no GT vault access."
+      },
+      "digests": {
+        "artifact": "in-tree"
+      },
+      "conformance": {
+        "level": "live",
+        "report": "docs/adapters.md"
+      },
+      "security_review": {
+        "status": "in_progress",
+        "notes": "Release matrix expansion still landing termination/Dict/invalid-action rows."
+      },
+      "limitations": [
+        "Does not claim a full RL training stack.",
+        "Legacy gym package is not a beta claim; use gymnasium."
+      ],
+      "license": "Apache-2.0",
+      "last_tested": "2026-07-26"
+    },
+    {
+      "id": "inspect-adapter",
+      "kind": "adapter",
+      "version": "0.2.0rc2",
+      "status": "conformance_tested",
+      "distribution": "extra:inspect",
+      "source": "src/verifierlab/targets/inspect_adapter.py",
+      "owner": "fraware/verifierlab",
+      "api_range": ">=1.0,<2",
+      "core_range": ">=0.2.0rc2,<0.3",
+      "required_capabilities": ["eval.log_import"],
+      "network_access": "limited",
+      "filesystem_access": "read_only",
+      "hidden_label_declaration": {
+        "accesses_hidden_labels": false,
+        "notes": "Hidden targets only in adjudication; worker artifacts carry sample IDs/commitments."
+      },
+      "digests": {
+        "artifact": "in-tree"
+      },
+      "conformance": {
+        "level": "fixture",
+        "report": "docs/adapters.md"
+      },
+      "security_review": {
+        "status": "in_progress",
+        "notes": "Fixture log-format always; live SDK path when inspect-ai installed."
+      },
+      "limitations": [
+        "Fixture-only rows must not be labeled live.",
+        "Modes live_task / scorer_verifier / eval_log_import must stay distinct."
+      ],
+      "license": "Apache-2.0",
+      "last_tested": "2026-07-26"
+    },
+    {
+      "id": "openenv-adapter",
+      "kind": "adapter",
+      "version": "0.2.0rc2",
+      "status": "schema_validated",
+      "distribution": "extra:openenv (optional); reference HTTP without pin",
+      "source": "src/verifierlab/targets/openenv_adapter.py",
+      "owner": "fraware/verifierlab",
+      "api_range": ">=1.0,<2",
+      "core_range": ">=0.2.0rc2,<0.3",
+      "required_capabilities": ["environment.http"],
+      "network_access": "required",
+      "filesystem_access": "none",
+      "hidden_label_declaration": {
+        "accesses_hidden_labels": false,
+        "notes": "HTTP client only; no adjudicator secrets in pack configs."
+      },
+      "digests": {
+        "artifact": "in-tree"
+      },
+      "conformance": {
+        "level": "fixture",
+        "report": "docs/adapters.md"
+      },
+      "security_review": {
+        "status": "not_reviewed",
+        "notes": "Reference server path used in CI; heavy SDK optional."
+      },
+      "limitations": [
+        "Does not claim HF Spaces / Docker provider automation."
+      ],
+      "license": "Apache-2.0",
+      "last_tested": "2026-07-26"
+    },
+    {
+      "id": "filesystem-object-store",
+      "kind": "object_store",
+      "version": "0.2.0rc2",
+      "status": "reference",
+      "distribution": "in-tree",
+      "source": "src/verifierlab/artifacts/cas.py",
+      "owner": "fraware/verifierlab",
+      "api_range": ">=1.0,<2",
+      "core_range": ">=0.2.0rc2,<0.3",
+      "required_capabilities": ["cas.put", "cas.get"],
+      "network_access": "none",
+      "filesystem_access": "read_write",
+      "hidden_label_declaration": {
+        "accesses_hidden_labels": false,
+        "notes": "CAS stores content-addressed artifacts; label vault is separate."
+      },
+      "digests": {
+        "artifact": "in-tree"
+      },
+      "conformance": {
+        "level": "reference",
+        "report": "docs/architecture.md"
+      },
+      "security_review": {
+        "status": "passed",
+        "notes": "Default local CAS; S3 path behind [objectstore].",
+        "date": "2026-07-01"
+      },
+      "limitations": [
+        "Default trusts host filesystem permissions."
+      ],
+      "license": "Apache-2.0",
+      "last_tested": "2026-07-26"
+    },
+    {
+      "id": "ordinary-baseline-attack",
+      "kind": "attack",
+      "version": "0.2.0rc2",
+      "status": "conformance_tested",
+      "distribution": "in-tree",
+      "source": "src/verifierlab/attacks/ordinary.py",
+      "owner": "fraware/verifierlab",
+      "api_range": ">=1.0,<2",
+      "core_range": ">=0.2.0rc2,<0.3",
+      "required_capabilities": ["broker.query"],
+      "network_access": "none",
+      "filesystem_access": "none",
+      "hidden_label_declaration": {
+        "accesses_hidden_labels": false,
+        "notes": "Receives public verifier feedback only."
+      },
+      "digests": {
+        "artifact": "in-tree"
+      },
+      "conformance": {
+        "level": "fixture",
+        "report": "docs/attacks.md"
+      },
+      "security_review": {
+        "status": "passed",
+        "notes": "Baseline ordinary cohort; metering required.",
+        "date": "2026-07-01"
+      },
+      "limitations": [
+        "Not an optimized attacker; depth limits in docs/limitations.md."
+      ],
+      "license": "Apache-2.0",
+      "last_tested": "2026-07-26"
+    }
+  ]
+}

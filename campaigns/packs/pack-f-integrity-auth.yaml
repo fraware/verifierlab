@@ -2,7 +2,7 @@ schema_version: "1"
 name: pack-f-integrity-auth
 description: "Pack F — integrity tamper, timeout bypass, and approval laundering"
 pinned_versions:
-  verifierlab: "0.2.0rc1"
+  verifierlab: "0.2.0rc2"
   campaign: "pack-f@1"
 access_model: black-box
 seed: 16

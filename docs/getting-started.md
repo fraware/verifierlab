@@ -6,7 +6,7 @@
 uv sync --extra dev
 # or: pip install -e ".[dev]"
 uv run valab doctor
-uv run valab --version   # expect 0.2.0rc1 for this release line
+uv run valab --version   # expect 0.2.0rc2 for this release line
 ```
 
 Python `>=3.11,<3.14`. The base package does not pull PyTorch, Ray, Kubernetes

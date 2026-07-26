@@ -1,0 +1,23 @@
+{
+  "campaign": "pack-a-outcome-vs-process",
+  "campaign_yaml": "pack-a-outcome-vs-process.yaml",
+  "interval_method": "wilson",
+  "primary_estimand": "far_optimized",
+  "schema_version": "1",
+  "science_completeness": {
+    "access_model": true,
+    "baseline": true,
+    "budget": true,
+    "interval_method": true,
+    "optimized_attacks": 2,
+    "ordinary_or_baseline_cohort": true,
+    "planted_failure": true,
+    "primary_estimand": true,
+    "splits": true,
+    "stats_plan_methods": [
+      "wilson"
+    ],
+    "two_optimized_attacks": true
+  },
+  "theme": "outcome-vs-process"
+}

@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, master, release/public-alpha, release/0.2-rc]
+    branches: [main, release/0.2-rc]
   pull_request:
-    branches: [main, master, release/public-alpha, release/0.2-rc]
+    branches: [main, release/0.2-rc]
   workflow_dispatch:
 
 jobs:
@@ -50,6 +50,9 @@ jobs:
       - name: Base import graph has no heavy ML deps
         run: uv run python scripts/check_base_imports.py
 
+      - name: Package metadata URLs
+        run: uv run python scripts/check_package_metadata.py
+
       - name: VALAB-01 doctor + campaign validate
         run: |
           uv run valab doctor
@@ -62,6 +65,9 @@ jobs:
           uv venv /tmp/vl-wheel-smoke --python "${{ matrix.python-version }}"
           uv pip install --python /tmp/vl-wheel-smoke "$WHL"
           /tmp/vl-wheel-smoke/bin/python -c "import verifierlab; print(verifierlab.__version__)"
+          /tmp/vl-wheel-smoke/bin/valab --version
+          /tmp/vl-wheel-smoke/bin/valab doctor
+          /tmp/vl-wheel-smoke/bin/python scripts/check_wheel_contents.py "$WHL"
 
       - name: Fake campaign smoke (threads)
         run: |
@@ -88,6 +94,13 @@ jobs:
       - name: Reproducible campaign bundle (fake-smoke digests)
         run: |
           uv run python scripts/repro_bundle_check.py campaigns/fake-smoke.yaml
+
+      - name: Adapter matrix + science pack sidecars
+        run: |
+          uv run python scripts/generate_adapter_matrix.py
+          uv run python scripts/generate_adapter_matrix.py --check
+          uv run valab pack lint campaigns/packs/pack-a-outcome-vs-process.yaml --format json
+          uv run valab pack verify campaigns/packs/pack-b-rubric.yaml --format json
 
   process-matrix:
     name: Process workers (${{ matrix.os }})
@@ -140,3 +153,6 @@ jobs:
           tests/test_adapter_fixtures.py
           tests/test_adapters_scale.py
           -q
+
+      - name: Docker trust-boundary structure tests
+        run: uv run pytest tests/test_docker_trust_boundaries.py -q

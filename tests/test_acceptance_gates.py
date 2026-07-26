@@ -1,4 +1,4 @@
-"""Executable RC acceptance gates (§11) for VerifierLab 0.2.0rc1.
+"""Executable RC acceptance gates (§11) for VerifierLab 0.2.0rc2.
 
 Each gate is a named test class. Failures here are ship blockers for claiming
 scientific RC readiness — not cosmetic regressions.

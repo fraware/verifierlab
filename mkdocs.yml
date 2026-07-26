@@ -1,0 +1,94 @@
+site_name: VerifierLab
+site_description: Verifier Assurance Lab — local-first campaigns for verifier robustness
+site_url: https://fraware.github.io/verifierlab/
+repo_url: https://github.com/fraware/verifierlab
+repo_name: fraware/verifierlab
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: blue grey
+      accent: teal
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: blue grey
+      accent: teal
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+    - search.suggest
+    - toc.follow
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+
+extra:
+  product_status: 0.2.0rc2
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Concepts: concepts.md
+  - CLI: cli.md
+  - Architecture: architecture.md
+  - Methodology: methodology.md
+  - Adapters:
+      - Overview: adapters.md
+      - Matrix: adapters/matrix.md
+      - Native: adapters/native.md
+      - Gymnasium: adapters/gymnasium.md
+      - Inspect: adapters/inspect.md
+      - OpenEnv: adapters/openenv.md
+      - Harbor: adapters/harbor.md
+      - NeMo: adapters/nemo.md
+      - Trainer: adapters/trainer.md
+      - EnvAssure: adapters/envassure.md
+      - RLlib: adapters/rllib.md
+  - Attacks: attacks.md
+  - Labels and statistics: labels-and-stats.md
+  - Threat model: threat-model.md
+  - Disclosure: disclosure.md
+  - Reproduction checklist: reproduction-checklist.md
+  - Beta acceptance: beta-acceptance.md
+  - Limitations: limitations.md
+  - Contributing:
+      - Verifiers: contributing/verifiers.md
+      - Attacks: contributing/attacks.md
+      - Environments: contributing/environments.md
+      - Adapters: contributing/adapters.md
+      - Benchmark packs: contributing/benchmark-packs.md
+      - Statistics: contributing/statistics.md
+      - Defects: contributing/defects.md
+      - Release process: contributing/release-process.md
+  - Governance: governance/charter.md
+  - Good first issues: community/good-first-issues.md
+  - Templates:
+      - Disclosure: templates/disclosure.md
+      - Incident: templates/incident.md
+
+strict: true
+validation:
+  omitted_files: warn
+  absolute_links: info
+  unrecognized_links: warn

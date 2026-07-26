@@ -36,6 +36,6 @@ def test_disclosure_and_incident_templates_exist() -> None:
 
 def test_beta_acceptance_documents_rc_version() -> None:
     text = (DOCS / "beta-acceptance.md").read_text(encoding="utf-8")
-    assert "0.2.0rc1" in text
+    assert "0.2.0rc2" in text
     assert "SOTA" in text
     assert "Packs A-F" in text or "Packs A\u2013F" in text

@@ -280,3 +280,16 @@ def _parse_decision_field(
         score = float(decision_field)
         return DecisionKind.SCORE, score >= 0.5, None
     return None, None, "unrecognized_decision"
+
+
+# Public discoverability alias (docs / examples / plugin registry).
+VerifierDecision = Decision
+
+__all__ = [
+    "Decision",
+    "DecisionKind",
+    "DecisionStatus",
+    "VerifierDecision",
+    "kind_to_accepted",
+    "parse_decision_token",
+]

@@ -1,0 +1,20 @@
+{
+  "campaign": "pack-a-outcome-vs-process",
+  "content_digest": "9af574ad55defb9ddd2bc608d3c0a30117ce6354fedcb9fbdfacba6e349fdbaf",
+  "custodian_held": [
+    "ground_truth",
+    "unreleased_labels",
+    "vault_keys"
+  ],
+  "kind": "hidden_adjudication_protocol",
+  "labels_in_public_pack": false,
+  "release_gate": "freeze_then_adjudicate_then_release_labels",
+  "schema_version": "1",
+  "steps": [
+    "freeze",
+    "adjudicate",
+    "release_labels",
+    "compile_stats_plan"
+  ],
+  "summary": "Freeze attack artifacts, adjudicate with RefundGroundTruth in a separate plane, release labels only after freeze. Labels never ship in the public pack."
+}
