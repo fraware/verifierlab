@@ -1,0 +1,103 @@
+{
+  "schema_version": "1",
+  "title": "VerifierLab adapter matrix",
+  "generated_by": "scripts/generate_adapter_matrix.py",
+  "note": "Fixture-only paths are never labeled live. EnvAssure is not-live until the package is installable. RLlib is integration conformance only.",
+  "adapters": [
+    {
+      "adapter": "native",
+      "extra": null,
+      "status": "live",
+      "live_vs_fixture": "live",
+      "versions": {"python": ">=3.11,<3.14"},
+      "ci": "required",
+      "example": "examples/v1_native_verifier/",
+      "limitations": "No OS sandbox / soundness claim"
+    },
+    {
+      "adapter": "gymnasium",
+      "extra": "gym",
+      "status": "live",
+      "live_vs_fixture": "live",
+      "versions": {"gymnasium": ">=0.29,<1.3"},
+      "ci": "release-qualified",
+      "example": "examples/v2_gymnasium/",
+      "note": "Legacy gym is not a beta claim.",
+      "limitations": "Legacy gym; full RL stacks"
+    },
+    {
+      "adapter": "inspect",
+      "extra": "inspect",
+      "status": "live",
+      "live_vs_fixture": "live_task/scorer_verifier live when SDK present; eval_log_import fixture",
+      "versions": {"inspect-ai": ">=0.3.200,<0.4"},
+      "ci": "release-qualified",
+      "modes": ["live_task", "scorer_verifier", "eval_log_import"],
+      "example": "examples/v3_inspect/",
+      "note": "eval_log_import is fixture/regression and never labeled live.",
+      "limitations": "Fixture labeled as live"
+    },
+    {
+      "adapter": "openenv",
+      "extra": "openenv",
+      "status": "live-or-fixture",
+      "live_vs_fixture": "live HTTP reference; prefer official client when present",
+      "versions": {"openenv": ">=0.4,<0.5"},
+      "ci": "release-qualified",
+      "example": "examples/v4_openenv/",
+      "note": "HTTP reference path works without the heavy SDK.",
+      "limitations": "Hosted Spaces automation"
+    },
+    {
+      "adapter": "harbor",
+      "extra": "harbor",
+      "status": "fixture-or-live",
+      "live_vs_fixture": "ATIF fixture always; live SDK on Py>=3.12",
+      "versions": {"harbor": ">=0.17,<0.21", "python": ">=3.12"},
+      "ci": "optional",
+      "limitations": "Full Harbor orchestration"
+    },
+    {
+      "adapter": "nemo",
+      "extra": "nemo",
+      "status": "live",
+      "live_vs_fixture": "live vs in-repo reference HTTP server",
+      "versions": {},
+      "ci": "fixture",
+      "note": "Live against in-repo reference HTTP server.",
+      "limitations": "NVIDIA training containers"
+    },
+    {
+      "adapter": "trainer",
+      "extra": "trainer",
+      "status": "live",
+      "live_vs_fixture": "live (broker-metered trainer loop in base)",
+      "versions": {},
+      "ci": "fixture",
+      "note": "[rl]/[trainer] reserved for heavy SDKs; base loop is live.",
+      "limitations": "Heavy external SDKs"
+    },
+    {
+      "adapter": "envassure",
+      "extra": "envassure",
+      "status": "not-live",
+      "live_vs_fixture": "not-live",
+      "versions": {"envassure": ">=0.2.0b1,<0.3"},
+      "ci": "hard-fail-when-installable",
+      "example": "examples/v5_envassure/",
+      "note": "Package not yet published on PyPI; protocol/fixture tests only. Never claim live from fixtures.",
+      "limitations": "Fixture-as-live"
+    },
+    {
+      "adapter": "rllib",
+      "extra": "rllib",
+      "status": "partial",
+      "live_vs_fixture": "live-when-ray-installed (integration conformance)",
+      "versions": {"ray[rllib]": "==2.48.0"},
+      "ci": "skip-if-missing",
+      "example": "examples/v6_rllib/",
+      "note": "Integration conformance only — not a capability claim. Image is partial-qualification.",
+      "limitations": "Capability / SOTA results"
+    }
+  ]
+}

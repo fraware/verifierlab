@@ -1,14 +1,19 @@
-"""Episode execution for attack strategies against env/verifier/GT."""
+"""Episode execution for attack strategies against env + broker (no GT)."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
 
-from verifierlab.api.protocols import AttackStrategy, EnvironmentTarget, GroundTruthProvider
+from verifierlab.api.decision import DecisionKind
+from verifierlab.api.protocols import AttackStrategy, EnvironmentTarget
+from verifierlab.api.verifier import normalize_decision
 from verifierlab.artifacts.canonical import digest_of
+from verifierlab.attacks.runtime import bind_strategy_runtime
 from verifierlab.exploits.records import build_exploit_case
 from verifierlab.transcripts.audit import audit_transcript
+from verifierlab.verifiers.broker import VerifierBroker
+from verifierlab.verifiers.capabilities import capabilities_for
 
 # Fields attack strategies may observe. Ground-truth / labels are forbidden.
 _PUBLIC_FEEDBACK_ALLOW = frozenset(
@@ -54,6 +59,17 @@ def public_attack_feedback(feedback: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def trajectory_commitment(trajectory: dict[str, Any], nonce: str) -> str:
+    """Worker-safe commitment: digest(trajectory || coordinator nonce), no label."""
+    return digest_of(
+        {
+            "schema_version": "2",
+            "trajectory": trajectory,
+            "nonce": nonce,
+        }
+    )
+
+
 def enrich_episode_with_gt(
     result: dict[str, Any],
     *,
@@ -61,31 +77,37 @@ def enrich_episode_with_gt(
     cohort: str | None = None,
     access_model: str | None = None,
 ) -> dict[str, Any]:
-    """Coordinator-side GT evaluation after worker episode completion.
+    """Coordinator/adjudicator-side GT evaluation (never in attack workers).
 
-    Workers must not call this. Labels remain sealed in the vault; this only
-    attaches ``gt_valid`` for metrics / exploit triage on the coordinator.
+    Labels remain sealed in the vault until release; this attaches ``gt_valid``
+    for metrics / exploit triage after adjudication.
     """
     traj = result.get("trajectory") or {}
     gt_valid = bool(is_valid(traj))
     enriched = dict(result)
     enriched["gt_valid"] = gt_valid
-    # Coordinator metadata — never feed back into AttackStrategy.observe.
     enriched["label"] = None
     enriched["_coordinator_label"] = {"valid": gt_valid, "source": "coordinator_is_valid"}
 
     accepted = enriched.get("verifier_accepted")
     exploit = None
-    if accepted is True and gt_valid is False:
-        exploit = build_exploit_case(
+    dimensions = enriched.get("adjudication_dimensions") or enriched.get("dimensions")
+    if not isinstance(dimensions, dict):
+        dimensions = None
+    if accepted is True and (gt_valid is False or dimensions):
+        case = build_exploit_case(
             unit_id=str(enriched.get("unit_id") or "unknown"),
             trajectory=traj,
             cohort=str(cohort or enriched.get("cohort") or "optimized"),
             access_model=str(access_model or enriched.get("access_model") or "black-box"),
-        ).model_dump(mode="json")
+            dimensions=dimensions,
+            public_accepted=True,
+            hidden_valid=gt_valid,
+        )
+        if case.predicate is not None:
+            exploit = case.model_dump(mode="json")
     enriched["exploit"] = exploit
 
-    # Recompute digest over coordinator-enriched body (excludes private label blob).
     enriched["unit_digest"] = digest_of(
         {
             k: v
@@ -109,21 +131,28 @@ def run_episode(
     seed: int,
     max_steps: int,
     env: EnvironmentTarget,
-    verifier: Callable[[dict[str, Any]], Any],
-    gt: GroundTruthProvider,
     strategy: AttackStrategy,
     strategy_config: dict[str, Any],
     cohort: str,
     access_model: str,
     strategy_name: str,
-    reveal_labels: bool = False,
+    commitment_nonce: str,
+    broker: VerifierBroker | None = None,
+    verifier: Callable[[dict[str, Any]], Any] | None = None,
+    learning: bool = True,
+    split: str | None = None,
 ) -> dict[str, Any]:
-    """Run one episode; worker-safe view never includes pre-freeze labels.
+    """Run one episode on the attack plane: env + broker only (no GT).
 
-    Ground-truth validity is **not** evaluated here. The coordinator must call
-    :func:`enrich_episode_with_gt` after collection. Attack ``observe`` receives
-    public verifier signals only.
+    Commitment is ``digest(trajectory || coordinator_nonce)`` with no validity
+    bit. Ground truth is applied only by the adjudication service after freeze.
+
+    When ``learning`` is False (holdout), strategies must not update parameters;
+    the runtime binds ``learning=False`` before the episode loop.
     """
+    if broker is None and verifier is None:
+        raise ValueError("run_episode requires broker or verifier")
+
     obs = env.reset(seed=seed)
     cfg = {
         **strategy_config,
@@ -131,7 +160,11 @@ def run_episode(
         "max_steps": max_steps,
         "balance": obs.get("balance", 500),
     }
-    strategy.initialize(cfg)
+    # Only initialize when strategy has no prior restored state marker.
+    if not getattr(strategy, "_restored", False):
+        strategy.initialize(cfg)
+
+    bind_strategy_runtime(strategy, broker=broker, env=env, learning=learning)
 
     total_reward = 0.0
     last_obs = obs
@@ -144,80 +177,123 @@ def run_episode(
             break
 
     trajectory = env.finalize()
-    decision_raw = verifier(trajectory)
-    if isinstance(decision_raw, dict):
-        accepted = bool(decision_raw.get("accepted", decision_raw.get("decision")))
-        abstain = decision_raw.get("decision") == "abstain" or decision_raw.get("abstain") is True
-        if abstain:
-            accepted_value: bool | None = None
-        else:
-            accepted_value = accepted
+    if broker is not None:
+        decision = broker.query(trajectory, caller=f"episode:{unit_id}")
+        invocations = broker.event_dicts()
     else:
-        accepted_value = bool(decision_raw)
+        assert verifier is not None
+        decision = normalize_decision(verifier(trajectory))
+        invocations = [
+            {
+                "query_id": f"legacy-{unit_id}",
+                "input_digest": digest_of(trajectory),
+                "output_digest": digest_of(
+                    {"status": decision.status, "accepted": decision.accepted}
+                ),
+                "latency_ms": 0.0,
+                "caller": f"episode:{unit_id}",
+                "access_model": access_model,
+                "profile_digest": None,
+                "status": decision.status,
+                "accepted": decision.accepted,
+            }
+        ]
 
-    commitment = gt.commit(trajectory)
+    accepted_value: bool | None = decision.accepted
+    if decision.kind in {
+        DecisionKind.ABSTAIN,
+        DecisionKind.INDETERMINATE,
+        DecisionKind.ERROR,
+    }:
+        accepted_value = None
 
-    # Labels sealed until freeze+release; workers never see them.
-    label: dict[str, Any] | None = None
-    if reveal_labels:
-        label = gt.label(commitment, after_freeze=True)
+    # Capability-gated feedback score (VALAB-03): never synthesize a score from
+    # accept/reject under label_only; never invent 0.0 when the score channel
+    # is empty; never drop a real score under score_only (broker may synthesize
+    # score from accept when score_only strips the hard label).
+    caps = capabilities_for(access_model)
+    feedback_score: float | None = None
+    if caps.may_read_score:
+        if decision.score is not None:
+            feedback_score = float(decision.score)
+        elif caps.may_read_decision and accepted_value is not None:
+            feedback_score = 1.0 if accepted_value else 0.0
+
+    commitment = trajectory_commitment(trajectory, commitment_nonce)
 
     coverage: list[str] = []
-    reason_fn = getattr(verifier, "reason_codes", None)
-    mod = getattr(verifier, "__module__", None)
-    if callable(reason_fn):
-        coverage = list(reason_fn(trajectory))
-    elif mod:
+    verifier_fn = broker.verifier if broker is not None else verifier
+    reason_fn = getattr(verifier_fn, "reason_codes", None) if verifier_fn else None
+    mod = getattr(verifier_fn, "__module__", None) if verifier_fn else None
+    if caps.may_read_reason_codes and callable(reason_fn):
+        coverage = caps.filter_reason_codes(list(reason_fn(trajectory)))
+    elif caps.may_read_reason_codes and mod:
         try:
             import importlib
 
             m = importlib.import_module(mod)
             alt = getattr(m, "reason_codes", None)
             if callable(alt):
-                coverage = list(alt(trajectory))
+                coverage = caps.filter_reason_codes(list(alt(trajectory)))
         except Exception:
             coverage = []
     if not coverage:
-        coverage = [
-            f"accept:{accepted_value}",
-            f"ops:{[s.get('op') for s in trajectory.get('steps', [])]}",
-        ]
+        if caps.may_read_decision:
+            coverage = [
+                f"accept:{accepted_value}",
+                f"ops:{[s.get('op') for s in trajectory.get('steps', [])]}",
+            ]
+        elif caps.may_read_score:
+            coverage = [f"score:{feedback_score}"]
+        else:
+            coverage = ["feedback:none"]
+
+    # Black-box strategies only see decision/score; gray may keep allowlisted codes.
+    if caps.may_read_reason_codes:
+        public_coverage = caps.filter_reason_codes(coverage)
+    elif caps.may_read_score and not caps.may_read_decision:
+        public_coverage = [f"score:{feedback_score}"]
+    elif caps.may_read_decision:
+        public_coverage = [f"accept:{accepted_value}"]
+    else:
+        public_coverage = ["feedback:none"]
 
     raw_feedback = {
-        "verifier_accepted": accepted_value,
+        "verifier_accepted": accepted_value if caps.may_read_decision else None,
         "reward": total_reward,
         "observation": last_obs,
         "trajectory": trajectory,
-        "coverage": coverage,
-        "reason_codes": coverage,
+        "coverage": public_coverage,
+        "reason_codes": public_coverage if caps.may_read_reason_codes else [],
         "cost": float(max_steps),
-        "score": total_reward + (1.0 if accepted_value else 0.0),
+        "score": feedback_score if caps.may_read_score else None,
         "novel": False,
-        # Intentionally omitted: gt_valid / label — integrity boundary.
     }
     strategy.observe(public_attack_feedback(raw_feedback))
 
     result_body: dict[str, Any] = {
-        "schema_version": "1",
+        "schema_version": "2",
         "unit_id": unit_id,
         "seed": seed,
         "cohort": cohort,
         "strategy": strategy_name,
         "access_model": access_model,
+        "split": split,
+        "learning": learning,
         "trajectory": trajectory,
         "commitment": commitment,
-        "verifier_accepted": accepted_value,
-        "verifier_invocations": [
-            {
-                "trajectory_digest": digest_of(trajectory),
-                "accepted": accepted_value,
-            }
-        ],
-        "coverage": coverage,
+        "commitment_nonce": commitment_nonce,
+        "verifier_accepted": accepted_value if caps.may_read_decision else None,
+        "verifier_status": decision.status,
+        "verifier_kind": decision.kind.value,
+        "verifier_score": decision.score if caps.may_read_score else None,
+        "verifier_invocations": invocations,
+        "query_count": len(invocations),
+        "coverage": public_coverage,
         "reward": total_reward,
-        # GT filled by coordinator enrichment only.
-        "gt_valid": bool(label["valid"]) if label is not None else None,
-        "label": label if reveal_labels else None,
+        # GT filled only after freeze + adjudication + release.
+        "gt_valid": None,
+        "label": None,
         "exploit": None,
         "worker_safe": {"commitment": commitment, "label": None},
     }
@@ -230,11 +306,27 @@ def run_episode(
         }
     )
     result_body["transcript_audit"] = audit.as_dict()
-    result_body["unit_digest"] = digest_of(
-        {
-            k: v
-            for k, v in result_body.items()
-            if k not in {"unit_digest", "label", "transcript_audit"}
-        }
-    )
+    result_body["unit_digest"] = digest_of(_stable_episode_digest_body(result_body))
     return result_body
+
+
+def _stable_episode_digest_body(result_body: dict[str, Any]) -> dict[str, Any]:
+    """Digest semantic episode fields; exclude volatile query ids / latency."""
+    body = {
+        k: v
+        for k, v in result_body.items()
+        if k not in {"unit_digest", "label", "transcript_audit", "verifier_invocations"}
+    }
+    body["verifier_invocation_summaries"] = [
+        {
+            "input_digest": inv.get("input_digest"),
+            "output_digest": inv.get("output_digest"),
+            "status": inv.get("status"),
+            "accepted": inv.get("accepted"),
+            "access_model": inv.get("access_model"),
+            "profile_digest": inv.get("profile_digest"),
+        }
+        for inv in (result_body.get("verifier_invocations") or [])
+        if isinstance(inv, dict)
+    ]
+    return body

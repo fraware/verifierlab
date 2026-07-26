@@ -1,0 +1,89 @@
+name: Security
+
+# CodeQL on PR/push + dependency audit / SBOM on tags and manual dispatch.
+# High pip-audit findings fail the job on release tags (v*).
+
+on:
+  push:
+    branches: [main, release/0.2-rc]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, release/0.2-rc]
+  release:
+    types: [published]
+  schedule:
+    - cron: "42 7 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  security-events: write
+
+jobs:
+  codeql:
+    name: CodeQL (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          queries: security-extended
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:python"
+
+  audit-sbom:
+    name: Dependency audit + SBOM
+    runs-on: ubuntu-latest
+    # Always run on tags/releases/dispatch; on PR/push keep lean by skipping
+    # unless workflow_dispatch or tag/release.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'release' ||
+      startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        run: uv sync --extra dev
+
+      - name: Dependency audit (pip-audit)
+        id: audit
+        continue-on-error: ${{ !startsWith(github.ref, 'refs/tags/v') && github.event_name != 'release' }}
+        run: |
+          uv pip install pip-audit
+          # Fail on HIGH/CRITICAL for release tags; advisory for manual non-tag.
+          if [[ "${{ github.ref }}" == refs/tags/v* ]] || [[ "${{ github.event_name }}" == "release" ]]; then
+            uv run pip-audit --desc --severity-level=high
+          else
+            uv run pip-audit --desc
+          fi
+
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          uv pip install cyclonedx-bom
+          uv run cyclonedx-py environment -o sbom.cdx.json
+          test -s sbom.cdx.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: verifierlab-sbom
+          path: sbom.cdx.json

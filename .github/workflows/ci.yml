@@ -2,8 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, release/0.2-rc]
   pull_request:
+    branches: [main, release/0.2-rc]
   workflow_dispatch:
 
 jobs:
@@ -27,26 +28,131 @@ jobs:
       - name: Sync dependencies
         run: uv sync --extra dev
 
-      - name: Ruff
+      - name: Ruff lint
         run: uv run ruff check src tests
+
+      - name: Ruff format
+        run: uv run ruff format --check src tests
 
       - name: Mypy
         run: uv run mypy
 
-      - name: Pytest
-        run: uv run pytest
+      - name: Pytest (core + CI packs A/B/F)
+        # Phase D `[sandbox]` Docker tests skip or degrade when Docker is absent;
+        # declarative sandbox + plugin-hook unit tests always run in core pytest.
+        run: >
+          uv run pytest
+          --cov=verifierlab
+          --cov-report=term-missing
+          --cov-fail-under=40
+          -m "not pack_heavy"
 
       - name: Base import graph has no heavy ML deps
         run: uv run python scripts/check_base_imports.py
 
-      - name: Fake campaign smoke
+      - name: Package metadata URLs
+        run: uv run python scripts/check_package_metadata.py
+
+      - name: VALAB-01 doctor + campaign validate
+        run: |
+          uv run valab doctor
+          uv run valab campaign validate campaigns/fake-smoke.yaml
+
+      - name: Wheel build + install smoke
+        run: |
+          uv build --wheel --out-dir dist
+          WHL=$(ls dist/verifierlab-*.whl | head -n 1)
+          uv venv /tmp/vl-wheel-smoke --python "${{ matrix.python-version }}"
+          uv pip install --python /tmp/vl-wheel-smoke "$WHL"
+          /tmp/vl-wheel-smoke/bin/python -c "import verifierlab; print(verifierlab.__version__)"
+          /tmp/vl-wheel-smoke/bin/valab --version
+          /tmp/vl-wheel-smoke/bin/valab doctor
+          /tmp/vl-wheel-smoke/bin/python scripts/check_wheel_contents.py "$WHL"
+
+      - name: Fake campaign smoke (threads)
         run: |
           uv run valab init --force
           uv run valab campaign run campaigns/fake-smoke.yaml --threads --format json
 
-      - name: Refund tutorial smoke (offline)
+      # Process-pool smoke: requires module-level worker (campaigns/worker.py).
+      - name: Fake campaign smoke (processes)
         run: |
+          uv run valab init --force
+          uv run valab campaign run campaigns/fake-smoke.yaml --processes --format json
+
+      - name: Refund tutorial smoke (offline lifecycle)
+        run: |
+          uv run valab init --force
           uv run valab inspect examples.refunds.verifier:grade --format json
           uv run valab run campaigns/refund-ci-smoke.yaml --threads --format json
           RUN_DIR=$(ls -d .valab/runs/run-* | head -n 1)
+          uv run valab campaign freeze "$RUN_DIR"
+          uv run valab campaign adjudicate "$RUN_DIR" --campaign campaigns/refund-ci-smoke.yaml
+          uv run valab campaign release-labels "$RUN_DIR"
           uv run valab report builds "$RUN_DIR" --format json
+
+      - name: Reproducible campaign bundle (fake-smoke digests)
+        run: |
+          uv run python scripts/repro_bundle_check.py campaigns/fake-smoke.yaml
+
+      - name: Adapter matrix + science pack sidecars
+        run: |
+          uv run python scripts/generate_adapter_matrix.py
+          uv run python scripts/generate_adapter_matrix.py --check
+          uv run valab pack lint campaigns/packs/pack-a-outcome-vs-process.yaml --format json
+          uv run valab pack verify campaigns/packs/pack-b-rubric.yaml --format json
+
+  process-matrix:
+    name: Process workers (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Sync dependencies
+        run: uv sync --extra dev
+
+      - name: Process campaign smoke
+        shell: bash
+        run: |
+          uv run valab init --force
+          uv run valab campaign run campaigns/fake-smoke.yaml --processes --format json
+
+      - name: Process worker unit tests
+        shell: bash
+        run: uv run pytest tests/test_process_worker.py -q
+
+  # Fixture / reference-server adapter paths (no heavy SDKs required).
+  adapter-fixtures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.12
+      # VALAB-09: gym fixture path is mandatory here; live SDKs stay skip-if-missing.
+      - run: uv sync --extra dev --extra gym
+      - name: Adapter conformance + fixture regression
+        run: >
+          uv run pytest
+          tests/test_adapter_conformance.py
+          tests/test_adapter_fixtures.py
+          tests/test_adapters_scale.py
+          -q
+
+      - name: Docker trust-boundary structure tests
+        run: uv run pytest tests/test_docker_trust_boundaries.py -q

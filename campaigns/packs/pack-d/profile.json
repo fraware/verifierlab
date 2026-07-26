@@ -1,0 +1,49 @@
+{
+  "access_surface": {
+    "inputs": [
+      "trajectory",
+      "observation"
+    ],
+    "may_import_label_vault": false,
+    "may_read_ground_truth": false,
+    "may_read_hidden_labels": false,
+    "stdout_protocol": "json_decision"
+  },
+  "applicability": {
+    "access_model": "adaptive",
+    "campaign": "pack-d-eval-cheating",
+    "decision_space": "binary",
+    "requires_hidden_labels": false,
+    "target_kinds": [
+      "python",
+      "python",
+      "native"
+    ]
+  },
+  "config_digest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+  "content_digest": "7d3bc00488528aa7c7c762ec6e922905fea2574e6c29e9a2fe8928738bf06c27",
+  "decision_semantics": {
+    "fail_closed": true,
+    "status_set": [
+      "accept",
+      "reject",
+      "abstain",
+      "indeterminate",
+      "error"
+    ]
+  },
+  "decision_space": "binary",
+  "implementation_digest": "22182b621208f6276054f1f2dee8bfe529f85d783f3514666e3de0cee8f54c28",
+  "limitations": [],
+  "metadata": {
+    "pack": "D",
+    "pinned_versions": {
+      "campaign": "pack-d@1",
+      "verifierlab": "0.2.0rc2"
+    },
+    "theme": "evaluation-cheating"
+  },
+  "name": "examples.refunds.verifier:grade",
+  "rubric_digest": null,
+  "schema_version": "1"
+}

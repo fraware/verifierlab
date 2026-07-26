@@ -1,0 +1,20 @@
+{
+  "campaign": "pack-c-isomorphic",
+  "content_digest": "a6c2ea7f00ef1a052d2a7446f4172298b82e495d6e8a8abc69ee99cc3b4ceb65",
+  "custodian_held": [
+    "ground_truth",
+    "unreleased_labels",
+    "vault_keys"
+  ],
+  "kind": "hidden_adjudication_protocol",
+  "labels_in_public_pack": false,
+  "release_gate": "freeze_then_adjudicate_then_release_labels",
+  "schema_version": "1",
+  "steps": [
+    "freeze",
+    "adjudicate",
+    "release_labels",
+    "compile_stats_plan"
+  ],
+  "summary": "Adjudication compares commitments against hidden isomorphic ground truth after freeze; labels stay custodian-held until release."
+}

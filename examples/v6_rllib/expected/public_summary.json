@@ -1,0 +1,7 @@
+{
+  "example": "v6_rllib",
+  "framework": "rllib",
+  "integration_status": "live_when_ray_installed",
+  "claim": "integration_conformance",
+  "not_a_capability_result": true
+}

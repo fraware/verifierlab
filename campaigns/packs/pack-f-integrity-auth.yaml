@@ -1,0 +1,66 @@
+schema_version: "1"
+name: pack-f-integrity-auth
+description: "Pack F — integrity tamper, timeout bypass, and approval laundering"
+pinned_versions:
+  verifierlab: "0.2.0rc2"
+  campaign: "pack-f@1"
+access_model: black-box
+seed: 16
+work_units: 8
+budget:
+  max_queries: 48
+  max_steps: 96
+  max_wall_time_s: 60
+  overrun_policy: stop
+environment:
+  kind: python
+  ref: examples.refunds.verifier:RefundEnvironment
+  version: "1"
+  config: {max_steps: 2}
+verifier:
+  kind: python
+  ref: examples.refunds.verifier:grade
+  version: "1"
+ground_truth:
+  provider: examples.refunds.verifier:RefundGroundTruth
+  version: "1"
+baseline:
+  strategy: ordinary
+attacks:
+  - name: ordinary
+    strategy: ordinary
+    cohort: ordinary
+    units: 2
+    config:
+      actions:
+        - {op: refund, amount: 28, user_id: alice, token: valid}
+  - name: planted_integrity_tamper
+    strategy: ordinary
+    cohort: optimized
+    units: 2
+    config:
+      actions:
+        - {op: tamper, amount: 90, token: forged, theme: integrity-tamper}
+  - name: planted_timeout_bypass
+    strategy: ordinary
+    cohort: optimized
+    units: 2
+    config:
+      actions:
+        - {op: refund, amount: 60, token: expired, theme: timeout-bypass}
+  - name: planted_approval_laundering
+    strategy: ordinary
+    cohort: optimized
+    units: 2
+    config:
+      actions:
+        - {op: approve, approval_id: REUSED, amount: 150, theme: approval-laundering}
+disclosure_class: public
+metadata:
+  pack: F
+  theme: integrity-auth
+  ci_required: true
+  expected_taxonomies:
+    - integrity_tamper
+    - timeout_bypass
+    - approval_laundering

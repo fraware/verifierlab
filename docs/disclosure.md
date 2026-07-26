@@ -9,6 +9,11 @@ Module: `verifierlab.disclosure` (`DisclosureRegistry`, `DisclosureRecord`,
 
 CLI wrappers (`valab disclose *`) are intentionally deferred; use the Python API.
 
+Community templates:
+
+- [templates/disclosure.md](templates/disclosure.md) — third-party verifier finding
+- [templates/incident.md](templates/incident.md) — VerifierLab integrity incident
+
 ## States
 
 | State | Meaning |
@@ -40,7 +45,7 @@ registry state.
 
 ## Reporting vulnerabilities *in* VerifierLab
 
-See [SECURITY.md](../SECURITY.md). Do not confuse product vulnerability reports
+See [SECURITY.md](https://github.com/fraware/verifierlab/blob/main/SECURITY.md). Do not confuse product vulnerability reports
 with campaign disclosures of third-party verifier failures.
 
 ## Related

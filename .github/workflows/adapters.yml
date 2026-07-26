@@ -1,0 +1,104 @@
+name: Adapters
+
+# Scheduled / on-demand extras matrix. Release-qualified extras hard-fail when
+# their marked suite fails. Non-qualified extras may soft-fail (continue-on-error).
+
+on:
+  schedule:
+    - cron: "17 6 * * 1" # weekly Monday 06:17 UTC
+  workflow_dispatch:
+  push:
+    branches: [main, release/0.2-rc]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, release/0.2-rc]
+    paths:
+      - "src/verifierlab/targets/**"
+      - "src/verifierlab/trainers/**"
+      - "src/verifierlab/attacks/rl.py"
+      - "tests/test_adapter*.py"
+      - "tests/test_gym_live.py"
+      - "tests/test_adapters_scale.py"
+      - "tests/integration/**"
+      - "examples/v*/**"
+      - "pyproject.toml"
+      - ".github/workflows/adapters.yml"
+
+jobs:
+  extras:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - extra: gym
+            marker: gym
+            python: "3.12"
+            release_required: true
+          - extra: inspect
+            marker: inspect
+            python: "3.12"
+            release_required: true
+          - extra: openenv
+            marker: openenv
+            python: "3.12"
+            release_required: true
+          - extra: harbor
+            marker: harbor
+            python: "3.12"
+            release_required: false
+          - extra: objectstore
+            marker: objectstore
+            python: "3.12"
+            release_required: false
+          - extra: envassure
+            marker: envassure
+            python: "3.12"
+            release_required: false
+          - extra: rllib
+            marker: rllib
+            python: "3.12"
+            release_required: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python ${{ matrix.python }}
+        run: uv python install ${{ matrix.python }}
+
+      - name: Sync with extra
+        id: sync
+        continue-on-error: ${{ matrix.extra == 'envassure' }}
+        run: uv sync --extra dev --extra ${{ matrix.extra }}
+
+      - name: Sync base when envassure unpublishable
+        if: ${{ matrix.extra == 'envassure' && steps.sync.outcome != 'success' }}
+        run: |
+          echo "envassure package not installable; running protocol/fixture suite as not-live"
+          uv sync --extra dev
+
+      - name: Pytest marked suite (release-qualified hard-fail)
+        if: ${{ matrix.release_required }}
+        run: uv run pytest -m "${{ matrix.marker }}" -q
+
+      - name: Pytest marked suite (optional soft-fail)
+        if: ${{ !matrix.release_required }}
+        continue-on-error: true
+        run: uv run pytest -m "${{ matrix.marker }}" -q
+
+  pack-heavy:
+    name: Packs C/D/E (optional / nightly)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.12
+      - run: uv sync --extra dev
+      - name: Run heavy science packs
+        run: uv run pytest tests/test_packs.py -m pack_heavy -q

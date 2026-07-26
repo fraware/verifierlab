@@ -62,9 +62,7 @@ def exact_clopper_pearson(successes: int, n: int, *, alpha: float = 0.05) -> Int
         raise ValueError(f"successes must be in [0, n], got {successes} / {n}")
     p = successes / n
     low = _beta_ppf(alpha / 2, successes, n - successes + 1) if successes > 0 else 0.0
-    high = (
-        _beta_ppf(1 - alpha / 2, successes + 1, n - successes) if successes < n else 1.0
-    )
+    high = _beta_ppf(1 - alpha / 2, successes + 1, n - successes) if successes < n else 1.0
     return Interval(p, float(low), float(high), "exact", n)
 
 

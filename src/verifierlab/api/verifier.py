@@ -10,7 +10,14 @@ from typing import Any, ParamSpec, TypeVar, overload
 
 from verifierlab.api.decision import Decision
 from verifierlab.artifacts.canonical import digest_of, sha256_digest
-from verifierlab.artifacts.records import DecisionSpace, SourceLocation, VerifierSpec
+from verifierlab.artifacts.records import (
+    AbstentionBehavior,
+    AccessModel,
+    DecisionSpace,
+    SideEffects,
+    SourceLocation,
+    VerifierSpec,
+)
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -51,8 +58,7 @@ def _callable_source_digest(fn: Callable[..., Any]) -> tuple[SourceLocation, str
 
 
 @overload
-def verifier(fn: Callable[P, R]) -> Callable[P, R]:
-    ...
+def verifier(fn: Callable[P, R]) -> Callable[P, R]: ...
 
 
 @overload
@@ -62,10 +68,18 @@ def verifier(
     decision_space: DecisionSpace | str = DecisionSpace.BINARY,
     input_schema: dict[str, Any] | None = None,
     output_schema: dict[str, Any] | None = None,
+    stochastic: bool = False,
+    allowed_exceptions: list[str] | None = None,
+    score_range: tuple[float, float] | list[float] | None = None,
+    abstention: AbstentionBehavior | str = AbstentionBehavior.UNSUPPORTED,
+    timeout_s: float | None = None,
+    side_effects: SideEffects | str = SideEffects.NONE,
+    external_resources: list[str] | None = None,
+    version: str = "0.0.0",
+    access_model: AccessModel | str = AccessModel.BLACK_BOX,
     limitations: list[str] | None = None,
     metadata: dict[str, Any] | None = None,
-) -> Callable[[Callable[P, R]], Callable[P, R]]:
-    ...
+) -> Callable[[Callable[P, R]], Callable[P, R]]: ...
 
 
 def verifier(
@@ -75,13 +89,24 @@ def verifier(
     decision_space: DecisionSpace | str = DecisionSpace.BINARY,
     input_schema: dict[str, Any] | None = None,
     output_schema: dict[str, Any] | None = None,
+    stochastic: bool = False,
+    allowed_exceptions: list[str] | None = None,
+    score_range: tuple[float, float] | list[float] | None = None,
+    abstention: AbstentionBehavior | str = AbstentionBehavior.UNSUPPORTED,
+    timeout_s: float | None = None,
+    side_effects: SideEffects | str = SideEffects.NONE,
+    external_resources: list[str] | None = None,
+    version: str = "0.0.0",
+    access_model: AccessModel | str = AccessModel.BLACK_BOX,
     limitations: list[str] | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> Callable[P, R] | Callable[[Callable[P, R]], Callable[P, R]]:
     """Mark a plain-Python callable as a VerifierLab verifier.
 
     Attaches a :class:`VerifierSpec` on ``__verifier_spec__`` and registers it
-    under ``module:qualname``.
+    under ``module:qualname``. New verifiers must declare ``input_schema`` and
+    ``output_schema`` (or set ``metadata["legacy_contract"]=True`` during the
+    one-release migration window).
     """
 
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
@@ -91,6 +116,18 @@ def verifier(
             if isinstance(decision_space, DecisionSpace)
             else DecisionSpace(decision_space)
         )
+        abst = (
+            abstention
+            if isinstance(abstention, AbstentionBehavior)
+            else AbstentionBehavior(abstention)
+        )
+        sides = side_effects if isinstance(side_effects, SideEffects) else SideEffects(side_effects)
+        access = (
+            access_model if isinstance(access_model, AccessModel) else AccessModel(access_model)
+        )
+        range_tuple: tuple[float, float] | None = None
+        if score_range is not None:
+            range_tuple = (float(score_range[0]), float(score_range[1]))
         spec = VerifierSpec(
             name=name or func.__qualname__,
             source=location,
@@ -98,6 +135,15 @@ def verifier(
             decision_space=space,
             input_schema=input_schema,
             output_schema=output_schema,
+            stochastic=stochastic,
+            allowed_exceptions=list(allowed_exceptions or []),
+            score_range=range_tuple,
+            abstention=abst,
+            timeout_s=timeout_s,
+            side_effects=sides,
+            external_resources=list(external_resources or []),
+            version=version,
+            access_model=access,
             limitations=list(limitations or []),
             metadata=dict(metadata or {}),
         )

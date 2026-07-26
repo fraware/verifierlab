@@ -1,6 +1,6 @@
 # Threat model
 
-Status: **research draft** (alpha `0.1.0a0` surfaces). See also
+Status: **research draft** (`0.2.0rc2` release-candidate surfaces). See also
 [limitations.md](limitations.md) for honest non-claims on adapters and launchers.
 
 ## Assets
@@ -55,4 +55,4 @@ not be pooled across access classes without stratification.
 
 ## Reporting product vulnerabilities
 
-See [SECURITY.md](../SECURITY.md).
+See [SECURITY.md](https://github.com/fraware/verifierlab/blob/main/SECURITY.md).

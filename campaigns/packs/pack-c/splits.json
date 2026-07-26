@@ -1,0 +1,22 @@
+{
+  "campaign": "pack-c-isomorphic",
+  "content_digest": "1956eccae97785aa00760c9d1b4351f35aaaf3bc065acb6e97e63cd999c7c8a5",
+  "schema_version": "1",
+  "splits": [
+    {
+      "count": 3,
+      "fraction": null,
+      "label_tier": "development",
+      "name": "train",
+      "seed": 13
+    },
+    {
+      "count": 3,
+      "fraction": null,
+      "label_tier": "release",
+      "name": "holdout",
+      "seed": 13
+    }
+  ],
+  "work_units": 6
+}

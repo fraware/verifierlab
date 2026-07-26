@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from verifierlab.api.decision import DecisionKind, kind_to_accepted, parse_decision_token
+
 
 @dataclass
 class CohortMetrics:
@@ -62,14 +64,20 @@ class MetricsReport:
     access_model: str
     cohorts: dict[str, CohortMetrics] = field(default_factory=dict)
     overall: CohortMetrics = field(default_factory=lambda: CohortMetrics(cohort="overall"))
+    pool_overall: bool = False
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        body: dict[str, Any] = {
             "schema_version": "1",
             "access_model": self.access_model,
-            "overall": self.overall.as_dict(),
+            "pool_overall": self.pool_overall,
             "cohorts": {k: v.as_dict() for k, v in sorted(self.cohorts.items())},
         }
+        if self.pool_overall:
+            body["overall"] = self.overall.as_dict()
+        else:
+            body["overall"] = None
+        return body
 
 
 def _update(
@@ -111,22 +119,54 @@ class AccessModelPoolError(ValueError):
     """Raised when results mix access models without explicit stratification."""
 
 
+class MetricsIngestError(ValueError):
+    """Raised when accepted/valid labels are not bool or a recognized decision enum."""
+
+
+def _normalize_label_bool(value: Any, *, field: str) -> bool | None:
+    """Fail-closed bool/enum ingestion — never ``bool(\"false\")`` / ``bool(\"reject\")``."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, DecisionKind):
+        return kind_to_accepted(value)
+    if isinstance(value, str):
+        kind = parse_decision_token(value)
+        if kind is None:
+            raise MetricsIngestError(
+                f"invalid {field} value {value!r}: expected bool or decision enum, "
+                "refusing truthiness coercion"
+            )
+        return kind_to_accepted(kind)
+    raise MetricsIngestError(
+        f"invalid {field} type {type(value).__name__}: expected bool or decision enum, "
+        "refusing truthiness coercion"
+    )
+
+
 def compute_metrics(
     results: list[dict[str, Any]],
     *,
     access_model: str = "black-box",
+    pool_overall: bool = False,
 ) -> MetricsReport:
-    """Compute FAR/FRR stratified by cohort; never pool across access models."""
-    return compute_metrics_iter(results, access_model=access_model)
+    """Compute FAR/FRR stratified by cohort; never pool across access models.
+
+    Overall cohort pooling is **disabled by default** (VAL-C14). Pass
+    ``pool_overall=True`` only when an explicit analysis requests it.
+    """
+    return compute_metrics_iter(results, access_model=access_model, pool_overall=pool_overall)
 
 
 def compute_metrics_iter(
     results: Any,
     *,
     access_model: str = "black-box",
+    pool_overall: bool = False,
 ) -> MetricsReport:
     """Streaming FAR/FRR; refuses silent pooling across access-model classes."""
-    report = MetricsReport(access_model=access_model)
+    report = MetricsReport(access_model=access_model, pool_overall=pool_overall)
     for row in results:
         row_access = row.get("access_model")
         if row_access is not None and str(row_access) != access_model:
@@ -136,25 +176,23 @@ def compute_metrics_iter(
             )
         cohort = str(row.get("cohort") or "unknown")
         failed = bool(row.get("error")) or row.get("status") == "failed"
-        accepted = row.get("verifier_accepted")
-        if accepted is None and "decision" in row and not failed:
-            decision = row["decision"]
-            if decision == "abstain":
-                accepted = None
-            elif isinstance(decision, bool):
-                accepted = decision
-        valid = row.get("gt_valid")
-        if valid is None and "label" in row and isinstance(row["label"], dict):
-            valid = row["label"].get("valid")
+        accepted_raw = row.get("verifier_accepted")
+        if accepted_raw is None and "decision" in row and not failed:
+            accepted_raw = row["decision"]
+        valid_raw = row.get("gt_valid")
+        if valid_raw is None and "label" in row and isinstance(row["label"], dict):
+            valid_raw = row["label"].get("valid")
         abstain = bool(row.get("abstain")) or (
             isinstance(row.get("decision"), str) and row.get("decision") == "abstain"
         )
+        if not failed:
+            accepted_n = _normalize_label_bool(accepted_raw, field="verifier_accepted")
+            valid_n = _normalize_label_bool(valid_raw, field="gt_valid")
+        else:
+            accepted_n = None
+            valid_n = None
         if cohort not in report.cohorts:
             report.cohorts[cohort] = CohortMetrics(cohort=cohort)
-        accepted_n = (
-            accepted if isinstance(accepted, bool) or accepted is None else bool(accepted)
-        )
-        valid_n = valid if isinstance(valid, bool) or valid is None else bool(valid)
         _update(
             report.cohorts[cohort],
             accepted=accepted_n,
@@ -162,11 +200,15 @@ def compute_metrics_iter(
             abstain=abstain,
             failed=failed,
         )
-        _update(
-            report.overall,
-            accepted=accepted_n,
-            valid=valid_n,
-            abstain=abstain,
-            failed=failed,
-        )
+        if pool_overall:
+            _update(
+                report.overall,
+                accepted=accepted_n,
+                valid=valid_n,
+                abstain=abstain,
+                failed=failed,
+            )
+    if not pool_overall:
+        # Leave overall empty (n=0) so callers do not silently use pooled rates.
+        report.overall = CohortMetrics(cohort="overall")
     return report

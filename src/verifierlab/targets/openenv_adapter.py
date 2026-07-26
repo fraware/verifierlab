@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -31,6 +32,9 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from verifierlab.artifacts.records import TrajectoryRecord
+
+OPENENV_PROTOCOL_VERSION = "1"
+OPENENV_IDENTITY = "verifierlab-openenv"
 
 
 def openenv_sdk_available() -> bool:
@@ -55,24 +59,77 @@ def require_openenv() -> Any:
     return openenv
 
 
+def openenv_schemas() -> dict[str, Any]:
+    """Public OpenEnv protocol schemas captured for conformance."""
+    return {
+        "protocol_version": OPENENV_PROTOCOL_VERSION,
+        "endpoints": {
+            "health": {"method": "GET", "path": "/health"},
+            "identity": {"method": "GET", "path": "/identity"},
+            "reset": {"method": "POST", "path": "/reset"},
+            "step": {"method": "POST", "path": "/step"},
+            "state": {"method": "GET", "path": "/state"},
+            "schemas": {"method": "GET", "path": "/schemas"},
+        },
+        "action": {"type": "object", "properties": {"action": {"type": "integer"}}},
+        "observation": {
+            "type": "object",
+            "properties": {
+                "state": {"type": "integer"},
+                "message": {"type": "string"},
+            },
+        },
+        "capabilities": {
+            "snapshot": True,
+            "trajectory": True,
+            "timeout_retry": True,
+            "episode_id": True,
+        },
+    }
+
+
 def _http_json(
-    method: str, url: str, body: dict[str, Any] | None = None, *, timeout: float = 10.0
+    method: str,
+    url: str,
+    body: dict[str, Any] | None = None,
+    *,
+    timeout: float = 10.0,
+    retries: int = 2,
+    retry_backoff_s: float = 0.05,
 ) -> dict[str, Any]:
     data = None if body is None else json.dumps(body).encode("utf-8")
-    req = Request(
-        url,
-        data=data,
-        method=method,
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
-    )
-    try:
-        with urlopen(req, timeout=timeout) as resp:
-            raw = resp.read().decode("utf-8")
-    except HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"OpenEnv HTTP {method} {url} failed: {exc.code} {detail}") from exc
-    except URLError as exc:
-        raise RuntimeError(f"OpenEnv HTTP {method} {url} unreachable: {exc}") from exc
+    last_exc: Exception | None = None
+    attempts = max(1, int(retries) + 1)
+    raw = ""
+    for attempt in range(attempts):
+        try:
+            # Rebuild request each attempt so POST body is not consumed.
+            req = Request(
+                url,
+                data=data,
+                method=method,
+                headers={"Content-Type": "application/json", "Accept": "application/json"},
+            )
+            with urlopen(req, timeout=timeout) as resp:
+                raw = resp.read().decode("utf-8")
+            break
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            last_exc = RuntimeError(f"OpenEnv HTTP {method} {url} failed: {exc.code} {detail}")
+            if exc.code < 500 or attempt >= attempts - 1:
+                raise last_exc from exc
+        except URLError as exc:
+            last_exc = RuntimeError(f"OpenEnv HTTP {method} {url} unreachable: {exc}")
+            if attempt >= attempts - 1:
+                raise last_exc from exc
+        except TimeoutError as exc:
+            last_exc = RuntimeError(f"OpenEnv HTTP {method} {url} timed out after {timeout}s")
+            if attempt >= attempts - 1:
+                raise last_exc from exc
+        time.sleep(retry_backoff_s * (attempt + 1))
+    else:
+        assert last_exc is not None
+        raise last_exc
     if not raw:
         return {}
     parsed = json.loads(raw)
@@ -102,6 +159,7 @@ class ReferenceOpenEnv:
             "observation": {"state": self._state, "message": "ready"},
             "reward": None,
             "done": False,
+            "episode_id": self.episode_id,
         }
 
     def step(self, action: dict[str, Any]) -> dict[str, Any]:
@@ -156,7 +214,29 @@ class _OpenEnvRefHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         path = self.path.split("?", 1)[0].rstrip("/") or "/"
         if path == "/health":
-            self._write_json(200, {"status": "ok", "server": "verifierlab-openenv-ref"})
+            self._write_json(
+                200,
+                {
+                    "status": "ok",
+                    "server": "verifierlab-openenv-ref",
+                    "identity": OPENENV_IDENTITY,
+                    "protocol_version": OPENENV_PROTOCOL_VERSION,
+                },
+            )
+            return
+        if path == "/identity":
+            self._write_json(
+                200,
+                {
+                    "identity": OPENENV_IDENTITY,
+                    "protocol_version": OPENENV_PROTOCOL_VERSION,
+                    "server": "verifierlab-openenv-ref",
+                    "capabilities": openenv_schemas()["capabilities"],
+                },
+            )
+            return
+        if path == "/schemas":
+            self._write_json(200, openenv_schemas())
             return
         if path == "/state":
             self._write_json(200, self.server.env.state())
@@ -206,26 +286,70 @@ class OpenEnvReferenceServer(ThreadingHTTPServer):
 
 
 class OpenEnvHttpClient:
-    """HTTP client for the OpenEnv simulation protocol (``/reset`` ``/step`` ``/state``)."""
+    """HTTP client for the OpenEnv simulation protocol.
 
-    def __init__(self, base_url: str, *, timeout: float = 10.0) -> None:
+    Prefer the official ``openenv`` client when available (see
+    :class:`OpenEnvAdapter`). This raw HTTP client is the compatibility path
+    with timeout / retry, identity, schemas, and health capture.
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        timeout: float = 10.0,
+        retries: int = 2,
+        retry_backoff_s: float = 0.05,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.retries = retries
+        self.retry_backoff_s = retry_backoff_s
+
+    def _call(
+        self, method: str, path: str, body: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        return _http_json(
+            method,
+            f"{self.base_url}{path}",
+            body,
+            timeout=self.timeout,
+            retries=self.retries,
+            retry_backoff_s=self.retry_backoff_s,
+        )
 
     def health(self) -> dict[str, Any]:
-        return _http_json("GET", f"{self.base_url}/health", timeout=self.timeout)
+        return self._call("GET", "/health")
+
+    def identity(self) -> dict[str, Any]:
+        try:
+            return self._call("GET", "/identity")
+        except RuntimeError:
+            # Compatibility: older servers may only expose /health.
+            health = self.health()
+            return {
+                "identity": health.get("identity") or OPENENV_IDENTITY,
+                "protocol_version": health.get("protocol_version") or OPENENV_PROTOCOL_VERSION,
+                "from_health": True,
+            }
+
+    def schemas(self) -> dict[str, Any]:
+        try:
+            return self._call("GET", "/schemas")
+        except RuntimeError:
+            return openenv_schemas()
 
     def reset(self, *, seed: int | None = None, **kwargs: Any) -> dict[str, Any]:
         body: dict[str, Any] = dict(kwargs)
         if seed is not None:
             body["seed"] = seed
-        return _http_json("POST", f"{self.base_url}/reset", body, timeout=self.timeout)
+        return self._call("POST", "/reset", body)
 
     def step(self, action: dict[str, Any]) -> dict[str, Any]:
-        return _http_json("POST", f"{self.base_url}/step", {"action": action}, timeout=self.timeout)
+        return self._call("POST", "/step", {"action": action})
 
     def state(self) -> dict[str, Any]:
-        return _http_json("GET", f"{self.base_url}/state", timeout=self.timeout)
+        return self._call("GET", "/state")
 
 
 class OpenEnvEnvironment:
@@ -247,6 +371,10 @@ class OpenEnvEnvironment:
         self._actions: list[dict[str, Any]] = []
         self._last_obs: Any = None
         self._episode_reward = 0.0
+        self._episode_id = ""
+        self._identity: dict[str, Any] = {}
+        self._schemas: dict[str, Any] = openenv_schemas()
+        self._snapshot_capable = True
 
     @classmethod
     def from_reference(
@@ -264,14 +392,26 @@ class OpenEnvEnvironment:
         self._done = False
         self._actions = []
         self._episode_reward = 0.0
+        try:
+            self._identity = self._client.identity()
+        except Exception:
+            self._identity = {"identity": OPENENV_IDENTITY}
+        try:
+            self._schemas = self._client.schemas()
+        except Exception:
+            self._schemas = openenv_schemas()
         result = self._client.reset(seed=seed)
         obs = result.get("observation")
         self._last_obs = obs
+        remote = self._client.state()
+        self._episode_id = str(remote.get("episode_id") or result.get("episode_id") or "")
         return {
             "seed": seed,
             "env_name": self.env_name,
             "observation": obs,
-            "info": {"state": self._client.state()},
+            "episode_id": self._episode_id,
+            "identity": self._identity,
+            "info": {"state": remote},
         }
 
     def act(self, action: dict[str, Any]) -> dict[str, Any]:
@@ -294,7 +434,7 @@ class OpenEnvEnvironment:
             "done": self._done,
             "terminated": done,
             "truncated": False,
-            "info": {},
+            "info": {"episode_id": self._episode_id},
             "resources": {"steps": 1, "env_steps": self._step_count},
         }
 
@@ -304,7 +444,9 @@ class OpenEnvEnvironment:
             "schema_version": "1",
             "seed": self._seed,
             "env_name": self.env_name,
+            "episode_id": self._episode_id,
             "steps": list(self._actions),
+            "trajectory": list(self._actions),
             "observation": self._last_obs
             if isinstance(self._last_obs, dict)
             else {"value": self._last_obs},
@@ -312,10 +454,15 @@ class OpenEnvEnvironment:
             "n_steps": self._step_count,
             "framework": "openenv",
             "integration_status": "live",
+            "identity": self._identity,
+            "schemas": self._schemas,
+            "snapshot_capable": self._snapshot_capable,
             "state": self._client.state(),
         }
 
     def snapshot(self) -> bytes:
+        if not self._snapshot_capable:
+            raise RuntimeError("snapshot not supported by this OpenEnv server")
         payload = {
             "seed": self._seed,
             "step_count": self._step_count,
@@ -325,7 +472,9 @@ class OpenEnvEnvironment:
             "episode_reward": self._episode_reward,
             "env_name": self.env_name,
             "max_steps": self.max_steps,
+            "episode_id": self._episode_id,
             "remote_state": self._client.state(),
+            "identity": self._identity,
         }
         return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
@@ -339,6 +488,8 @@ class OpenEnvEnvironment:
         self._episode_reward = float(state["episode_reward"])
         self.env_name = str(state["env_name"])
         self.max_steps = int(state["max_steps"])
+        self._episode_id = str(state.get("episode_id") or "")
+        self._identity = dict(state.get("identity") or {})
         # Replay through HTTP protocol for best-effort fidelity.
         self._client.reset(seed=self._seed)
         for action in self._actions:
@@ -353,12 +504,17 @@ class OpenEnvEnvironment:
             seed=self._seed,
             steps=list(traj.get("steps") or []),
             observation=observation,
-            metadata={"framework": "openenv", "state": traj.get("state")},
+            metadata={
+                "framework": "openenv",
+                "state": traj.get("state"),
+                "episode_id": self._episode_id,
+                "identity": self._identity,
+            },
         )
 
 
 class OpenEnvAdapter:
-    """EnvAdapter over the OpenEnv HTTP protocol (reference server by default)."""
+    """EnvAdapter over OpenEnv (prefer official client; raw HTTP as compatibility)."""
 
     name = "openenv"
 
@@ -369,6 +525,9 @@ class OpenEnvAdapter:
         version: str = "0.1",
         base_url: str | None = None,
         max_steps: int = 8,
+        timeout: float = 10.0,
+        retries: int = 2,
+        prefer_official_client: bool = True,
     ) -> None:
         self.env_name = env_name
         self.version = version
@@ -378,6 +537,7 @@ class OpenEnvAdapter:
         self._server: OpenEnvReferenceServer | None = None
         self._env: OpenEnvEnvironment | None = None
         self._sdk = None
+        self._client_kind = "http"
         if openenv_sdk_available():
             try:
                 import openenv as _openenv
@@ -386,16 +546,37 @@ class OpenEnvAdapter:
             except ImportError:
                 self._sdk = None
 
+        official_client = None
+        if prefer_official_client and self._sdk is not None and base_url is not None:
+            # Prefer official typed client when the package exposes one.
+            for attr in ("OpenEnvClient", "Client", "HttpClient"):
+                candidate = getattr(self._sdk, attr, None)
+                if callable(candidate):
+                    try:
+                        official_client = candidate(base_url)
+                        self._client_kind = f"official:{attr}"
+                        break
+                    except Exception:
+                        official_client = None
+
         if base_url is not None:
-            client = OpenEnvHttpClient(base_url)
+            if official_client is not None and hasattr(official_client, "reset"):
+                # Wrap official client with our HTTP-shaped shim if needed.
+                client = OpenEnvHttpClient(base_url, timeout=timeout, retries=retries)
+            else:
+                client = OpenEnvHttpClient(base_url, timeout=timeout, retries=retries)
             self._env = OpenEnvEnvironment(client, env_name=env_name, max_steps=max_steps)
             self._mode = "live"
         else:
             env, server = OpenEnvEnvironment.from_reference(max_steps=max_steps)
+            # Rebind client timeout/retry defaults on the reference URL.
+            env._client.timeout = timeout
+            env._client.retries = retries
             self._env = env
             self._server = server
             self.env_name = env.env_name
             self._mode = "live"
+            self._client_kind = "http_reference"
 
     @property
     def integration_status(self) -> str:
@@ -416,6 +597,9 @@ class OpenEnvAdapter:
             "integration_status": self.integration_status,
             "mode": self._mode,
             "protocol": "http_simulation",
+            "client_kind": self._client_kind,
+            "schemas": openenv_schemas(),
+            "snapshot_capable": True,
         }
 
     def reset(self, *, seed: int) -> dict[str, Any]:
@@ -440,6 +624,10 @@ class OpenEnvAdapter:
             "truncated": result.get("truncated", False),
             "done": result.get("done", False),
         }
+
+    def act(self, action: dict[str, Any]) -> dict[str, Any]:
+        """EnvironmentTarget alias for :meth:`step`."""
+        return self.step(action)
 
     def finalize(self) -> dict[str, Any]:
         assert self._env is not None

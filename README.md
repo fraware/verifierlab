@@ -15,7 +15,7 @@
 [![CI](https://github.com/fraware/verifierlab/actions/workflows/ci.yml/badge.svg)](https://github.com/fraware/verifierlab/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue.svg)](pyproject.toml)
-[![Status](https://img.shields.io/badge/status-alpha%200.1.0a0-orange.svg)](CHANGELOG.md)
+[![Status](https://img.shields.io/badge/status-0.2.0rc2-blue.svg)](CHANGELOG.md)
 
 `verifierlab` · CLI: `valab`
 
@@ -27,7 +27,7 @@
 
 **VerifierLab** is a local-first lab for running reproducible campaigns that ask a hard question: *when something is optimized against your verifier, does the verifier still do its job?*
 
-You wrap a grader or reward function, run ordinary baselines alongside optimized attack cohorts under explicit budgets and access models, then rebuild reports from immutable artifacts. Finding no exploit is evidence under those conditions — not a proof of correctness.
+You wrap a grader or reward function, run ordinary baselines alongside optimized-*tagged* attack cohorts under declared budgets and access models, then rebuild reports from content-addressed artifacts after **freeze → adjudicate → release-labels**. Finding no exploit is evidence under those conditions — not a proof of correctness. This release candidate (`0.2.0rc2`) meets executable RC gates 1–6 in `tests/test_acceptance_gates.py`; do not claim soundness or SOTA verifier assurance. Honest gaps (default process-local trust boundary, research-grade attack depth) are listed in [docs/limitations.md](docs/limitations.md).
 
 ## Why it exists
 
@@ -35,14 +35,14 @@ Modern agents and training loops lean on **verifiers**: graders, reward models, 
 
 VerifierLab exists so you can:
 
-- Separate **ordinary** behavior from **optimized** attack cohorts
+- Separate **ordinary** behavior from **optimized-tagged** attack cohorts
 - Keep runs **reproducible** with content-addressed artifacts and digests
 - Stay **local-first**: the base install has no PyTorch, Ray, Kubernetes, or model SDKs
-- Respect **budgets** (queries, steps, wall time) instead of pretending attacks are free
+- Record **budgets** (queries, steps, wall time) instead of pretending attacks are free
 
 ## Status
 
-**Alpha** (`0.1.0a0`). The core loop — workspace, campaigns, freeze, reports, built-in attacks, and the offline tutorial — is implemented and tested. Optional adapters and launchers ship behind extras or explicit dry-run modes. APIs and CLI may still shift; see [docs/limitations.md](docs/limitations.md) for an honest boundary map.
+**Release candidate** (`0.2.0rc2`). Gates 1–6 are encoded and passing in `tests/test_acceptance_gates.py` (isolation, optimization, measurement, repair, reproduction, developer lifecycle). Core loop — workspace, process workers, typed decisions, broker metering with worker budget vouchers, vault v2, freeze→adjudicate→release, StatsPlan reports, packs A–F, and the offline tutorial — is implemented and tested. See [docs/limitations.md](docs/limitations.md) and [SECURITY.md](SECURITY.md). Optional adapters and launchers ship behind extras or explicit dry-run modes. APIs and CLI may still shift before 0.2.0.
 
 ## Install
 
@@ -67,12 +67,15 @@ valab doctor
 
 ## Quick start
 
-Offline refund tutorial (ordinary vs optimized cohorts, then a report):
+Offline refund tutorial (full lifecycle):
 
 ```bash
 uv run valab init
 uv run valab inspect examples.refunds.verifier:grade
 uv run valab run campaigns/refund-blackbox.yaml
+uv run valab campaign freeze .valab/runs/<run-id>
+uv run valab campaign adjudicate .valab/runs/<run-id> --campaign campaigns/refund-blackbox.yaml
+uv run valab campaign release-labels .valab/runs/<run-id>
 uv run valab report builds .valab/runs/<run-id>
 ```
 
@@ -80,7 +83,7 @@ Faster smoke:
 
 ```bash
 uv run valab campaign validate campaigns/fake-smoke.yaml
-uv run valab campaign run campaigns/fake-smoke.yaml --threads
+uv run valab campaign run campaigns/fake-smoke.yaml --processes
 ```
 
 ## What you can do
@@ -88,9 +91,9 @@ uv run valab campaign run campaigns/fake-smoke.yaml --threads
 | Goal | How |
 | ---- | --- |
 | **Wrap a verifier** | Decorate a grader with `@verifier`, then `valab inspect MODULE:ATTR` |
-| **Run a campaign** | `valab run PATH` or `valab campaign run PATH` under budgets and access models |
-| **Freeze & release labels** | `valab campaign freeze RUN_DIR` then `release-labels` when ready |
-| **Rebuild a report** | `valab report builds RUN_DIR` → HTML / JSON / CSV from sealed artifacts |
+| **Run a campaign** | `valab run PATH` or `valab campaign run PATH` (attack plane only) |
+| **Freeze, adjudicate, release** | `freeze` → `adjudicate` → `release-labels` before reports |
+| **Rebuild a report** | `valab report builds RUN_DIR` → HTML / JSON / CSV (post-release) |
 | **Compare a repair** | Call `compare_repair` in Python: regression corpus plus a mandatory fresh attacker |
 | **Plan sample size** | `valab stats power` for binomial power / *n* planning |
 

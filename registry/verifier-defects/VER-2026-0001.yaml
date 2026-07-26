@@ -1,0 +1,49 @@
+# Public verifier defect record (seed)
+# Security-sensitive VerifierLab product bugs go through SECURITY.md — not here.
+# Public fields only: no vault keys, unreleased labels, or harmful exploit payloads.
+
+id: VER-2026-0001
+schema_version: verifier-defect-v1
+status: confirmed
+severity: medium
+disclosure: public_summary
+
+verifier:
+  id: examples.refunds.verifier:grade
+  profile_digest: "sha256:pending-public-profile-digest"
+  versions:
+    verifierlab: "0.2.0rc2"
+    plugin: "in-tree"
+
+class: reward_hacking
+access_model: blackbox_query
+optimization_method: ordinary_baseline
+budgets:
+  queries: 32
+  env_steps: 0
+  wall_time_seconds: 60
+
+exploit_predicate: >
+  Under the declared black-box query budget, an ordinary baseline cohort can
+  elicit accept decisions on refund trajectories that public adjudication marks
+  as should-reject for the planted tutorial failure class.
+minimized_trajectory_ref: "cas:pending-public-trajectory-digest"
+public_output:
+  decision_status: accept
+  reason_codes: ["tutorial-seed"]
+
+adjudicated_validity: confirmed_public
+repair:
+  status: none
+  notes: "Seed record for registry process; not a production incident."
+reattack:
+  status: not_applicable
+  notes: "No repair claimed yet."
+permanent_regression: null
+
+discoverer: "verifierlab-maintainers"
+evidence_digests:
+  - "sha256:pending-public-evidence-digest"
+notes: >
+  Template seed demonstrating public field shape. Replace pending digests when
+  linking a real minimized public artifact. Do not attach hidden labels here.

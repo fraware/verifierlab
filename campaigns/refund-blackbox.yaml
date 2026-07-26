@@ -2,7 +2,7 @@ schema_version: "1"
 name: refund-blackbox
 description: Offline planted refund campaign (unauthorized/duplicate/tamper/timeout/laundering)
 pinned_versions:
-  verifierlab: "0.1.0a0"
+  verifierlab: "0.2.0rc2"
   campaign: "refund-blackbox@1"
 access_model: black-box
 seed: 7

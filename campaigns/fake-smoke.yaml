@@ -2,7 +2,7 @@ schema_version: "1"
 name: fake-smoke
 description: Deterministic fake environment smoke campaign for M0
 pinned_versions:
-  verifierlab: "0.1.0a0"
+  verifierlab: "0.2.0rc2"
   campaign: "fake-smoke@1"
 access_model: black-box
 seed: 42

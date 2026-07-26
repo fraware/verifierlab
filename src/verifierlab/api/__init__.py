@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from verifierlab.api.decision import Decision, DecisionKind
+from verifierlab.api.decision import Decision, DecisionKind, VerifierDecision
 from verifierlab.api.protocols import (
     AttackStrategy,
     CampaignLauncher,
@@ -25,6 +25,7 @@ __all__ = [
     "DecisionSpace",
     "EnvironmentTarget",
     "GroundTruthProvider",
+    "VerifierDecision",
     "VerifierSpec",
     "get_verifier_spec",
     "list_registered_verifiers",

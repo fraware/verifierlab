@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/fraware/verifierlab/schemas/plugin-registry-v1.schema.json",
+  "title": "VerifierLab plugin registry v1",
+  "description": "Curated plugin metadata only. Registry inclusion never grants automatic execution or installation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "updated", "plugins"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "plugin-registry-v1"
+    },
+    "updated": {
+      "type": "string",
+      "format": "date"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "plugins": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/plugin" }
+    }
+  },
+  "$defs": {
+    "pluginKind": {
+      "type": "string",
+      "enum": [
+        "verifier",
+        "attack",
+        "environment",
+        "adjudicator",
+        "reporter",
+        "launcher",
+        "object_store",
+        "trainer",
+        "adapter"
+      ]
+    },
+    "reviewStatus": {
+      "type": "string",
+      "enum": [
+        "submitted",
+        "schema_validated",
+        "conformance_tested",
+        "security_reviewed",
+        "reference",
+        "deprecated",
+        "revoked",
+        "rejected"
+      ],
+      "description": "reference requires conformance and security review. revoked supersedes prior status. Avoid 'approved' unless a named review level is stated."
+    },
+    "plugin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "version",
+        "status",
+        "distribution",
+        "source",
+        "owner",
+        "api_range",
+        "core_range",
+        "required_capabilities",
+        "network_access",
+        "filesystem_access",
+        "hidden_label_declaration",
+        "digests",
+        "conformance",
+        "security_review",
+        "limitations",
+        "license",
+        "last_tested"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "kind": { "$ref": "#/$defs/pluginKind" },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": { "$ref": "#/$defs/reviewStatus" },
+        "distribution": {
+          "type": "string",
+          "description": "How the plugin is obtained (in-tree module, wheel extra, URL metadata only, etc.). Never auto-installed by the catalog."
+        },
+        "source": {
+          "type": "string",
+          "description": "Source locator (repo path, package name, or documented URL). Metadata only."
+        },
+        "owner": {
+          "type": "string"
+        },
+        "api_range": {
+          "type": "string",
+          "description": "Supported plugin API range, e.g. '>=1.0,<2'"
+        },
+        "core_range": {
+          "type": "string",
+          "description": "Supported verifierlab core range, e.g. '>=0.2.0rc2,<0.3'"
+        },
+        "required_capabilities": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "network_access": {
+          "type": "string",
+          "enum": ["none", "limited", "required"]
+        },
+        "filesystem_access": {
+          "type": "string",
+          "enum": ["none", "read_only", "read_write"]
+        },
+        "hidden_label_declaration": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["accesses_hidden_labels", "notes"],
+          "properties": {
+            "accesses_hidden_labels": { "type": "boolean" },
+            "notes": { "type": "string" }
+          }
+        },
+        "digests": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["artifact"],
+          "properties": {
+            "artifact": {
+              "type": "string",
+              "description": "SHA-256 hex digest of the declared artifact, or 'in-tree' when pinned by git commit of this repository."
+            },
+            "profile": {
+              "type": "string"
+            }
+          }
+        },
+        "conformance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["level", "report"],
+          "properties": {
+            "level": {
+              "type": "string",
+              "enum": [
+                "none",
+                "schema_only",
+                "fixture",
+                "live",
+                "reference"
+              ]
+            },
+            "report": {
+              "type": "string",
+              "description": "Path or URL to conformance notes; empty string if none yet."
+            }
+          }
+        },
+        "security_review": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "notes"],
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "not_reviewed",
+                "in_progress",
+                "passed",
+                "failed",
+                "waived"
+              ]
+            },
+            "notes": { "type": "string" },
+            "date": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        },
+        "limitations": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "license": {
+          "type": "string"
+        },
+        "last_tested": {
+          "type": "string",
+          "format": "date"
+        }
+      }
+    }
+  }
+}

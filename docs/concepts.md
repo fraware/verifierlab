@@ -15,8 +15,9 @@ valab inspect examples.refunds.verifier:grade
 ## Ground truth (GT)
 
 Labels that judge whether a trajectory is actually valid. GT is held on the
-**coordinator**, sealed in the label vault, and not given to workers or attack
-strategies before freeze and release. See [labels-and-stats.md](labels-and-stats.md).
+**coordinator**, evaluated only during adjudication after freeze, sealed in the
+label vault, and not given to workers or attack strategies before release. See
+[labels-and-stats.md](labels-and-stats.md).
 
 ## Campaign
 
@@ -52,9 +53,10 @@ mutable folder name alone.
 
 ## Lifecycle
 
-Draft → Validated → Baseline → Attack → Freeze → Label release → Triage →
-Stats → Repair → Disclosure. Illegal jumps are rejected. See
+Draft → Validated → Baseline → Attack → **Freeze → Adjudicate → Label release** →
+Triage → Stats → Repair → Disclosure. Illegal jumps are rejected. See
 [disclosure.md](disclosure.md) for the separate disclosure registry states.
+Reports require the freeze → adjudicate → release sequence.
 
 ## Exploits and taxonomy
 

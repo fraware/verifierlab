@@ -58,6 +58,40 @@ class AttackSpec(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
 
 
+class StatsPlan(BaseModel):
+    """Declared statistical analysis plan (VALAB-08)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    methods: list[str] = Field(default_factory=lambda: ["wilson"])
+    alpha: float = Field(default=0.05, gt=0.0, lt=1.0)
+    bootstrap_samples: int = Field(default=1000, ge=0)
+    stopping_rule: str = Field(
+        default="fixed_n",
+        description="fixed_n | budget_exhausted | sequential_alpha",
+    )
+    multiple_comparison_policy: str = Field(
+        default="none",
+        description="none | bonferroni | pre_registered_primary",
+    )
+
+    @field_validator("stopping_rule")
+    @classmethod
+    def _known_stopping(cls, value: str) -> str:
+        allowed = {"fixed_n", "budget_exhausted", "sequential_alpha"}
+        if value not in allowed:
+            raise ValueError(f"stopping_rule must be one of {sorted(allowed)}")
+        return value
+
+    @field_validator("multiple_comparison_policy")
+    @classmethod
+    def _known_mcp(cls, value: str) -> str:
+        allowed = {"none", "bonferroni", "pre_registered_primary"}
+        if value not in allowed:
+            raise ValueError(f"multiple_comparison_policy must be one of {sorted(allowed)}")
+        return value
+
+
 class SplitSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -65,6 +99,10 @@ class SplitSpec(BaseModel):
     fraction: float | None = Field(default=None, ge=0.0, le=1.0)
     count: int | None = Field(default=None, ge=0)
     seed: int | None = None
+    label_tier: str | None = Field(
+        default=None,
+        description="LabelTier: development|regression|release|private_holdout",
+    )
 
     @model_validator(mode="after")
     def _fraction_or_count(self) -> SplitSpec:
@@ -72,13 +110,17 @@ class SplitSpec(BaseModel):
             raise ValueError(f"split {self.name!r} requires fraction or count")
         return self
 
+    @field_validator("label_tier")
+    @classmethod
+    def _known_tier(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        from verifierlab.artifacts.records import LabelTier
 
-class StatsPlan(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    methods: list[str] = Field(default_factory=lambda: ["wilson"])
-    alpha: float = Field(default=0.05, gt=0.0, lt=1.0)
-    bootstrap_samples: int = Field(default=1000, ge=0)
+        allowed = {t.value for t in LabelTier}
+        if value not in allowed:
+            raise ValueError(f"label_tier must be one of {sorted(allowed)}")
+        return value
 
 
 class CampaignSpec(BaseModel):
@@ -207,6 +249,57 @@ def validate_campaign_semantics(spec: CampaignSpec) -> list[Diagnostic]:
                 severity=DiagnosticSeverity.ERROR,
                 message="baseline.strategy must be non-empty",
                 path="baseline.strategy",
+            )
+        )
+    diags.extend(_validate_verifier_contract(spec))
+    return diags
+
+
+def _validate_verifier_contract(spec: CampaignSpec) -> list[Diagnostic]:
+    """VALAB-02: reject incomplete verifier contracts unless legacy_contract."""
+    diags: list[Diagnostic] = []
+    ref = spec.verifier.ref
+    if not ref or ":" not in ref:
+        return diags
+    try:
+        from verifierlab.api.verifier import get_verifier_spec
+        from verifierlab.plugins.loader import load_object
+
+        fn = load_object(ref)
+        try:
+            vspec = get_verifier_spec(fn)
+        except AttributeError:
+            # Undecorated callables are allowed with a warning (adapter paths).
+            diags.append(
+                Diagnostic(
+                    code="VALAB.CAMPAIGN.VERIFIER_CONTRACT",
+                    severity=DiagnosticSeverity.WARNING,
+                    message=f"verifier {ref!r} is not @verifier-decorated; contract not checked",
+                    path="verifier.ref",
+                )
+            )
+            return diags
+        gaps = vspec.contract_gaps()
+        if gaps:
+            diags.append(
+                Diagnostic(
+                    code="VALAB.CAMPAIGN.VERIFIER_CONTRACT",
+                    severity=DiagnosticSeverity.ERROR,
+                    message=(
+                        f"verifier {ref!r} missing required contract fields: "
+                        f"{', '.join(gaps)} "
+                        "(set metadata.legacy_contract=True for one-release migration)"
+                    ),
+                    path="verifier.ref",
+                )
+            )
+    except Exception as exc:
+        diags.append(
+            Diagnostic(
+                code="VALAB.CAMPAIGN.VERIFIER_LOAD",
+                severity=DiagnosticSeverity.WARNING,
+                message=f"could not load verifier for contract check: {exc}",
+                path="verifier.ref",
             )
         )
     return diags

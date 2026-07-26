@@ -175,6 +175,7 @@ def _invalid_reason(trajectory: dict[str, Any]) -> str:
         "Ignores duplicate/tamper/expired/REUSED in several cases",
         "Offline planted pack only",
     ],
+    metadata={"legacy_contract": True},
 )
 def grade(trajectory: dict[str, Any]) -> bool:
     """Public verifier with multiple planted FAR classes."""

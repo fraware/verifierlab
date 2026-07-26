@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import uuid
 from collections.abc import Callable
@@ -15,13 +16,11 @@ from typing import Any
 from verifierlab.artifacts.canonical import digest_of
 from verifierlab.artifacts.cas import ContentAddressedStore
 from verifierlab.budgets.budget import Budget
-from verifierlab.budgets.ledger import BudgetExceeded, ProvenanceLedger
-from verifierlab.targets.fake import (
-    FakeEnvironment,
-    PlantedOracleGroundTruth,
-    fake_refund_verifier,
-    propose_fake_action,
-)
+from verifierlab.budgets.ledger import BudgetExceeded, OverrunRecord, ProvenanceLedger
+from verifierlab.campaigns.episode import trajectory_commitment
+from verifierlab.targets.fake import FakeEnvironment, fake_refund_verifier, propose_fake_action
+from verifierlab.verifiers.broker import VerifierBroker
+from verifierlab.verifiers.profile import VerifierProfile
 
 
 class WorkUnitStatus(str, Enum):
@@ -33,14 +32,19 @@ class WorkUnitStatus(str, Enum):
 
 
 def _run_fake_work_unit(payload: dict[str, Any]) -> dict[str, Any]:
-    """Process-pool entry point (must be picklable / top-level)."""
+    """Process-pool entry point (must be picklable / top-level).
+
+    Fake smoke path aligns with the campaign worker: no GT, broker-metered
+    verifier query, commitment = digest(trajectory || nonce).
+    """
     unit_id = payload["unit_id"]
     seed = int(payload["seed"])
     unit_index = int(payload["unit_index"])
     max_steps = int(payload.get("max_steps", 3))
+    nonce = str(payload.get("commitment_nonce") or f"{unit_id}:{unit_index}")
+    access_model = str(payload.get("access_model") or "black-box")
 
     env = FakeEnvironment(max_steps=max_steps)
-    gt = PlantedOracleGroundTruth()
     obs = env.reset(seed=seed + unit_index)
     steps_taken = 0
     while steps_taken < max_steps:
@@ -50,25 +54,60 @@ def _run_fake_work_unit(payload: dict[str, Any]) -> dict[str, Any]:
         if result["done"]:
             break
     trajectory = env.finalize()
-    commitment = gt.commit(trajectory)
-    decision = bool(fake_refund_verifier(trajectory))
+    profile = VerifierProfile.for_callable(fake_refund_verifier)
+    voucher: ProvenanceLedger | None = None
+    remaining = payload.get("query_budget_remaining")
+    if remaining is not None:
+        from verifierlab.budgets.budget import OverrunPolicy
+
+        policy_raw = str(payload.get("budget_overrun_policy") or "stop")
+        try:
+            policy = OverrunPolicy(policy_raw)
+        except ValueError:
+            policy = OverrunPolicy.STOP
+        voucher = ProvenanceLedger(
+            budget=Budget(max_queries=max(0, int(remaining)), overrun_policy=policy)
+        )
+    broker = VerifierBroker(
+        profile=profile,
+        verifier=fake_refund_verifier,
+        access_model=access_model,
+        caller=f"fake:{unit_id}",
+        ledger=voucher,
+    )
+    decision = broker.query(trajectory)
+    commitment = trajectory_commitment(trajectory, nonce)
     snap = env.snapshot()
     env2 = FakeEnvironment(max_steps=max_steps)
     env2.restore(snap)
 
     restored_seed = int(json.loads(snap.decode("utf-8"))["seed"])
     result_body: dict[str, Any] = {
-        "schema_version": "1",
+        "schema_version": "2",
         "unit_id": unit_id,
         "seed": seed + unit_index,
         "trajectory": trajectory,
         "commitment": commitment,
-        "verifier_accepted": decision,
+        "commitment_nonce": nonce,
+        # Preserve None under score_only (do not coerce to False — VALAB-03).
+        "verifier_accepted": decision.accepted,
+        "verifier_status": decision.status,
+        "verifier_score": decision.score,
+        "verifier_invocations": broker.event_dicts(),
+        "query_count": len(broker.events),
+        "gt_valid": None,
         "observation_initial": obs,
         "snapshot_restore_ok": restored_seed == trajectory["seed"] and env2._step == env._step,
         "snapshot_bytes": len(snap),
     }
-    result_body["unit_digest"] = digest_of(result_body)
+    if voucher is not None:
+        result_body["ledger_events"] = list(voucher.events)
+        result_body["candidates"] = voucher.candidates
+        result_body["compute_units"] = voucher.compute_units
+        result_body["budget_voucher_queries"] = voucher.queries
+    from verifierlab.campaigns.episode import _stable_episode_digest_body
+
+    result_body["unit_digest"] = digest_of(_stable_episode_digest_body(result_body))
     return result_body
 
 
@@ -87,10 +126,42 @@ class LocalLauncher:
     _executor: Executor | None = None
 
     def __post_init__(self) -> None:
-        self.ledger = ProvenanceLedger(budget=self.budget)
         self.run_dir.mkdir(parents=True, exist_ok=True)
         (self.run_dir / "work_units").mkdir(exist_ok=True)
         self._checkpoint_path = self.run_dir / "checkpoint.json"
+        self._spend_path = self.run_dir / "budget_spend.json"
+        self.ledger = ProvenanceLedger(budget=self.budget, persist_path=self._spend_path)
+        # VALAB-05: incomplete runs (checkpoint present, freeze absent) resume
+        # with prior spend restored so completed queries are never refunded or
+        # double-charged.
+        self._rehydrate_ledger()
+
+    def _rehydrate_ledger(self) -> None:
+        """Restore spend from persisted ledger or completed work-unit meters."""
+        if self._spend_path.is_file():
+            self.ledger.load_persisted()
+            return
+        wu_dir = self.run_dir / "work_units"
+        if not wu_dir.is_dir():
+            return
+        queries = 0
+        steps = 0
+        candidates = 0
+        compute_units = 0.0
+        for path in sorted(wu_dir.glob("*.json")):
+            row = json.loads(path.read_text(encoding="utf-8"))
+            queries += int(row.get("query_count") or 0)
+            traj = row.get("trajectory") or {}
+            steps += len(traj.get("steps") or [])
+            candidates += int(row.get("candidates") or 0)
+            compute_units += float(row.get("compute_units") or 0.0)
+        if queries or steps or candidates or compute_units:
+            self.ledger.restore_spend(
+                queries=queries,
+                steps=steps,
+                candidates=candidates,
+                compute_units=compute_units,
+            )
 
     def _load_checkpoint(self) -> dict[str, Any]:
         if not self._checkpoint_path.is_file():
@@ -181,9 +252,7 @@ class LocalLauncher:
         self._executor = self._make_executor()
         try:
             pending_handles = [
-                h
-                for h, e in self._handles.items()
-                if e["status"] == WorkUnitStatus.PENDING.value
+                h for h, e in self._handles.items() if e["status"] == WorkUnitStatus.PENDING.value
             ]
 
             async def _one(handle: str) -> None:
@@ -201,23 +270,120 @@ class LocalLauncher:
                 entry = self._handles[handle]
                 entry["status"] = WorkUnitStatus.RUNNING.value
                 try:
-                    self.ledger.add_queries(1)
+                    # Exact remaining budget voucher for worker-side atomic reserve.
+                    # Concurrent issuance uses disjoint reservations so parallel
+                    # workers cannot race the same remaining quota (Milestone B).
                     self.ledger.sync_wall_time()
+                    work_unit = dict(entry["work_unit"])
+                    reserved = 0
+                    if self.budget.max_queries is not None:
+                        pending_left = sum(
+                            1
+                            for h, e in self._handles.items()
+                            if e["status"]
+                            in {
+                                WorkUnitStatus.PENDING.value,
+                                WorkUnitStatus.RUNNING.value,
+                            }
+                        )
+                        available = self.ledger.available_queries()
+                        if available is not None and available <= 0:
+                            if self.budget.overrun_policy.value == "stop":
+                                # Force a STOP path consistent with prior behaviour.
+                                self.ledger.add_queries(1)
+                            remaining = 0
+                        else:
+                            remaining = int(available if available is not None else 0)
+                        reserved = self.ledger.reserve_query_voucher(
+                            remaining,
+                            pending_workers=max(1, pending_left),
+                        )
+                        work_unit["query_budget_remaining"] = reserved
+                        work_unit["query_budget_reserved"] = reserved
+                        work_unit["budget_overrun_policy"] = self.budget.overrun_policy.value
+                        # Persist reservation metadata on the handle for crash/fail release.
+                        entry["work_unit"] = {
+                            **entry["work_unit"],
+                            "query_budget_reserved": reserved,
+                        }
                     result = await loop.run_in_executor(
                         self._executor,
                         fn,
-                        entry["work_unit"],
+                        work_unit,
                     )
-                    steps = len(result.get("trajectory", {}).get("steps", []))
-                    if steps:
-                        self.ledger.add_steps(steps)
+                    # Prefer atomic voucher merge (all dimensions, no mid-batch
+                    # drop). Fallback reconstructs meters when workers omit events.
+                    voucher_events = result.get("ledger_events")
+                    reserved_for_merge = int(
+                        result.get("budget_voucher_reserved")
+                        or work_unit.get("query_budget_reserved")
+                        or reserved
+                        or 0
+                    )
+                    if isinstance(voucher_events, list) and voucher_events:
+                        self.ledger.merge_events(
+                            voucher_events,
+                            refund=False,
+                            reserved_queries=reserved_for_merge or None,
+                        )
+                        # Workers meter queries/candidates/compute; steps are often
+                        # coordinator-side when the voucher never saw env steps.
+                        if not any(
+                            isinstance(e, dict) and e.get("kind") == "steps" for e in voucher_events
+                        ):
+                            steps = len((result.get("trajectory") or {}).get("steps", []))
+                            if steps:
+                                self.ledger.add_steps(steps)
+                    else:
+                        query_count = int(
+                            result.get("query_count")
+                            or len(result.get("verifier_invocations") or [])
+                            or 0
+                        )
+                        if query_count:
+                            self.ledger.add_queries(query_count)
+                        for inv in result.get("verifier_invocations") or []:
+                            if isinstance(inv, dict):
+                                self.ledger.record_event(
+                                    "verifier_query",
+                                    **{
+                                        k: inv[k]
+                                        for k in (
+                                            "query_id",
+                                            "input_digest",
+                                            "output_digest",
+                                            "latency_ms",
+                                            "caller",
+                                            "access_model",
+                                            "profile_digest",
+                                            "status",
+                                        )
+                                        if k in inv
+                                    },
+                                )
+                        steps = len((result.get("trajectory") or {}).get("steps", []))
+                        if steps:
+                            self.ledger.add_steps(steps)
+                        cand = int(result.get("candidates") or 0)
+                        if cand:
+                            self.ledger.add_candidates(cand)
+                        compute = float(result.get("compute_units") or 0.0)
+                        if compute:
+                            self.ledger.add_compute_units(compute)
+                        if reserved_for_merge:
+                            self.ledger.release_query_reservation(reserved_for_merge)
+                    # Clear handle reservation once settled so fail paths do not double-release.
+                    if "query_budget_reserved" in entry["work_unit"]:
+                        entry["work_unit"]["query_budget_reserved"] = 0
+                    # Persist spend before continuing so a crash cannot refund.
+                    self.ledger.flush()
+                    self.ledger.assert_consistent()
                     digest = self._persist_unit(result)
                     result = {**result, "cas_digest": digest}
                     self._persist_unit(result)
-                    entry["status"] = WorkUnitStatus.DONE.value
-                    entry["result"] = result
                     results.append(result)
-                    completed[handle] = result["unit_digest"]
+                    if result.get("unit_digest"):
+                        completed[handle] = result["unit_digest"]
                     self._save_checkpoint(
                         {
                             "schema_version": "1",
@@ -225,11 +391,39 @@ class LocalLauncher:
                             "status": "running",
                         }
                     )
+                    if result.get("budget_stopped"):
+                        entry["status"] = WorkUnitStatus.CANCELLED.value
+                        entry["result"] = result
+                        record = OverrunRecord(
+                            dimension="queries",
+                            limit=float(self.budget.max_queries or 0),
+                            actual=float(self.ledger.queries),
+                            policy=self.budget.overrun_policy,
+                            stopped=True,
+                            message="worker budget voucher exhausted",
+                        )
+                        self.ledger.overruns.append(record)
+                        self.cancel()
+                        raise BudgetExceeded(record)
+                    entry["status"] = WorkUnitStatus.DONE.value
+                    entry["result"] = result
                 except BudgetExceeded:
+                    # If STOP fired before merge settled the reservation, release it.
+                    leaked = int(entry.get("work_unit", {}).get("query_budget_reserved") or 0)
+                    if leaked and self.ledger.reserved_queries > 0:
+                        with contextlib.suppress(Exception):
+                            self.ledger.release_query_reservation(leaked)
+                        entry["work_unit"]["query_budget_reserved"] = 0
                     entry["status"] = WorkUnitStatus.CANCELLED.value
                     self.cancel()
                     raise
                 except Exception as exc:
+                    # Release any outstanding reservation so capacity is not leaked.
+                    leaked = int(entry.get("work_unit", {}).get("query_budget_reserved") or 0)
+                    if leaked:
+                        with contextlib.suppress(Exception):
+                            self.ledger.release_query_reservation(leaked)
+                        entry["work_unit"]["query_budget_reserved"] = 0
                     # Persist failed units so campaigns remain inspectable.
                     fail_result: dict[str, Any] = {
                         "schema_version": "1",
@@ -263,9 +457,7 @@ class LocalLauncher:
                 self._executor = None
 
         failed = sum(
-            1
-            for e in self._handles.values()
-            if e["status"] == WorkUnitStatus.FAILED.value
+            1 for e in self._handles.values() if e["status"] == WorkUnitStatus.FAILED.value
         )
         status = "cancelled" if self._cancel_requested else "completed"
         if self.ledger.overruns and self.ledger.stopped:

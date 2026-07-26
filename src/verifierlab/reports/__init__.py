@@ -6,6 +6,7 @@ from verifierlab.reports.html import build_report, iter_work_unit_rows
 from verifierlab.reports.metrics import (
     AccessModelPoolError,
     CohortMetrics,
+    MetricsIngestError,
     MetricsReport,
     compute_metrics,
     compute_metrics_iter,
@@ -14,6 +15,7 @@ from verifierlab.reports.metrics import (
 __all__ = [
     "AccessModelPoolError",
     "CohortMetrics",
+    "MetricsIngestError",
     "MetricsReport",
     "build_report",
     "compute_metrics",

@@ -91,7 +91,9 @@ class DisclosureRegistry:
         return rec
 
     def get(self, disclosure_id: str) -> DisclosureRecord:
-        return DisclosureRecord.model_validate_json(self._path(disclosure_id).read_text(encoding="utf-8"))
+        return DisclosureRecord.model_validate_json(
+            self._path(disclosure_id).read_text(encoding="utf-8")
+        )
 
     def transition(
         self,

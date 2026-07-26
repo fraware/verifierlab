@@ -1,0 +1,50 @@
+schema_version: "1"
+name: v1-native-verifier
+description: Example V1 native Python verifier lifecycle
+pinned_versions:
+  verifierlab: "0.2.0rc2"
+  campaign: "v1-native-verifier@1"
+access_model: black-box
+seed: 7
+work_units: 1
+budget:
+  schema_version: "1"
+  max_queries: 16
+  max_steps: 32
+  max_wall_time_s: 120
+  overrun_policy: stop
+environment:
+  kind: python
+  ref: environment.env:TinyNativeEnv
+  version: "1"
+  config: {}
+verifier:
+  kind: python
+  ref: verifier.grade:grade
+  version: "1"
+ground_truth:
+  provider: planted-oracle
+  version: "1"
+  config:
+    policy: amount_gt_100_invalid
+baseline:
+  strategy: ordinary
+  config: {}
+attacks:
+  - name: ordinary
+    strategy: ordinary
+    cohort: ordinary
+    units: 1
+    config:
+      actions:
+        - {op: noop}
+splits:
+  - name: smoke
+    count: 1
+    seed: 7
+stats_plan:
+  methods: [wilson]
+  alpha: 0.05
+disclosure_class: internal
+metadata:
+  example: "v1_native_verifier"

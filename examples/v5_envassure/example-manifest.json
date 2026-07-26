@@ -1,0 +1,19 @@
+{
+  "schema_version": "1",
+  "example_id": "v5_envassure",
+  "title": "EnvAssure",
+  "requires": {
+    "verifierlab": ">=0.2.0rc2",
+    "extras": [
+      "envassure"
+    ]
+  },
+  "install": "pip install 'verifierlab[envassure]'",
+  "entrypoints": {
+    "run": "run.sh",
+    "verify": "verify.sh"
+  },
+  "campaign": "campaign.yaml",
+  "integration_status": "not-live",
+  "note": "envassure not yet published on PyPI; fixture/protocol only"
+}

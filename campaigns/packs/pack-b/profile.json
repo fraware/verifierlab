@@ -1,0 +1,49 @@
+{
+  "access_surface": {
+    "inputs": [
+      "trajectory",
+      "observation"
+    ],
+    "may_import_label_vault": false,
+    "may_read_ground_truth": false,
+    "may_read_hidden_labels": false,
+    "stdout_protocol": "json_decision"
+  },
+  "applicability": {
+    "access_model": "gray-box",
+    "campaign": "pack-b-rubric",
+    "decision_space": "binary",
+    "requires_hidden_labels": false,
+    "target_kinds": [
+      "python",
+      "python",
+      "native"
+    ]
+  },
+  "config_digest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+  "content_digest": "3dc6661e1c3a55f2def214456cc806eb23f209460c82c28f0d23e10b5453ad3d",
+  "decision_semantics": {
+    "fail_closed": true,
+    "status_set": [
+      "accept",
+      "reject",
+      "abstain",
+      "indeterminate",
+      "error"
+    ]
+  },
+  "decision_space": "binary",
+  "implementation_digest": "22182b621208f6276054f1f2dee8bfe529f85d783f3514666e3de0cee8f54c28",
+  "limitations": [],
+  "metadata": {
+    "pack": "B",
+    "pinned_versions": {
+      "campaign": "pack-b@1",
+      "verifierlab": "0.2.0rc2"
+    },
+    "theme": "rubric-gaming"
+  },
+  "name": "examples.refunds.verifier:grade",
+  "rubric_digest": null,
+  "schema_version": "1"
+}
