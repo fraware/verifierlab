@@ -23,14 +23,19 @@ Or with uv: `uv sync --extra gym` (and similarly for other extras).
 
 | Adapter | Extra | What is live | What is not claimed |
 | ------- | ----- | ------------ | ------------------- |
+| Native `@verifier` | (base) | Python callable + VALAB-02 contract | — |
 | Gymnasium | `[gym]` | Wrap `gymnasium.Env` as `EnvironmentTarget` | Full RL training stack |
 | Inspect | `[inspect]` | Task / eval / eval-log mapping via `inspect-ai` | Hosting Inspect’s full product surface |
-| Harbor | `[harbor]` | ATIF parse/validate via Harbor types (Py≥3.12) | In-process Harbor sandbox/agent orchestration |
+| Harbor | `[harbor]` | ATIF parse/validate via Harbor types (Py≥3.12); stateful episode | In-process Harbor sandbox/agent orchestration |
 | NeMo Gym HTTP | `[nemo]` | HTTP client + in-repo reference resources server | NVIDIA training containers / Ray loops |
 | OpenEnv | `[openenv]` | HTTP `/reset` `/step` `/state` + reference env | HF Spaces / Docker provider automation |
+| Trainer | `[rl]` / `[trainer]` | Broker-only trainer step loop (`TrainerAdapter`) | Heavy external trainer SDKs |
 | S3 CAS | `[objectstore]` | boto3 client (AWS / MinIO) | Default remains filesystem CAS |
 | Slurm | `[slurm]` | Live when `sbatch`/`squeue`/`scancel` exist | Otherwise explicit dry-run |
 | Kubernetes | `[kubernetes]` | Live Job create/status/delete when client works | Otherwise explicit dry-run |
+
+VALAB-09 release matrix (six integrations): native, Gymnasium, Inspect, OpenEnv,
+Harbor (stateful), trainer. See [reproduction-checklist.md](reproduction-checklist.md).
 
 ## CI posture
 

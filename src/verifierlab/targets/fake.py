@@ -198,6 +198,7 @@ class PlantedOracleGroundTruth:
         "Planted bug: accepts even-valued refunds with amount > 100",
         "For M0 fake campaigns only",
     ],
+    metadata={"legacy_contract": True},
 )
 def fake_refund_verifier(trajectory: dict[str, Any]) -> bool:
     """Public verifier with planted FAR on even oversized refunds."""

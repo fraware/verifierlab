@@ -194,8 +194,20 @@ def _run_work_unit(payload: dict[str, Any]) -> dict[str, Any]:
     if voucher is not None:
         result["budget_voucher_queries"] = voucher.queries
         result["budget_metered"] = True
+        result["ledger_events"] = list(voucher.events)
+        # Persist spend before return so crash after reserve cannot refund
+        # completed queries (VALAB-04).
+        spend_dir = payload.get("run_dir") or payload.get("attacker_dir")
+        if spend_dir:
+            spend_path = Path(spend_dir) / "budget_spend.json"
+            voucher.persist_path = spend_path
+            voucher.flush()
+        result["candidates"] = voucher.candidates
+        result["compute_units"] = voucher.compute_units
     if budget_stopped:
         result["budget_stopped"] = True
+        result["censored"] = True
+        result["status"] = result.get("status") or "budget_stopped"
 
     if store is not None and learning and not store.frozen and not budget_stopped:
         from verifierlab.attacks.runtime import json_safe_rng_state

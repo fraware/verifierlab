@@ -19,7 +19,12 @@ from verifierlab.statistics.metamorphic import (
     isomorphic_remap,
     verifier_invariance_report,
 )
-from verifierlab.statistics.plan import compile_stats_plan, enrich_cohort_stats, optimization_gap
+from verifierlab.statistics.plan import (
+    compile_stats_plan,
+    enrich_cohort_stats,
+    optimization_gap,
+    validate_stats_report_schema,
+)
 
 __all__ = [
     "Interval",
@@ -36,6 +41,7 @@ __all__ = [
     "robustness_curve",
     "sample_size_for_power",
     "time_to_exploit",
+    "validate_stats_report_schema",
     "verifier_invariance_report",
     "wilson_interval",
 ]

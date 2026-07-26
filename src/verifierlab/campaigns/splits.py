@@ -1,4 +1,4 @@
-"""Split governance: materialize train/holdout manifests (VAL-R11)."""
+"""Split governance: materialize train/holdout manifests (VAL-R11 / VALAB-06)."""
 
 from __future__ import annotations
 
@@ -7,13 +7,40 @@ from pathlib import Path
 from typing import Any
 
 from verifierlab.artifacts.canonical import digest_of
+from verifierlab.artifacts.records import LabelTier
 from verifierlab.config.campaign import CampaignSpec, SplitSpec
 
-HOLDOUT_NAMES = frozenset({"holdout", "test", "eval", "evaluation"})
+HOLDOUT_NAMES = frozenset({"holdout", "test", "eval", "evaluation", "private_holdout"})
+
+_DEFAULT_TIER_BY_NAME: dict[str, LabelTier] = {
+    "train": LabelTier.DEVELOPMENT,
+    "dev": LabelTier.DEVELOPMENT,
+    "development": LabelTier.DEVELOPMENT,
+    "regression": LabelTier.REGRESSION,
+    "release": LabelTier.RELEASE,
+    "holdout": LabelTier.RELEASE,
+    "test": LabelTier.RELEASE,
+    "eval": LabelTier.RELEASE,
+    "evaluation": LabelTier.RELEASE,
+    "private_holdout": LabelTier.PRIVATE_HOLDOUT,
+    "private": LabelTier.PRIVATE_HOLDOUT,
+}
 
 
 def is_holdout_split(name: str) -> bool:
     return str(name).strip().lower() in HOLDOUT_NAMES
+
+
+def resolve_label_tier(split: SplitSpec | str) -> LabelTier:
+    """Resolve the LabelTier for a split name or SplitSpec."""
+    if isinstance(split, SplitSpec):
+        if split.label_tier:
+            return LabelTier(split.label_tier)
+        name = split.name
+    else:
+        name = split
+    key = str(name).strip().lower()
+    return _DEFAULT_TIER_BY_NAME.get(key, LabelTier.DEVELOPMENT)
 
 
 def assign_split_indices(
@@ -80,19 +107,24 @@ def materialize_split_manifest(
                 split_seed = int(s.seed)
                 break
     names = assign_split_indices(n, list(spec.splits), seed=split_seed)
+    split_by_name = {s.name: s for s in spec.splits}
     by_split: dict[str, list[str]] = {}
     units: list[dict[str, Any]] = []
     for unit_id, split_name in zip(unit_ids, names, strict=True):
         by_split.setdefault(split_name, []).append(unit_id)
+        split_spec = split_by_name.get(split_name)
+        tier = resolve_label_tier(split_spec if split_spec is not None else split_name)
         units.append(
             {
                 "unit_id": unit_id,
                 "split": split_name,
                 "learning": not is_holdout_split(split_name),
+                "label_tier": tier.value,
+                "attack_visible": tier != LabelTier.PRIVATE_HOLDOUT,
             }
         )
     manifest = {
-        "schema_version": "1",
+        "schema_version": "2",
         "campaign": spec.name,
         "seed": split_seed,
         "splits_declared": [s.model_dump(mode="json") for s in spec.splits],
@@ -110,8 +142,13 @@ def materialize_split_manifest(
 
 
 def split_lookup(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """Map unit_id -> {split, learning}."""
+    """Map unit_id -> {split, learning, label_tier, attack_visible}."""
     return {
-        str(u["unit_id"]): {"split": u["split"], "learning": bool(u["learning"])}
+        str(u["unit_id"]): {
+            "split": u["split"],
+            "learning": bool(u["learning"]),
+            "label_tier": u.get("label_tier") or LabelTier.DEVELOPMENT.value,
+            "attack_visible": bool(u.get("attack_visible", True)),
+        }
         for u in manifest.get("units") or []
     }

@@ -10,10 +10,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from verifierlab.artifacts.canonical import digest_of, sha256_digest
 from verifierlab.artifacts.cas import ContentAddressedStore
 from verifierlab.artifacts.lifecycle_records import (
     AdjudicationReleaseRecord,
     AttackRunManifest,
+    SealedRunManifest,
 )
 from verifierlab.artifacts.records import RunManifest
 from verifierlab.attacks.runtime import attacker_store_path, is_learning_strategy
@@ -30,7 +32,7 @@ from verifierlab.campaigns.worker import execute_work_unit
 from verifierlab.config.campaign import AttackSpec, CampaignSpec, load_campaign
 from verifierlab.execution.local import LocalLauncher
 from verifierlab.labels.adjudication_service import adjudicate_run, resolve_is_valid
-from verifierlab.labels.freeze import FreezeRecord
+from verifierlab.labels.freeze import FreezeRecord, assert_run_sealed_immutable
 from verifierlab.labels.vault import LabelVault
 
 
@@ -285,8 +287,22 @@ async def run_campaign_async(
     )
 
 
+def _digest_tree(path: Path) -> str | None:
+    """Digest sorted relative paths + file digests under ``path`` (if any)."""
+    if not path.is_dir():
+        return None
+    rows: list[dict[str, str]] = []
+    for child in sorted(path.rglob("*")):
+        if child.is_file():
+            rel = child.relative_to(path).as_posix()
+            rows.append({"path": rel, "sha256": sha256_digest(child.read_bytes())})
+    if not rows:
+        return None
+    return digest_of(rows)
+
+
 def freeze_run(run_dir: Path, *, store: ContentAddressedStore | None = None) -> FreezeRecord:
-    """Freeze a completed run: seal vault and append FreezeRecord tip."""
+    """Freeze a completed run: seal vault, append FreezeRecord, write SealedRunManifest."""
     run_dir = Path(run_dir)
     index = read_tip_index(run_dir)
     current = lifecycle_of(run_dir)
@@ -331,6 +347,42 @@ def freeze_run(run_dir: Path, *, store: ContentAddressedStore | None = None) -> 
         json.dumps({**tip_payload, "content_digest": tip_digest}, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+
+    # VALAB-05: seal the run bundle (vault tip digest, not plaintext labels).
+    meta = dict(index.get("metadata") or {})
+    campaign_digest = str(index.get("campaign_digest") or "")
+    attack_digests = sorted(str(d) for d in (index.get("work_unit_digests") or []))
+    vault_tip = vault.audit_tip
+    sealed = SealedRunManifest(
+        seal_id=f"seal-{index['run_id']}",
+        run_id=str(index["run_id"]),
+        freeze_digest=tip_digest,
+        campaign_digest=campaign_digest,
+        verifier_digest=meta.get("verifier_digest") or meta.get("profile_digest"),
+        attack_digests=attack_digests,
+        environment_fingerprint=meta.get("environment_fingerprint")
+        or digest_of({"env": meta.get("environment") or meta.get("environment_kind")}),
+        random_seeds={
+            "campaign_seed": meta.get("seed"),
+            "split_seed": meta.get("split_seed"),
+        },
+        budget_digest=digest_of(meta.get("budget") or index.get("ledger_digest") or {}),
+        inputs_digest=_digest_tree(run_dir / "work_units"),
+        outputs_digest=_digest_tree(run_dir / "vault" / "commitments"),
+        vault_tip_digest=vault_tip,
+        report_config_digest=digest_of(meta.get("stats_plan") or {}),
+        sealed_at=time.time(),
+        metadata={"freeze_id": freeze.freeze_id},
+    )
+    sealed_payload = sealed.model_dump(mode="json")
+    sealed_digest = sealed.content_digest()
+    store.put_json(sealed_payload)
+    (run_dir / "sealed_run.json").write_text(
+        json.dumps({**sealed_payload, "content_digest": sealed_digest}, indent=2, sort_keys=True)
+        + "\n",
+        encoding="utf-8",
+    )
+    assert_run_sealed_immutable(run_dir)
     return freeze
 
 

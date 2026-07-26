@@ -1,4 +1,4 @@
-"""Metered verifier invocation broker (VAL-R02 / VAL-R10 / VAL-R09)."""
+"""Metered verifier invocation broker (VAL-R02 / VAL-R10 / VAL-R09 / VALAB-03)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from verifierlab.api.decision import Decision
+from verifierlab.api.decision import Decision, DecisionKind
 from verifierlab.api.verifier import normalize_decision
 from verifierlab.artifacts.canonical import digest_of
 from verifierlab.artifacts.records import AccessModel
@@ -40,7 +40,8 @@ class VerifierBroker:
 
     Enforces access-model **capability objects**, atomically reserves budget
     (when a ledger is attached), records query provenance, and returns typed
-    decisions.
+    decisions. Verifier invocations are metered as ``ledger.add_queries`` —
+    equivalent to the ``max_queries`` budget dimension (VALAB-04).
     """
 
     profile: VerifierProfile
@@ -50,6 +51,7 @@ class VerifierBroker:
     ledger: ProvenanceLedger | None = None
     events: list[QueryEvent] = field(default_factory=list)
     capabilities: AccessCapabilities | None = None
+    _episode_state: dict[str, Any] = field(default_factory=dict, repr=False)
 
     def __post_init__(self) -> None:
         if self.access_model not in _KNOWN_ACCESS:
@@ -61,21 +63,32 @@ class VerifierBroker:
     def profile_digest(self) -> str:
         return self.profile.content_digest()
 
+    def _default_capability(self) -> str:
+        """Pick the primary feedback channel for this access model."""
+        assert self.capabilities is not None
+        if self.capabilities.may_read_decision:
+            return "decision"
+        if self.capabilities.may_read_score:
+            return "score"
+        return "decision"
+
     def query(
         self,
         trajectory: dict[str, Any],
         *,
         caller: str | None = None,
-        capability: str = "decision",
+        capability: str | None = None,
     ) -> Decision:
         """Invoke the verifier under metering and access control."""
         assert self.capabilities is not None
-        self.capabilities.require(capability)
+        cap = capability or self._default_capability()
+        self.capabilities.require(cap)
         caller_id = caller or self.caller
         input_digest = digest_of(trajectory)
 
         if self.ledger is not None:
             # Atomic reserve: budget check happens before the call.
+            # Verifier invocations ≡ queries (VALAB-04).
             self.ledger.add_queries(1)
             self.ledger.sync_wall_time()
 
@@ -94,27 +107,35 @@ class VerifierBroker:
         latency_ms = (time.perf_counter() - started) * 1000.0
         decision = decision.model_copy(update={"profile_ref": self.profile_digest})
 
-        # Capability-gated feedback channels.
+        # Capability-gated feedback channels (VALAB-03).
         caps = self.capabilities
         filtered_reasons = caps.filter_reason_codes(list(decision.reason_codes))
         updates: dict[str, Any] = {"reason_codes": filtered_reasons}
         if not caps.may_read_score:
             updates["score"] = None
+        if not caps.may_read_decision:
+            # score_only: strip accept/reject hard labels; keep / synthesize score.
+            if decision.score is None and decision.accepted is not None:
+                updates["score"] = 1.0 if decision.accepted else 0.0
+            updates["accepted"] = None
+            updates["kind"] = DecisionKind.SCORE
+            updates["label"] = None
         if self.access_model == AccessModel.BLACK_BOX.value or not caps.may_read_reason_codes:
             updates["components"] = {}
             updates["raw"] = None
         if not caps.may_read_source:
-            # Never expose raw source / component dumps under black/gray.
             updates.setdefault("components", {})
             if self.access_model != AccessModel.WHITE_BOX.value:
                 updates["components"] = {}
                 updates["raw"] = None
         decision = decision.model_copy(update=updates)
 
+        # Event accepted field mirrors what the caller may observe.
+        event_accepted = decision.accepted if caps.may_read_decision else None
         output_digest = digest_of(
             {
                 "status": decision.status,
-                "accepted": decision.accepted,
+                "accepted": event_accepted,
                 "score": decision.score,
                 "reason_codes": list(decision.reason_codes),
             }
@@ -128,7 +149,7 @@ class VerifierBroker:
             access_model=self.access_model,
             profile_digest=self.profile_digest,
             status=decision.status,
-            accepted=decision.accepted,
+            accepted=event_accepted,
         )
         self.events.append(event)
         if self.ledger is not None:
@@ -144,6 +165,22 @@ class VerifierBroker:
                 status=event.status,
             )
         return decision
+
+    def retain_episode_state(self, key: str, value: Any) -> None:
+        """Stateful access: retain attacker-visible episode state (no GT)."""
+        assert self.capabilities is not None
+        self.capabilities.require("episode_state")
+        self._episode_state[key] = value
+
+    def read_episode_state(self, key: str, default: Any = None) -> Any:
+        """Stateful access: read previously retained episode state."""
+        assert self.capabilities is not None
+        self.capabilities.require("episode_state")
+        return self._episode_state.get(key, default)
+
+    def clear_episode_state(self) -> None:
+        """Clear episode state (end of episode)."""
+        self._episode_state.clear()
 
     def profile_mount(self) -> VerifierProfile:
         """Return the immutable profile (white-box / gray-box only)."""

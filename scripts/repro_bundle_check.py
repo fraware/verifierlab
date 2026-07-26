@@ -4,7 +4,7 @@
 Raw ``run_digest`` / work-unit digests intentionally include per-run commitment
 nonces, so this script compares **campaign digest + post-release science
 artifacts** (status, exploit taxonomies, stratified metrics) across two clean
-workspaces.
+workspaces. A canonical ``science_digest`` over those fields must match.
 
 Usage:
   uv run python scripts/repro_bundle_check.py campaigns/fake-smoke.yaml
@@ -19,6 +19,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from verifierlab.artifacts.canonical import digest_of
 from verifierlab.campaigns.engine import (
     adjudicate_campaign,
     freeze_run,
@@ -45,8 +46,11 @@ def _taxonomies(run_dir: Path) -> list[str]:
 def _metrics_fingerprint(report: dict[str, Any]) -> dict[str, Any]:
     metrics = report.get("metrics") or {}
     # Keep only stable stratified fields (drop sample noise / timestamps).
+    cohorts = metrics.get("cohorts") if isinstance(metrics.get("cohorts"), dict) else metrics
     out: dict[str, Any] = {}
-    for key, value in sorted(metrics.items()):
+    if not isinstance(cohorts, dict):
+        return out
+    for key, value in sorted(cohorts.items()):
         if not isinstance(value, dict):
             continue
         out[key] = {
@@ -55,6 +59,18 @@ def _metrics_fingerprint(report: dict[str, Any]) -> dict[str, Any]:
             if k in value
         }
     return out
+
+
+def science_digest(payload: dict[str, Any]) -> str:
+    """Canonical digest over science-facing parity keys (VALAB-01)."""
+    body = {
+        "campaign_digest": payload.get("campaign_digest"),
+        "status": payload.get("status"),
+        "exploit_count": payload.get("exploit_count"),
+        "taxonomies": payload.get("taxonomies"),
+        "metrics": payload.get("metrics"),
+    }
+    return digest_of(body)
 
 
 def _run_once(campaign: Path, root: Path) -> dict[str, Any]:
@@ -69,7 +85,7 @@ def _run_once(campaign: Path, root: Path) -> dict[str, Any]:
     adjudicate_campaign(result.run_dir, campaign_path=campaign)
     release_labels(result.run_dir)
     report = build_report(result.run_dir)
-    return {
+    row = {
         "campaign_digest": result.manifest.campaign_digest,
         "status": result.manifest.status,
         "exploit_count": report.get("exploit_count"),
@@ -79,6 +95,8 @@ def _run_once(campaign: Path, root: Path) -> dict[str, Any]:
         "run_digest": result.run_digest,
         "work_unit_digest_count": len(result.manifest.work_unit_digests or []),
     }
+    row["science_digest"] = science_digest(row)
+    return row
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -97,7 +115,7 @@ def main(argv: list[str] | None = None) -> int:
         first = _run_once(campaign, Path(a))
         second = _run_once(campaign, Path(b))
 
-    keys = ("campaign_digest", "status", "exploit_count", "taxonomies", "metrics")
+    keys = ("campaign_digest", "status", "exploit_count", "taxonomies", "metrics", "science_digest")
     mismatch = {k: (first.get(k), second.get(k)) for k in keys if first.get(k) != second.get(k)}
     payload = {
         "first": first,
@@ -112,7 +130,7 @@ def main(argv: list[str] | None = None) -> int:
     if first.get("work_unit_digest_count") != second.get("work_unit_digest_count"):
         print("FAIL: work unit counts diverged", file=sys.stderr)
         return 1
-    print("OK: reproducible campaign science artifacts match")
+    print("OK: reproducible campaign science artifacts match", file=sys.stderr)
     return 0
 
 

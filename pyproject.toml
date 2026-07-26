@@ -63,6 +63,9 @@ nemo = [
 rl = [
     # Local tabular RL baseline is in base; heavy trainers remain optional.
 ]
+trainer = [
+    # Alias for [rl] — external trainer adapter is base; extras reserved for SDKs.
+]
 sandbox = [
     # Optional Docker isolation for untrusted attack/env plugins (VAL-R17).
     # Requires a working Docker engine on PATH; no mandatory Python SDK.

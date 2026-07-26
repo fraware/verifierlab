@@ -54,9 +54,13 @@ def test_all_adapters_conform() -> None:
 
 @pytest.mark.gym
 @pytest.mark.skipif(not gymnasium_available(), reason="gymnasium not installed")
-def test_gym_adapter_import_error_message() -> None:
+def test_gym_adapter_conformance_fixture() -> None:
+    """VALAB-09 #2: Gymnasium TinyDiscrete fixture is mandatory when [gym] is present."""
     adapter = GymAdapter(env_id="TinyDiscrete-v0")
     assert adapter.integration_status == "live"
+    result = run_conformance(adapter, seed=5)
+    assert result.ok, result.as_dict()
+    assert result.checks.get("hidden_label_separation") is True
 
 
 def test_object_store_cas(tmp_path: Path) -> None:

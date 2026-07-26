@@ -50,6 +50,11 @@ jobs:
       - name: Base import graph has no heavy ML deps
         run: uv run python scripts/check_base_imports.py
 
+      - name: VALAB-01 doctor + campaign validate
+        run: |
+          uv run valab doctor
+          uv run valab campaign validate campaigns/fake-smoke.yaml
+
       - name: Wheel build + install smoke
         run: |
           uv build --wheel --out-dir dist
@@ -126,7 +131,8 @@ jobs:
         with:
           enable-cache: true
       - run: uv python install 3.12
-      - run: uv sync --extra dev
+      # VALAB-09: gym fixture path is mandatory here; live SDKs stay skip-if-missing.
+      - run: uv sync --extra dev --extra gym
       - name: Adapter conformance + fixture regression
         run: >
           uv run pytest

@@ -1,4 +1,4 @@
-"""StatsPlan compiler: CI-backed per-cohort estimands (VAL-R12 / VAL-C14)."""
+"""StatsPlan compiler: CI-backed per-cohort estimands (VAL-R12 / VAL-C14 / VALAB-08)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,20 @@ from verifierlab.reports.metrics import CohortMetrics, MetricsReport, compute_me
 from verifierlab.statistics.intervals import (
     Interval,
     exact_clopper_pearson,
+    kaplan_meier_survival,
+    time_to_exploit,
     wilson_interval,
+)
+
+_REQUIRED_REPORT_FIELDS = frozenset(
+    {
+        "stopping_rule",
+        "multiple_comparison_policy",
+        "optimization_gap",
+        "censored",
+        "sample_size",
+        "exploit_rate",
+    }
 )
 
 
@@ -36,6 +49,7 @@ def _rate_ci(
     out: dict[str, Any] = {
         "estimate": (successes / denom) if denom else None,
         "successes": successes,
+        "numerator": successes,
         "n": denom,
         "denominator": denom,
         "intervals": {},
@@ -65,8 +79,11 @@ def enrich_cohort_stats(
         "decided": cm.n - cm.missing - cm.failed,
         "n": cm.n,
     }
+    body["sample_size"] = cm.n
     body["far_ci"] = _rate_ci(cm.fp, far_denom, methods=methods, alpha=alpha)
     body["frr_ci"] = _rate_ci(cm.fn, frr_denom, methods=methods, alpha=alpha)
+    # Exploit rate among decided invalids (FAR numerator/denominator framing).
+    body["exploit_rate"] = _rate_ci(cm.fp, far_denom, methods=methods, alpha=alpha)
     body["missingness_detail"] = {
         "missing": cm.missing,
         "failed": cm.failed,
@@ -74,6 +91,8 @@ def enrich_cohort_stats(
         "missingness": cm.missingness,
         "abstention_rate": cm.abstention_rate,
     }
+    body["stopping_rule"] = plan.stopping_rule
+    body["multiple_comparison_policy"] = plan.multiple_comparison_policy
     return body
 
 
@@ -114,7 +133,7 @@ def optimization_gap(
     methods = list(plan.methods) or ["wilson"]
     result["ordinary_far_ci"] = _rate_ci(o.fp, o.fp + o.tn, methods=methods, alpha=plan.alpha)
     result["optimized_far_ci"] = _rate_ci(z.fp, z.fp + z.tn, methods=methods, alpha=plan.alpha)
-    result["multiplicity_policy"] = "report_per_cohort_intervals_no_pooled_pvalue"
+    result["multiplicity_policy"] = plan.multiple_comparison_policy
     n_boot = int(plan.bootstrap_samples)
     if n_boot > 0 and (o.fp + o.tn) > 0 and (z.fp + z.tn) > 0:
         result["gap_ci"] = _far_gap_bootstrap(
@@ -159,6 +178,45 @@ def _far_gap_bootstrap(
     return Interval(est, lo, hi, "unpaired_bootstrap_far_gap", min(n_o, n_z))
 
 
+def _censored_summary(results: Any) -> dict[str, Any]:
+    """Aggregate failed / censored run counts and optional Kaplan-Meier."""
+    rows = list(results) if not isinstance(results, list) else results
+    failed = 0
+    censored = 0
+    times: list[float] = []
+    events: list[bool] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        status = str(row.get("status") or "")
+        if status in {"failed", "error"} or row.get("failed"):
+            failed += 1
+        if status in {"budget_stopped", "censored", "cancelled"} or row.get("censored"):
+            censored += 1
+        # Optional time-to-exploit fields when present.
+        if "time_to_exploit" in row or "queries_to_exploit" in row:
+            t = float(row.get("time_to_exploit") or row.get("queries_to_exploit") or 0.0)
+            exploited = bool(row.get("exploited") or row.get("is_exploit"))
+            times.append(t)
+            events.append(exploited)
+    summary: dict[str, Any] = {
+        "failed_runs": failed,
+        "censored_runs": censored,
+        "n_rows": len(rows),
+    }
+    if times:
+        tte = time_to_exploit(times, exploited=events)
+        summary["time_to_exploit"] = tte
+        summary["kaplan_meier"] = kaplan_meier_survival(times, exploited=events)
+    return summary
+
+
+def validate_stats_report_schema(payload: dict[str, Any]) -> list[str]:
+    """Return missing required VALAB-08 fields (empty = valid)."""
+    missing = [f for f in sorted(_REQUIRED_REPORT_FIELDS) if f not in payload]
+    return missing
+
+
 def compile_stats_plan(
     results: Any,
     *,
@@ -170,6 +228,8 @@ def compile_stats_plan(
 
     Primary estimands: per-cohort FAR/FRR (+ CIs) and optimization gap.
     Overall cohort pooling is **disabled by default** (VAL-C14).
+    VALAB-08 always includes stopping_rule, multiple_comparison_policy,
+    censored/failed counts, and ordinary-versus-optimized gap.
     """
     plan = plan or StatsPlan()
     metrics: MetricsReport = compute_metrics_iter(
@@ -180,14 +240,42 @@ def compile_stats_plan(
     cohort_stats = {
         name: enrich_cohort_stats(cm, plan=plan) for name, cm in sorted(metrics.cohorts.items())
     }
+    total_n = sum(cm.n for cm in metrics.cohorts.values())
+    total_fp = sum(cm.fp for cm in metrics.cohorts.values())
+    total_far_denom = sum(cm.fp + cm.tn for cm in metrics.cohorts.values())
+    gap = optimization_gap(metrics.cohorts, plan=plan)
+    # Require optimization_gap key even when cohorts are absent.
+    if gap is None:
+        gap = {
+            "ordinary_far": None,
+            "optimized_far": None,
+            "gap": None,
+            "note": "ordinary/optimized cohorts not both present",
+        }
+    censored = _censored_summary(results)
     payload: dict[str, Any] = {
-        "schema_version": "1",
+        "schema_version": "2",
         "access_model": access_model,
         "stats_plan": plan.model_dump(mode="json"),
         "pool_overall": pool_overall,
         "cohorts": cohort_stats,
-        "optimization_gap": optimization_gap(metrics.cohorts, plan=plan),
-        "primary_estimands": ["per_cohort_far", "per_cohort_frr", "optimization_gap"],
+        "optimization_gap": gap,
+        "stopping_rule": plan.stopping_rule,
+        "multiple_comparison_policy": plan.multiple_comparison_policy,
+        "sample_size": total_n,
+        "exploit_rate": _rate_ci(
+            total_fp,
+            total_far_denom,
+            methods=list(plan.methods) or ["wilson"],
+            alpha=float(plan.alpha),
+        ),
+        "censored": censored,
+        "primary_estimands": [
+            "per_cohort_far",
+            "per_cohort_frr",
+            "optimization_gap",
+            "exploit_rate",
+        ],
     }
     if pool_overall:
         payload["overall"] = enrich_cohort_stats(metrics.overall, plan=plan)
@@ -196,6 +284,9 @@ def compile_stats_plan(
         payload["overall_note"] = (
             "overall cohort pooling disabled by default; set pool_overall=True to enable"
         )
+    gaps = validate_stats_report_schema(payload)
+    if gaps:
+        raise ValueError(f"stats report missing required fields: {gaps}")
     return payload
 
 
@@ -203,4 +294,5 @@ __all__ = [
     "compile_stats_plan",
     "enrich_cohort_stats",
     "optimization_gap",
+    "validate_stats_report_schema",
 ]

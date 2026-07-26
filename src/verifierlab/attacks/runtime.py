@@ -224,7 +224,11 @@ def evaluate_candidate_trajectory(
     *,
     caller: str,
 ) -> tuple[float, Any]:
-    """Snapshot env, apply ``action``, query broker, restore. Returns (score, decision)."""
+    """Snapshot env, apply ``action``, query broker, restore. Returns (score, decision).
+
+    Meters ``ledger.add_candidates(1)`` when a ledger is attached (VALAB-04).
+    Capability channel follows the broker access model (score_only → score).
+    """
     snap = env.snapshot()
     try:
         clean = {k: v for k, v in action.items() if not str(k).startswith("_")}
@@ -237,7 +241,10 @@ def evaluate_candidate_trajectory(
                 "observation": dict(getattr(env, "_observation", {})),
                 "schema_version": "1",
             }
-        decision = broker.query(traj, caller=caller, capability="decision")
+        ledger = getattr(broker, "ledger", None)
+        if ledger is not None and hasattr(ledger, "add_candidates"):
+            ledger.add_candidates(1)
+        decision = broker.query(traj, caller=caller)
         return decision_score(decision), decision
     finally:
         env.restore(snap)

@@ -67,6 +67,27 @@ def test_nemo_live_conformance_suite() -> None:
         adapter.close()
 
 
+def test_trainer_adapter_conformance_fixture() -> None:
+    """VALAB-09 #6: trainer adapter is base-install and conformance-gated."""
+    from verifierlab.budgets import Budget, ProvenanceLedger
+    from verifierlab.targets.fake import fake_refund_verifier
+    from verifierlab.targets.trainer_adapter import TrainerAdapter
+    from verifierlab.verifiers.broker import VerifierBroker
+    from verifierlab.verifiers.profile import VerifierProfile
+
+    broker = VerifierBroker(
+        profile=VerifierProfile.for_callable(fake_refund_verifier),
+        verifier=fake_refund_verifier,
+        access_model="black-box",
+        ledger=ProvenanceLedger(budget=Budget(max_queries=20)),
+    )
+    adapter = TrainerAdapter(broker=broker)
+    result = run_conformance(adapter, seed=4)  # type: ignore[arg-type]
+    assert result.checks["config_capture"] is True
+    assert result.checks["hidden_label_separation"] is True
+    assert result.checks["timeout_mapping"] is True
+
+
 @pytest.mark.inspect
 @pytest.mark.skipif(not inspect_sdk_available(), reason="inspect-ai not installed")
 def test_inspect_live_sdk_conformance_skip_if_missing() -> None:

@@ -94,3 +94,40 @@ class LifecycleTipIndex(ArtifactBase):
     ledger_digest: str | None = None
     overrun: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SealedRunManifest(ArtifactBase):
+    """Immutable seal over a frozen run bundle (VALAB-05).
+
+    Digests campaign definition, verifier/attack digests, environment
+    fingerprint, seeds, budget, I/O, vault tip (not plaintext labels), and
+    report configuration. Mutation of sealed CAS objects or freeze records
+    after seal must raise.
+    """
+
+    schema_version: str = "1"
+    kind: str = "sealed_run"
+    seal_id: str
+    run_id: str
+    freeze_digest: str
+    campaign_digest: str
+    verifier_digest: str | None = None
+    attack_digests: list[str] = Field(default_factory=list)
+    environment_fingerprint: str | None = None
+    random_seeds: dict[str, Any] = Field(default_factory=dict)
+    budget_digest: str | None = None
+    inputs_digest: str | None = None
+    outputs_digest: str | None = None
+    vault_tip_digest: str | None = None
+    report_config_digest: str | None = None
+    sealed_at: float
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    def content_digest(self) -> str:
+        return digest_of(self.model_dump(mode="json"))
+
+
+def assert_sealed_immutable(original: SealedRunManifest, candidate: dict[str, Any]) -> None:
+    """Reject any mutation of a sealed-run manifest payload."""
+    if digest_of(original.model_dump(mode="json")) != digest_of(candidate):
+        raise ValueError("SealedRunManifest mutation rejected")

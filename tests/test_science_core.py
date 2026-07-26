@@ -84,7 +84,7 @@ def test_artifact_round_trips() -> None:
         exploit_count=0,
     )
 
-    assert AssuranceReport.model_validate(report.model_dump(mode="json")).report_version == "1"
+    assert AssuranceReport.model_validate(report.model_dump(mode="json")).report_version == "2"
 
 
 def test_adjudication_records_role_and_dimensions() -> None:

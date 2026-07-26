@@ -118,10 +118,42 @@ class LocalLauncher:
     _executor: Executor | None = None
 
     def __post_init__(self) -> None:
-        self.ledger = ProvenanceLedger(budget=self.budget)
         self.run_dir.mkdir(parents=True, exist_ok=True)
         (self.run_dir / "work_units").mkdir(exist_ok=True)
         self._checkpoint_path = self.run_dir / "checkpoint.json"
+        self._spend_path = self.run_dir / "budget_spend.json"
+        self.ledger = ProvenanceLedger(budget=self.budget, persist_path=self._spend_path)
+        # VALAB-05: incomplete runs (checkpoint present, freeze absent) resume
+        # with prior spend restored so completed queries are never refunded or
+        # double-charged.
+        self._rehydrate_ledger()
+
+    def _rehydrate_ledger(self) -> None:
+        """Restore spend from persisted ledger or completed work-unit meters."""
+        if self._spend_path.is_file():
+            self.ledger.load_persisted()
+            return
+        wu_dir = self.run_dir / "work_units"
+        if not wu_dir.is_dir():
+            return
+        queries = 0
+        steps = 0
+        candidates = 0
+        compute_units = 0.0
+        for path in sorted(wu_dir.glob("*.json")):
+            row = json.loads(path.read_text(encoding="utf-8"))
+            queries += int(row.get("query_count") or 0)
+            traj = row.get("trajectory") or {}
+            steps += len(traj.get("steps") or [])
+            candidates += int(row.get("candidates") or 0)
+            compute_units += float(row.get("compute_units") or 0.0)
+        if queries or steps or candidates or compute_units:
+            self.ledger.restore_spend(
+                queries=queries,
+                steps=steps,
+                candidates=candidates,
+                compute_units=compute_units,
+            )
 
     def _load_checkpoint(self) -> dict[str, Any]:
         if not self._checkpoint_path.is_file():
@@ -274,6 +306,14 @@ class LocalLauncher:
                     steps = len((result.get("trajectory") or {}).get("steps", []))
                     if steps:
                         self.ledger.add_steps(steps)
+                    cand = int(result.get("candidates") or 0)
+                    if cand:
+                        self.ledger.add_candidates(cand)
+                    compute = float(result.get("compute_units") or 0.0)
+                    if compute:
+                        self.ledger.add_compute_units(compute)
+                    # Persist spend before continuing so a crash cannot refund.
+                    self.ledger.flush()
                     digest = self._persist_unit(result)
                     result = {**result, "cas_digest": digest}
                     self._persist_unit(result)

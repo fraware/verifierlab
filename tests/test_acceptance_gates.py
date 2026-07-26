@@ -16,6 +16,7 @@ import pytest
 
 from verifierlab.api.verifier import normalize_decision
 from verifierlab.artifacts.canonical import digest_of
+from verifierlab.artifacts.records import AccessModel
 from verifierlab.attacks.registry import create_strategy
 from verifierlab.budgets import Budget, ProvenanceLedger
 from verifierlab.campaigns.engine import (
@@ -37,6 +38,8 @@ from verifierlab.targets.fake import FakeEnvironment, PlantedOracleGroundTruth, 
 from verifierlab.verifiers.broker import VerifierBroker
 from verifierlab.verifiers.capabilities import AccessDenied, capabilities_for
 from verifierlab.verifiers.profile import VerifierProfile
+
+ALL_ACCESS_MODELS = [m.value for m in AccessModel]
 
 REPO = Path(__file__).resolve().parents[1]
 FAKE_SMOKE = REPO / "campaigns" / "fake-smoke.yaml"
@@ -115,6 +118,37 @@ class TestGate1Isolation:
         )
         with pytest.raises(AccessDenied):
             broker.read_source()
+
+    @pytest.mark.parametrize("model", ALL_ACCESS_MODELS)
+    def test_gate1_broker_across_all_access_models(self, model: str) -> None:
+        """VALAB-03: Gate 1 covers all ten access models (source + channel strip)."""
+        assert len(ALL_ACCESS_MODELS) == 10
+        caps = capabilities_for(model)
+        broker = VerifierBroker(
+            profile=VerifierProfile.for_callable(fake_refund_verifier),
+            verifier=fake_refund_verifier,
+            access_model=model,
+            capabilities=caps,
+        )
+        if model == AccessModel.WHITE_BOX.value:
+            src = broker.read_source()
+            assert "implementation_digest" in src
+        else:
+            with pytest.raises(AccessDenied):
+                broker.read_source()
+        decision = broker.query({"steps": [{"op": "refund", "amount": 50}]})
+        if model == AccessModel.SCORE_ONLY.value:
+            assert decision.accepted is None
+            assert decision.score is not None or decision.kind.value == "score"
+        elif model == AccessModel.LABEL_ONLY.value:
+            assert decision.accepted is not None
+            assert decision.score is None
+        if model == AccessModel.STATEFUL.value:
+            broker.retain_episode_state("k", 1)
+            assert broker.read_episode_state("k") == 1
+        else:
+            with pytest.raises(AccessDenied):
+                broker.retain_episode_state("k", 1)
 
     def test_observe_strips_gt(self) -> None:
         fb = public_attack_feedback({"verifier_accepted": True, "gt_valid": False, "reward": 1.0})
@@ -387,12 +421,43 @@ class TestGate4Repair:
             fresh_episodes=3,
             budget_queries=3,
         )
-        assert artifact.schema_version == "2"
+        assert artifact.schema_version == "3"
         assert artifact.regression
         assert artifact.fresh_attack
         assert artifact.holdout is not None
         assert artifact.mandatory_fresh_attacker is True
         assert artifact.old_profile and artifact.new_profile
+        assert artifact.status == "pass"
+        assert artifact.trivial_reject_detected is False
+
+    def test_trivial_reject_repair_fails(self) -> None:
+        known = [
+            {"steps": [{"op": "refund", "amount": 50}]},
+            {"steps": [{"op": "refund", "amount": 40}]},
+            {"steps": [{"op": "noop"}]},
+            {"steps": [{"op": "refund", "amount": 30}]},
+        ]
+
+        def old_v(traj: dict) -> bool:
+            return True
+
+        def reject_all(traj: dict) -> bool:
+            return False
+
+        def is_valid(traj: dict) -> bool:
+            return True
+
+        artifact = run_repair_campaign(
+            old_verifier=old_v,
+            new_verifier=reject_all,
+            is_valid=is_valid,
+            regression_trajectories=known,
+            campaign_id="gate4-trivial",
+            fresh_episodes=2,
+            budget_queries=2,
+        )
+        assert artifact.trivial_reject_detected is True
+        assert artifact.status == "fail"
 
 
 # ---------------------------------------------------------------------------

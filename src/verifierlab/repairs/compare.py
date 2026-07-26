@@ -31,7 +31,7 @@ from verifierlab.verifiers.profile import VerifierProfile
 class RepairCampaignArtifact(ArtifactBase):
     """Immutable repair comparison record."""
 
-    schema_version: str = "2"
+    schema_version: str = "3"
     campaign_id: str
     old_profile: dict[str, Any]
     new_profile: dict[str, Any]
@@ -42,11 +42,17 @@ class RepairCampaignArtifact(ArtifactBase):
     paired_stats: dict[str, Any] = Field(default_factory=dict)
     learnability: float = 0.0
     mandatory_fresh_attacker: bool = True
+    trivial_reject_detected: bool = False
+    status: str = "pass"
+    failure_taxonomy: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return self.model_dump(mode="json")
+
+
+DEFAULT_TRIVIAL_REJECT_THRESHOLD = 0.5
 
 
 def _sub(a: float | None, b: float | None) -> float | None:
@@ -242,23 +248,40 @@ def run_repair_campaign(
     fresh_episodes: int = 8,
     fresh_seeds: Sequence[int] | None = None,
     budget_queries: int | None = None,
+    baseline_attack_budget: int | None = None,
     build_trajectory: Callable[[list[dict[str, Any]]], dict[str, Any]] | None = None,
     old_profile: VerifierProfile | None = None,
     new_profile: VerifierProfile | None = None,
     campaign_id: str | None = None,
     independent_strategy: str | None = None,
+    independence_justification: str | None = None,
     bootstrap_samples: int = 200,
     bootstrap_seed: int = 0,
+    trivial_reject_threshold: float = DEFAULT_TRIVIAL_REJECT_THRESHOLD,
 ) -> RepairCampaignArtifact:
     """Execute a full repair campaign and return the artifact.
 
-    Holdout defaults to an empty list (caller should supply hidden tasks). When
-    omitted, a deterministic slice of non-exploit regression trajectories is
-    reserved as a synthetic holdout so the protocol always records the field.
+    VALAB-07 gates (all required for ``status=pass``):
+    1. Historical regression corpus present and scored
+    2. Fresh attack implementation or fresh seeds with independence justification
+    3. Unchanged or larger evaluation budget vs baseline attack budget
+    4. Utility regression: clean-valid accept rate must not collapse (trivial reject)
+    5. Paired CIs on FAR/FRR delta
+    6. Failure taxonomy on residual exploits
     """
     cfg = dict(fresh_attack_config or {})
     old_p = old_profile or _profile_for(old_verifier, name="repair_old", config={"role": "old"})
     new_p = new_profile or _profile_for(new_verifier, name="repair_new", config={"role": "new"})
+
+    notes: list[str] = [
+        "RepairCampaignArtifact schema_version=3",
+        "Automated repair metrics are not ground truth.",
+    ]
+    failure_taxonomy: list[str] = []
+    gate_failures: list[str] = []
+
+    if not regression_trajectories:
+        gate_failures.append("missing_regression_corpus")
 
     exploit_reg, clean_reg = _partition_regression(
         regression_trajectories, old_verifier=old_verifier, is_valid=is_valid
@@ -273,8 +296,12 @@ def run_repair_campaign(
         notes_holdout = "synthetic_holdout_from_clean_regression"
     else:
         notes_holdout = "caller_holdout"
+    notes.append(notes_holdout)
 
     regression_all = list(exploit_reg) + list(clean_reg)
+    if not regression_all and regression_trajectories:
+        # All trajectories were partitioned; still score the original set.
+        regression_all = list(regression_trajectories)
     old_reg_rows = _score_rows(
         regression_all, verifier=old_verifier, is_valid=is_valid, cohort="regression", prefix="reg"
     )
@@ -301,24 +328,34 @@ def run_repair_campaign(
         budget_queries if budget_queries is not None else max(fresh_episodes, len(regression_all))
     )
     eq_budget = max(eq_budget, fresh_episodes)
+    if baseline_attack_budget is not None and eq_budget < int(baseline_attack_budget):
+        gate_failures.append("budget_smaller_than_baseline")
 
     fresh_ledger: dict[str, Any]
     if fresh_attack_results is None:
         strategy = independent_strategy or fresh_attack_strategy
+        seed_list = list(fresh_seeds or [])
+        if not seed_list and not independence_justification and not independent_strategy:
+            # Fresh seeds are generated deterministically — record justification.
+            independence_justification = "fresh_deterministic_seed_offset"
         fresh_attack_results, fresh_ledger = _run_fresh_attack(
             strategy_name=strategy,
             config=cfg,
             verifier=new_verifier,
             is_valid=is_valid,
             episodes=fresh_episodes,
-            seeds=list(fresh_seeds or []),
+            seeds=seed_list,
             budget_queries=eq_budget,
             build_trajectory=build_trajectory,
             holdout_forbidden=holdout_trajectories,
         )
         if independent_strategy and independent_strategy != fresh_attack_strategy:
             fresh_ledger["independent_attacker"] = independent_strategy
+        if independence_justification:
+            fresh_ledger["independence_justification"] = independence_justification
     else:
+        if not independence_justification and not independent_strategy:
+            independence_justification = "caller_supplied_fresh_attack_results"
         fresh_ledger = {
             "budget_queries": eq_budget,
             "queries_used": len(fresh_attack_results),
@@ -328,7 +365,11 @@ def run_repair_campaign(
             "equalized": True,
             "holdout_isolated": True,
             "caller_supplied_results": True,
+            "independence_justification": independence_justification,
         }
+
+    if not fresh_attack_results and fresh_episodes > 0:
+        gate_failures.append("missing_fresh_attacker")
 
     old_m = compute_metrics(old_reg_rows, access_model="repair", pool_overall=True)
     new_m = compute_metrics(new_reg_rows, access_model="repair", pool_overall=True)
@@ -344,6 +385,30 @@ def run_repair_campaign(
     old_exploits = sum(1 for o in old_reg_rows if o["verifier_accepted"] and not o["gt_valid"])
     learnability = (still_exploitable / old_exploits) if old_exploits else 0.0
 
+    # VALAB-07 gate 4 / trivial-reject: clean-valid accept collapse.
+    clean_valid_old = [r for r in old_reg_rows if r.get("gt_valid") is True]
+    clean_valid_new = [r for r in new_reg_rows if r.get("gt_valid") is True]
+    trivial_reject_detected = False
+    if clean_valid_old:
+        old_accept = sum(1 for r in clean_valid_old if r.get("verifier_accepted")) / len(
+            clean_valid_old
+        )
+        new_accept = (
+            sum(1 for r in clean_valid_new if r.get("verifier_accepted")) / len(clean_valid_new)
+            if clean_valid_new
+            else 0.0
+        )
+        # Reject if new verifier drops clean-valid accept rate by >= threshold
+        # without a compensating utility metric (accept rate collapse).
+        if old_accept > 0 and (old_accept - new_accept) >= float(trivial_reject_threshold):
+            trivial_reject_detected = True
+            gate_failures.append("trivial_reject_detected")
+        # Also: reject-everything relative to previously clean-valid corpus.
+        if new_accept == 0.0 and old_accept >= float(trivial_reject_threshold):
+            trivial_reject_detected = True
+            if "trivial_reject_detected" not in gate_failures:
+                gate_failures.append("trivial_reject_detected")
+
     far_old, far_new = _paired_indicator_series(old_reg_rows, new_reg_rows, kind="far")
     frr_old, frr_new = _paired_indicator_series(old_reg_rows, new_reg_rows, kind="frr")
     # Bootstrap on (new - old) so negative FAR delta means improvement.
@@ -351,6 +416,20 @@ def run_repair_campaign(
     frr_paired = paired_bootstrap(
         frr_new, frr_old, samples=bootstrap_samples, seed=bootstrap_seed + 1
     )
+    if not (far_paired.as_dict() and frr_paired.as_dict()):
+        gate_failures.append("missing_paired_cis")
+
+    # Failure taxonomy on residual exploits (new verifier still accepts invalids).
+    for _o, n in zip(old_reg_rows, new_reg_rows, strict=True):
+        if n.get("verifier_accepted") and n.get("gt_valid") is False:
+            failure_taxonomy.append("residual_false_accept")
+            break
+    if still_exploitable:
+        failure_taxonomy.append(f"residual_exploits:{still_exploitable}")
+    if not failure_taxonomy and old_exploits:
+        failure_taxonomy.append("no_residual_exploits")
+    elif not failure_taxonomy:
+        failure_taxonomy.append("no_baseline_exploits")
 
     cid = (
         campaign_id
@@ -364,12 +443,17 @@ def run_repair_campaign(
         )[:16]
     )
 
+    status = "fail" if gate_failures or trivial_reject_detected else "pass"
+    if gate_failures:
+        notes.extend(f"gate_fail:{g}" for g in gate_failures)
+
     artifact = RepairCampaignArtifact(
         campaign_id=cid,
         old_profile=old_p.model_dump(mode="json"),
         new_profile=new_p.model_dump(mode="json"),
         budget={
             "equalized_queries": eq_budget,
+            "baseline_attack_budget": baseline_attack_budget,
             "fresh": fresh_ledger,
             "regression_n": len(regression_all),
             "holdout_n": len(holdout_trajectories),
@@ -381,6 +465,7 @@ def run_repair_campaign(
             "clean_valid_n": len(clean_reg),
             "frr_delta": _sub(new_m.overall.frr, old_m.overall.frr),
             "far_delta": _sub(new_m.overall.far, old_m.overall.far),
+            "scored": bool(old_reg_rows),
         },
         holdout={
             "old": old_h.as_dict(),
@@ -406,14 +491,15 @@ def run_repair_campaign(
             },
         },
         learnability=learnability,
-        notes=[
-            "RepairCampaignArtifact schema_version=2",
-            "Automated repair metrics are not ground truth.",
-            notes_holdout,
-        ],
+        trivial_reject_detected=trivial_reject_detected,
+        status=status,
+        failure_taxonomy=failure_taxonomy,
+        notes=notes,
         metadata={
             "old_profile_digest": old_p.content_digest(),
             "new_profile_digest": new_p.content_digest(),
+            "gate_failures": gate_failures,
+            "independence_justification": independence_justification,
         },
     )
     return artifact
@@ -465,6 +551,9 @@ def compare_repair(
     body["learnability"] = artifact.learnability
     body["cost"] = artifact.paired_stats["cost"]
     body["mandatory_fresh_attacker"] = True
+    body["trivial_reject_detected"] = artifact.trivial_reject_detected
+    body["status"] = artifact.status
+    body["failure_taxonomy"] = list(artifact.failure_taxonomy)
     body["repair_campaign"] = {
         "campaign_id": artifact.campaign_id,
         "old_profile_digest": artifact.metadata.get("old_profile_digest"),
@@ -472,5 +561,7 @@ def compare_repair(
         "holdout": artifact.holdout,
         "paired_stats": artifact.paired_stats,
         "budget": artifact.budget,
+        "status": artifact.status,
+        "trivial_reject_detected": artifact.trivial_reject_detected,
     }
     return body

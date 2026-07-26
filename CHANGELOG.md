@@ -9,6 +9,30 @@ with pre-release tags (`a` = alpha, `b` = beta, `rc` = release candidate).
 
 ## [Unreleased]
 
+### Added / hardened (VALAB-01…09 experimental framework)
+
+- **VALAB-01:** Documented baseline gate (ruff/mypy/pytest/doctor/fake-smoke);
+  canonical `science_digest` parity in `scripts/repro_bundle_check.py` +
+  `tests/test_valab01_baseline.py`
+- **VALAB-02:** First-class `VerifierSpec` contract fields; `valab inspect`
+  surfaces full contract; campaign validate rejects incomplete contracts
+  (`legacy_contract` escape for planted verifiers)
+- **VALAB-03:** Access models extended with `score_only`, `label_only`,
+  `partial_feedback`, `stateful` + `may_retain_episode_state`; broker channel
+  stripping
+- **VALAB-04:** `max_candidates` / `max_compute_units`; thread-safe ledger;
+  crash-no-refund persist; verifier invocations ≡ queries
+- **VALAB-05:** `SealedRunManifest` on freeze; sealed immutability checks;
+  incomplete-run resume restores spend without double-charging; byte-identical
+  canonical report rebuild
+- **VALAB-06:** `LabelTier` (development/regression/release/private_holdout);
+  private quarantine under `vault/private/`; reports omit raw private labels
+- **VALAB-07:** Repair gates incl. `trivial_reject_detected` failure
+- **VALAB-08:** StatsPlan `stopping_rule` / `multiple_comparison_policy`;
+  censored counts; required optimization_gap; schema validation fails if missing
+- **VALAB-09:** Trainer adapter + six-adapter release matrix; gym fixture
+  mandatory in `adapter-fixtures` CI
+
 ### Planned
 
 - Optional `[stats]` extra with SciPy-backed exact intervals

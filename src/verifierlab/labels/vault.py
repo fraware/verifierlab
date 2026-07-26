@@ -23,14 +23,21 @@ from verifierlab.labels.keyring import (
 _LABEL_READ_ROLES = frozenset({"analyst", "adjudicator", "coordinator", "auditor"})
 # Roles that may commit / freeze / release.
 _ADMIN_ROLES = frozenset({"adjudicator", "coordinator"})
+# Roles that may read private_holdout plaintext (never attack plane).
+_PRIVATE_HOLDOUT_ROLES = frozenset({"adjudicator", "coordinator", "auditor"})
+# Attack-plane roles explicitly denied private holdout.
+_ATTACK_ROLES = frozenset({"attacker", "worker", "attack", "strategy"})
 
 
 class LabelVault:
-    """Filesystem-backed vault with cryptographic sealing (VAL-R04).
+    """Filesystem-backed vault with cryptographic sealing (VAL-R04 / VALAB-06).
 
     Commitments are HMAC-SHA256 over ``(trajectory || nonce || label_digest)``
     using the commit key held only on the coordinator/adjudicator. Labels are
     AES-GCM encrypted at rest. Audit events are hash-chained.
+
+    ``private_holdout`` labels live under ``vault/private/`` and are unreachable
+    via attack-plane roles even after release.
     """
 
     def __init__(
@@ -44,6 +51,8 @@ class LabelVault:
         self.root.mkdir(parents=True, exist_ok=True)
         (self.root / "commitments").mkdir(exist_ok=True)
         (self.root / "labels").mkdir(exist_ok=True)
+        (self.root / "private").mkdir(exist_ok=True)
+        (self.root / "private" / "labels").mkdir(exist_ok=True)
         (self.root / "records").mkdir(exist_ok=True)
         self._audit_path = self.root / "access_audit.jsonl"
         kr_dir = keyring_dir or (self.root / "keys")
@@ -51,6 +60,7 @@ class LabelVault:
         self._frozen = False
         self._released = False
         self._audit_tip = self._load_audit_tip()
+        self._tier_index: dict[str, str] = self._load_tier_index()
 
     @classmethod
     def open(
@@ -74,6 +84,11 @@ class LabelVault:
     def released(self) -> bool:
         return self._released or (self.root / "RELEASED").is_file()
 
+    @property
+    def audit_tip(self) -> str:
+        """Current audit-chain tip digest (never plaintext labels)."""
+        return self._audit_tip
+
     def _load_audit_tip(self) -> str:
         if not self._audit_path.is_file():
             return "0" * 64
@@ -84,6 +99,30 @@ class LabelVault:
             row = json.loads(line)
             tip = str(row.get("event_digest") or tip)
         return tip
+
+    def _tier_index_path(self) -> Path:
+        return self.root / "records" / "label_tiers.json"
+
+    def _load_tier_index(self) -> dict[str, str]:
+        path = self._tier_index_path()
+        if not path.is_file():
+            return {}
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return {str(k): str(v) for k, v in (data.get("tiers") or {}).items()}
+
+    def _save_tier_index(self) -> None:
+        path = self._tier_index_path()
+        path.write_text(
+            json.dumps({"schema_version": "1", "tiers": self._tier_index}, indent=2, sort_keys=True)
+            + "\n",
+            encoding="utf-8",
+        )
+
+    def _label_path(self, commitment: str, *, tier: str | None = None) -> Path:
+        resolved = tier or self._tier_index.get(commitment)
+        if resolved == "private_holdout":
+            return self.root / "private" / "labels" / f"{commitment}.json"
+        return self.root / "labels" / f"{commitment}.json"
 
     def _audit(self, event: str, **fields: Any) -> str:
         prev = self._audit_tip
@@ -120,12 +159,18 @@ class LabelVault:
         role: str = "adjudicator",
         external_commitment: str | None = None,
         nonce: str | None = None,
+        label_tier: str = "development",
     ) -> str:
         """Seal an encrypted label under a salted HMAC commitment.
 
         ``external_commitment`` may bind to a worker-emitted trajectory
         commitment id (digest of traj+coordinator nonce without label).
+        ``label_tier=private_holdout`` quarantines ciphertext under
+        ``vault/private/`` (VALAB-06).
         """
+        if role in _ATTACK_ROLES:
+            self._audit("commit_denied", role=role, reason="attack_plane")
+            raise PermissionError(f"role {role!r} cannot commit labels")
         if role not in _ADMIN_ROLES:
             self._audit("commit_denied", role=role, reason="role")
             raise PermissionError(f"role {role!r} cannot commit labels")
@@ -136,6 +181,13 @@ class LabelVault:
             raise RuntimeError("post-freeze label injection rejected")
         if self.frozen and role == "adjudicator":
             pass  # allowed sealed write
+
+        from verifierlab.artifacts.records import LabelTier
+
+        try:
+            tier = LabelTier(label_tier)
+        except ValueError as exc:
+            raise ValueError(f"unknown label_tier: {label_tier!r}") from exc
 
         record_nonce = nonce or secrets.token_hex(16)
         label_digest = digest_of(label)
@@ -156,6 +208,7 @@ class LabelVault:
             "label_digest": label_digest,
             "external_commitment": external_commitment,
             "mac_alg": "HMAC-SHA256",
+            "label_tier": tier.value,
         }
         (self.root / "commitments" / f"{commitment}.json").write_text(
             json.dumps(commit_rec, indent=2, sort_keys=True) + "\n",
@@ -166,16 +219,22 @@ class LabelVault:
             "commitment": commitment,
             "encryption": bundle,
             "external_commitment": external_commitment,
+            "label_tier": tier.value,
         }
-        (self.root / "labels" / f"{commitment}.json").write_text(
+        label_path = self._label_path(commitment, tier=tier.value)
+        label_path.parent.mkdir(parents=True, exist_ok=True)
+        label_path.write_text(
             json.dumps(label_rec, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+        self._tier_index[commitment] = tier.value
+        self._save_tier_index()
         self._audit(
             "commit",
             commitment=commitment,
             role=role,
             external_commitment=external_commitment,
+            label_tier=tier.value,
         )
         return commitment
 
@@ -226,13 +285,25 @@ class LabelVault:
         return self._audit("release", role=role, record_digest=record_digest)
 
     def get_label(self, commitment: str, *, role: str = "analyst") -> dict[str, Any]:
+        if role in _ATTACK_ROLES:
+            self._audit("label_denied", commitment=commitment, role=role, reason="attack_plane")
+            raise PermissionError(f"role {role!r} cannot read labels (attack plane)")
         if role not in _LABEL_READ_ROLES:
             self._audit("label_denied", commitment=commitment, role=role, reason="role")
             raise PermissionError(f"role {role!r} cannot read labels")
         if not self.released:
             self._audit("label_denied", commitment=commitment, role=role, reason="not_released")
             raise PermissionError("labels sealed until release after freeze")
-        path = self.root / "labels" / f"{commitment}.json"
+        tier = self._tier_index.get(commitment)
+        if tier == "private_holdout" and role not in _PRIVATE_HOLDOUT_ROLES:
+            self._audit(
+                "label_denied",
+                commitment=commitment,
+                role=role,
+                reason="private_holdout",
+            )
+            raise PermissionError(f"role {role!r} cannot read private_holdout labels (VALAB-06)")
+        path = self._label_path(commitment)
         if not path.is_file():
             raise KeyError(commitment)
         sealed = json.loads(path.read_text(encoding="utf-8"))
@@ -243,7 +314,8 @@ class LabelVault:
         else:
             # Legacy plaintext (should not appear in v2 writes).
             data = {k: v for k, v in sealed.items() if k not in {"encryption", "schema_version"}}
-        self._audit("label_read", commitment=commitment, role=role)
+        data["label_tier"] = tier or sealed.get("label_tier") or "development"
+        self._audit("label_read", commitment=commitment, role=role, label_tier=data["label_tier"])
         return data
 
     def find_by_external(self, external_commitment: str) -> str | None:

@@ -1,4 +1,4 @@
-"""Enforced access-model capability objects (VAL-R09).
+"""Enforced access-model capability objects (VAL-R09 / VALAB-03).
 
 Capability objects — not metadata strings alone — gate broker feedback channels.
 """
@@ -28,6 +28,7 @@ class AccessCapabilities:
     may_read_source: bool = False
     may_use_adaptive_rounds: bool = False
     may_use_transfer_artifacts: bool = False
+    may_retain_episode_state: bool = False
 
     def require(self, capability: str) -> None:
         """Raise :class:`AccessDenied` when ``capability`` is not granted."""
@@ -56,6 +57,12 @@ class AccessCapabilities:
             if not self.may_use_transfer_artifacts:
                 raise AccessDenied(f"{self.access_model} access cannot use transfer artifacts")
             return
+        if capability == "episode_state":
+            if not self.may_retain_episode_state:
+                raise AccessDenied(
+                    f"{self.access_model} access cannot retain episode state across queries"
+                )
+            return
         raise AccessDenied(f"unknown capability: {capability}")
 
     def filter_reason_codes(self, codes: list[str]) -> list[str]:
@@ -77,10 +84,11 @@ class AccessCapabilities:
             "may_read_source": self.may_read_source,
             "may_use_adaptive_rounds": self.may_use_adaptive_rounds,
             "may_use_transfer_artifacts": self.may_use_transfer_artifacts,
+            "may_retain_episode_state": self.may_retain_episode_state,
         }
 
 
-# Default gray-box allowlist: rubric / policy categories, not source digests.
+# Default gray-box / partial-feedback allowlist: rubric categories, not source digests.
 _DEFAULT_GRAY_ALLOWLIST = frozenset(
     {
         "amount_limit",
@@ -160,5 +168,44 @@ def capabilities_for(
             may_read_reason_codes=False,
             may_mount_profile=False,
             may_read_source=False,
+        )
+    if model == AccessModel.SCORE_ONLY.value:
+        return AccessCapabilities(
+            access_model=model,
+            may_read_decision=False,
+            may_read_score=True,
+            may_read_reason_codes=False,
+            may_mount_profile=False,
+            may_read_source=False,
+        )
+    if model == AccessModel.LABEL_ONLY.value:
+        return AccessCapabilities(
+            access_model=model,
+            may_read_decision=True,
+            may_read_score=False,
+            may_read_reason_codes=False,
+            may_mount_profile=False,
+            may_read_source=False,
+        )
+    if model == AccessModel.PARTIAL_FEEDBACK.value:
+        # Same channel as gray-box; distinct name for VALAB-03.
+        return AccessCapabilities(
+            access_model=model,
+            may_read_decision=True,
+            may_read_score=True,
+            may_read_reason_codes=True,
+            reason_code_allowlist=reason_code_allowlist or _DEFAULT_GRAY_ALLOWLIST,
+            may_mount_profile=False,
+            may_read_source=False,
+        )
+    if model == AccessModel.STATEFUL.value:
+        return AccessCapabilities(
+            access_model=model,
+            may_read_decision=True,
+            may_read_score=True,
+            may_read_reason_codes=False,
+            may_mount_profile=False,
+            may_read_source=False,
+            may_retain_episode_state=True,
         )
     raise ValueError(f"unknown access model: {access_model!r}")

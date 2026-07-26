@@ -7,10 +7,20 @@ campaigns, a light base dependency graph, and clear artifact contracts.
 
 ```bash
 uv sync --extra dev
-uv run pytest
 uv run ruff check src tests
 uv run mypy
+uv run pytest
 uv run python scripts/check_base_imports.py
+uv run valab doctor
+uv run valab campaign validate campaigns/fake-smoke.yaml
+uv run valab campaign run campaigns/fake-smoke.yaml --threads
+```
+
+This command chain is the **VALAB-01 baseline gate** (also documented in
+[docs/beta-acceptance.md](docs/beta-acceptance.md)). Digest parity:
+
+```bash
+uv run python scripts/repro_bundle_check.py campaigns/fake-smoke.yaml
 ```
 
 Python `>=3.11,<3.14` is required. Package name is `verifierlab`; CLI entry point

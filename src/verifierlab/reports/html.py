@@ -10,10 +10,11 @@ from typing import Any
 
 from jinja2 import Template
 
+from verifierlab.artifacts.canonical import canonical_dumps, sha256_digest
 from verifierlab.artifacts.records import AssuranceReport
 from verifierlab.config.campaign import StatsPlan
 from verifierlab.security.secrets import assert_no_secrets, scan_for_secrets
-from verifierlab.statistics.plan import compile_stats_plan
+from verifierlab.statistics.plan import compile_stats_plan, validate_stats_report_schema
 
 REPORT_TEMPLATE = Template(
     """<!DOCTYPE html>
@@ -78,8 +79,14 @@ REPORT_TEMPLATE = Template(
   {% if gap %}
   <h2>Optimization gap</h2>
   <p>FAR(optimized) - FAR(ordinary) = <code>{{ fmt(gap.gap) }}</code>
-     · policy: {{ gap.multiplicity_policy }}</p>
+     · policy: {{ gap.multiplicity_policy or multiple_comparison_policy }}</p>
   {% endif %}
+  <h2>Statistics plan</h2>
+  <p class="meta">stopping_rule=<code>{{ stopping_rule }}</code>
+     · multiple_comparison_policy=<code>{{ multiple_comparison_policy }}</code>
+     · sample_size=<code>{{ sample_size }}</code>
+     · censored_runs=<code>{{ censored_runs }}</code>
+     · failed_runs=<code>{{ failed_runs }}</code></p>
   <h2>Exploits</h2>
   <p>{{ exploit_count }} exploit case(s) recorded (accept ∧ invalid).</p>
   <p class="meta">Rebuilt offline from immutable artifacts. Report format v{{ report_version }}.</p>
@@ -192,8 +199,14 @@ def build_report(
         access_model=access_model,
         pool_overall=pool_overall,
     )
+    schema_gaps = validate_stats_report_schema(stats)
+    if schema_gaps:
+        raise ValueError(f"stats report schema incomplete: {schema_gaps}")
     out_dir = run_dir / "report"
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Stable ordering for byte-identical rebuilds (VALAB-05).
+    exploit_unit_ids = sorted({e for e in exploit_unit_ids if e})
 
     report = AssuranceReport(
         run_id=run_id,
@@ -206,6 +219,10 @@ def build_report(
             "stats_plan": plan.model_dump(mode="json"),
             "pool_overall": pool_overall,
             "primary_estimands": stats.get("primary_estimands"),
+            "stopping_rule": stats.get("stopping_rule"),
+            "multiple_comparison_policy": stats.get("multiple_comparison_policy"),
+            "sample_size": stats.get("sample_size"),
+            "censored": stats.get("censored"),
             "assurance_grade": (
                 "research_ungated" if not require_labels_released else "post_release"
             ),
@@ -219,16 +236,20 @@ def build_report(
             "not a scientific release artifact."
         )
     assert_no_secrets(payload)
+    # Canonical byte form for sealed-run rebuild parity.
+    canonical_bytes = canonical_dumps(payload)
     (out_dir / "report.json").write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    (out_dir / "report.canonical.json").write_bytes(canonical_bytes + b"\n")
     (out_dir / "stats.json").write_text(
         json.dumps(stats, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
 
     cohorts = list((stats.get("cohorts") or {}).values())
+    censored = stats.get("censored") or {}
     html = REPORT_TEMPLATE.render(
         run_id=run_id,
         run_digest=run_digest,
@@ -240,6 +261,11 @@ def build_report(
         report_version=report.report_version,
         stats_methods=",".join(plan.methods),
         alpha=plan.alpha,
+        stopping_rule=stats.get("stopping_rule"),
+        multiple_comparison_policy=stats.get("multiple_comparison_policy"),
+        sample_size=stats.get("sample_size"),
+        censored_runs=censored.get("censored_runs"),
+        failed_runs=censored.get("failed_runs"),
         fmt=_fmt,
         fmt_ci=_fmt_ci,
     )
@@ -301,6 +327,7 @@ def build_report(
         for c in cohorts:
             writer.writerow(_row(c))
 
+    payload["canonical_digest"] = sha256_digest(canonical_bytes)
     return payload
 
 
