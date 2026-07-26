@@ -245,11 +245,19 @@ jobs:
           name: release-dist
           path: dist
 
+      # gh-action-pypi-publish validates every file in packages-dir; stage only
+      # wheel/sdist so checksums/SBOM/manifest artifacts do not fail the upload.
+      - name: Stage PyPI packages only
+        run: |
+          set -euo pipefail
+          mkdir -p pypi-dist
+          cp dist/verifierlab-*.whl dist/verifierlab-*.tar.gz pypi-dist/
+          ls -la pypi-dist
+
       - name: Publish to PyPI (trusted publishing)
-        continue-on-error: true
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: dist/
+          packages-dir: pypi-dist/
           skip-existing: true
 
   github-release:
