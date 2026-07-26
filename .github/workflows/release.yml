@@ -258,6 +258,11 @@ jobs:
     if: needs.gate-tag.outputs.is_tag == 'true'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.ref || github.ref }}
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
