@@ -58,10 +58,10 @@ openenv = [
     "openenv>=0.4,<0.5",
 ]
 envassure = [
-    # Forward-compatible pin. The envassure package is not yet published on
-    # PyPI; live CI hard-fails only when installable. Fixture/protocol tests
-    # remain explicitly not-live until then.
-    "envassure>=0.2.0b1,<0.3",
+    # Intentionally empty until envassure is published on PyPI.
+    # A hard pin breaks `uv sync` / `uv lock`, which resolve all extras.
+    # Intended pin when installable: envassure>=0.2.0b1,<0.3
+    # Live CI hard-fails only when installable; fixture/protocol stays not-live.
 ]
 rllib = [
     # Exact pin for PR/release conformance (not a capability claim).

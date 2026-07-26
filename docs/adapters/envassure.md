@@ -3,9 +3,10 @@
 ## Supported versions
 
 - Extra: `[envassure]`
-- Declared pin: `envassure>=0.2.0b1,<0.3`
+- Declared pin: none on the 0.2.0rc line (extra is empty until PyPI publish).
+  Intended later: `envassure>=0.2.0b1,<0.3`.
 - **Note:** as of the 0.2.0rc line the package is **not yet published** on PyPI.
-  The extra exists for forward-compatible installability gating.
+  The extra name is reserved; a hard pin would break `uv lock` (all-extras).
 
 ## Live vs fixture
 
