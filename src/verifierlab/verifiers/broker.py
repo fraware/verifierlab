@@ -13,10 +13,42 @@ from verifierlab.api.verifier import normalize_decision
 from verifierlab.artifacts.canonical import digest_of
 from verifierlab.artifacts.records import AccessModel
 from verifierlab.budgets.ledger import ProvenanceLedger
-from verifierlab.verifiers.capabilities import AccessCapabilities, capabilities_for
+from verifierlab.verifiers.capabilities import AccessCapabilities, AccessDenied, capabilities_for
 from verifierlab.verifiers.profile import VerifierProfile
 
 _KNOWN_ACCESS = frozenset(m.value for m in AccessModel)
+
+# Keys / markers that must never enter stateful episode retention (VALAB-03).
+_GT_EPISODE_DENY = frozenset(
+    {
+        "gt_valid",
+        "label",
+        "hidden_label",
+        "gt_label",
+        "commitment_label",
+        "ground_truth",
+        "vault_secret",
+        "private_holdout",
+    }
+)
+
+
+def _reject_gt_episode_payload(key: str, value: Any) -> None:
+    """Raise when stateful retention tries to store ground-truth material."""
+    lowered = str(key).lower()
+    if lowered in _GT_EPISODE_DENY or lowered.startswith("gt_") or lowered.startswith("label"):
+        raise AccessDenied(f"stateful episode state cannot retain GT key {key!r}")
+    if isinstance(value, dict):
+        for nested_key in value:
+            nested = str(nested_key).lower()
+            if (
+                nested in _GT_EPISODE_DENY
+                or nested.startswith("gt_")
+                or nested.startswith("hidden_")
+            ):
+                raise AccessDenied(
+                    f"stateful episode state cannot retain GT field {nested_key!r} under {key!r}"
+                )
 
 
 @dataclass
@@ -170,12 +202,14 @@ class VerifierBroker:
         """Stateful access: retain attacker-visible episode state (no GT)."""
         assert self.capabilities is not None
         self.capabilities.require("episode_state")
+        _reject_gt_episode_payload(key, value)
         self._episode_state[key] = value
 
     def read_episode_state(self, key: str, default: Any = None) -> Any:
         """Stateful access: read previously retained episode state."""
         assert self.capabilities is not None
         self.capabilities.require("episode_state")
+        _reject_gt_episode_payload(key, None)
         return self._episode_state.get(key, default)
 
     def clear_episode_state(self) -> None:

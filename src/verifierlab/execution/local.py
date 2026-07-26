@@ -88,8 +88,10 @@ def _run_fake_work_unit(payload: dict[str, Any]) -> dict[str, Any]:
         "trajectory": trajectory,
         "commitment": commitment,
         "commitment_nonce": nonce,
-        "verifier_accepted": decision.accepted is True,
+        # Preserve None under score_only (do not coerce to False — VALAB-03).
+        "verifier_accepted": decision.accepted,
         "verifier_status": decision.status,
+        "verifier_score": decision.score,
         "verifier_invocations": broker.event_dicts(),
         "query_count": len(broker.events),
         "gt_valid": None,
@@ -97,6 +99,11 @@ def _run_fake_work_unit(payload: dict[str, Any]) -> dict[str, Any]:
         "snapshot_restore_ok": restored_seed == trajectory["seed"] and env2._step == env._step,
         "snapshot_bytes": len(snap),
     }
+    if voucher is not None:
+        result_body["ledger_events"] = list(voucher.events)
+        result_body["candidates"] = voucher.candidates
+        result_body["compute_units"] = voucher.compute_units
+        result_body["budget_voucher_queries"] = voucher.queries
     from verifierlab.campaigns.episode import _stable_episode_digest_body
 
     result_body["unit_digest"] = digest_of(_stable_episode_digest_body(result_body))
@@ -276,44 +283,59 @@ class LocalLauncher:
                         fn,
                         work_unit,
                     )
-                    # Primary metering: broker events from the worker voucher path.
-                    query_count = int(
-                        result.get("query_count")
-                        or len(result.get("verifier_invocations") or [])
-                        or 0
-                    )
-                    if query_count:
-                        self.ledger.add_queries(query_count)
-                    for inv in result.get("verifier_invocations") or []:
-                        if isinstance(inv, dict):
-                            self.ledger.record_event(
-                                "verifier_query",
-                                **{
-                                    k: inv[k]
-                                    for k in (
-                                        "query_id",
-                                        "input_digest",
-                                        "output_digest",
-                                        "latency_ms",
-                                        "caller",
-                                        "access_model",
-                                        "profile_digest",
-                                        "status",
-                                    )
-                                    if k in inv
-                                },
-                            )
-                    steps = len((result.get("trajectory") or {}).get("steps", []))
-                    if steps:
-                        self.ledger.add_steps(steps)
-                    cand = int(result.get("candidates") or 0)
-                    if cand:
-                        self.ledger.add_candidates(cand)
-                    compute = float(result.get("compute_units") or 0.0)
-                    if compute:
-                        self.ledger.add_compute_units(compute)
+                    # Prefer atomic voucher merge (all dimensions, no mid-batch
+                    # drop). Fallback reconstructs meters when workers omit events.
+                    voucher_events = result.get("ledger_events")
+                    if isinstance(voucher_events, list) and voucher_events:
+                        self.ledger.merge_events(voucher_events, refund=False)
+                        # Workers meter queries/candidates/compute; steps are often
+                        # coordinator-side when the voucher never saw env steps.
+                        if not any(
+                            isinstance(e, dict) and e.get("kind") == "steps"
+                            for e in voucher_events
+                        ):
+                            steps = len((result.get("trajectory") or {}).get("steps", []))
+                            if steps:
+                                self.ledger.add_steps(steps)
+                    else:
+                        query_count = int(
+                            result.get("query_count")
+                            or len(result.get("verifier_invocations") or [])
+                            or 0
+                        )
+                        if query_count:
+                            self.ledger.add_queries(query_count)
+                        for inv in result.get("verifier_invocations") or []:
+                            if isinstance(inv, dict):
+                                self.ledger.record_event(
+                                    "verifier_query",
+                                    **{
+                                        k: inv[k]
+                                        for k in (
+                                            "query_id",
+                                            "input_digest",
+                                            "output_digest",
+                                            "latency_ms",
+                                            "caller",
+                                            "access_model",
+                                            "profile_digest",
+                                            "status",
+                                        )
+                                        if k in inv
+                                    },
+                                )
+                        steps = len((result.get("trajectory") or {}).get("steps", []))
+                        if steps:
+                            self.ledger.add_steps(steps)
+                        cand = int(result.get("candidates") or 0)
+                        if cand:
+                            self.ledger.add_candidates(cand)
+                        compute = float(result.get("compute_units") or 0.0)
+                        if compute:
+                            self.ledger.add_compute_units(compute)
                     # Persist spend before continuing so a crash cannot refund.
                     self.ledger.flush()
+                    self.ledger.assert_consistent()
                     digest = self._persist_unit(result)
                     result = {**result, "cas_digest": digest}
                     self._persist_unit(result)

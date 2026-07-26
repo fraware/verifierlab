@@ -206,15 +206,26 @@ class PersistentAttacker:
 
 
 def decision_score(decision: Any) -> float:
-    """Public-channel score for candidate ranking."""
+    """Public-channel score for candidate ranking (capability-aware).
+
+    Prefer explicit ``score`` when present. Only fold ``accepted`` when the
+    decision still exposes a hard label (not score_only).
+    """
     accepted = getattr(decision, "accepted", None)
     score = getattr(decision, "score", None)
-    base = float(score) if score is not None else 0.0
+    if score is not None:
+        base = float(score)
+        # Hard label bonus only when the channel still exposes accept/reject.
+        if accepted is True:
+            return base + 1.0
+        if accepted is False:
+            return base - 0.1
+        return base
     if accepted is True:
-        base += 1.0
-    elif accepted is False:
-        base -= 0.1
-    return base
+        return 1.0
+    if accepted is False:
+        return -0.1
+    return 0.0
 
 
 def evaluate_candidate_trajectory(
@@ -226,8 +237,9 @@ def evaluate_candidate_trajectory(
 ) -> tuple[float, Any]:
     """Snapshot env, apply ``action``, query broker, restore. Returns (score, decision).
 
-    Meters ``ledger.add_candidates(1)`` when a ledger is attached (VALAB-04).
-    Capability channel follows the broker access model (score_only → score).
+    Meters ``ledger.add_candidates(1)`` and ``ledger.add_compute_units(1)`` when
+    a ledger is attached (VALAB-04). Capability channel follows the broker
+    access model (score_only → score).
     """
     snap = env.snapshot()
     try:
@@ -242,8 +254,11 @@ def evaluate_candidate_trajectory(
                 "schema_version": "1",
             }
         ledger = getattr(broker, "ledger", None)
-        if ledger is not None and hasattr(ledger, "add_candidates"):
-            ledger.add_candidates(1)
+        if ledger is not None:
+            if hasattr(ledger, "add_candidates"):
+                ledger.add_candidates(1)
+            if hasattr(ledger, "add_compute_units"):
+                ledger.add_compute_units(1.0)
         decision = broker.query(traj, caller=caller)
         return decision_score(decision), decision
     finally:

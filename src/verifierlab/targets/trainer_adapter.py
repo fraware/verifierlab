@@ -17,6 +17,42 @@ from typing import Any
 from verifierlab.api.decision import Decision
 from verifierlab.artifacts.canonical import digest_of
 from verifierlab.verifiers.broker import VerifierBroker
+from verifierlab.verifiers.capabilities import AccessDenied
+
+_GT_DENY = frozenset(
+    {
+        "gt_valid",
+        "label",
+        "hidden_label",
+        "gt_label",
+        "commitment_label",
+        "ground_truth",
+        "vault_secret",
+        "private_holdout",
+        "is_valid",
+    }
+)
+
+
+def _strip_gt(payload: dict[str, Any]) -> dict[str, Any]:
+    """Remove ground-truth keys from trainer-visible payloads."""
+    out: dict[str, Any] = {}
+    for key, value in payload.items():
+        lowered = str(key).lower()
+        if lowered in _GT_DENY or lowered.startswith("gt_") or lowered.startswith("hidden_"):
+            continue
+        if isinstance(value, dict):
+            out[key] = _strip_gt(value)
+        else:
+            out[key] = value
+    return out
+
+
+def _reject_gt_action(action: dict[str, Any]) -> None:
+    for key in action:
+        lowered = str(key).lower()
+        if lowered in _GT_DENY or lowered.startswith("gt_") or lowered.startswith("hidden_"):
+            raise AccessDenied(f"TrainerAdapter refuses GT-bearing action key {key!r}")
 
 
 @dataclass
@@ -32,10 +68,12 @@ class TrainerStepResult:
 
 @dataclass
 class TrainerAdapter:
-    """Thin trainer loop that only sees broker feedback (VALAB-09 #6).
+    """Broker-only trainer step loop (VALAB-09 #6).
 
     ``propose`` returns an action dict; ``on_feedback`` may update trainer state
-    from the public Decision (capability-filtered by the broker).
+    from the public Decision (capability-filtered by the broker). Ground-truth
+    keys are stripped from state and rejected in actions. Candidate/compute
+    meters increment when the broker ledger is attached.
     """
 
     name: str = "trainer"
@@ -50,7 +88,7 @@ class TrainerAdapter:
         access = self.broker.access_model if self.broker else "unbound"
         return {
             "framework": "trainer",
-            "version": "1",
+            "version": "2",
             "adapter": self.name,
             "access_model": access,
             "profile_digest": self.broker.profile_digest if self.broker else None,
@@ -59,6 +97,7 @@ class TrainerAdapter:
                 if self.broker and self.broker.capabilities
                 else {}
             ),
+            "isolation": "broker_only",
         }
 
     def reset(self, *, seed: int) -> dict[str, Any]:
@@ -76,8 +115,15 @@ class TrainerAdapter:
         if action is None:
             if self.propose is None:
                 raise RuntimeError("no action provided and propose callback unset")
-            action = self.propose(step_i, dict(self._state))
-        clean = {k: v for k, v in action.items() if not str(k).startswith("_")}
+            action = self.propose(step_i, _strip_gt(dict(self._state)))
+        _reject_gt_action(action)
+        clean = {
+            k: v
+            for k, v in action.items()
+            if not str(k).startswith("_")
+            and str(k).lower() not in _GT_DENY
+            and not str(k).lower().startswith("gt_")
+        }
         steps = list(self._state.get("steps") or [])
         steps.append(clean)
         self._state["steps"] = steps
@@ -85,9 +131,17 @@ class TrainerAdapter:
             traj = self.build_trajectory(steps)
         else:
             traj = {"schema_version": "1", "steps": list(steps), "seed": self._state.get("seed")}
+        traj = _strip_gt(traj) if isinstance(traj, dict) else traj
+        ledger = self.broker.ledger
+        if ledger is not None:
+            if hasattr(ledger, "add_candidates"):
+                ledger.add_candidates(1)
+            if hasattr(ledger, "add_compute_units"):
+                ledger.add_compute_units(1.0)
         decision = self.broker.query(traj, caller=f"trainer:{self.name}")
+        public_state = _strip_gt(dict(self._state))
         if self.on_feedback is not None:
-            self.on_feedback(step_i, decision, dict(self._state))
+            self.on_feedback(step_i, decision, public_state)
         query_id = self.broker.events[-1].query_id if self.broker.events else None
         result = TrainerStepResult(
             step=step_i,
@@ -97,6 +151,7 @@ class TrainerAdapter:
             query_id=query_id,
         )
         self.history.append(result)
+        # Expose only capability-filtered channels to the trainer loop.
         return {
             "step": step_i,
             "action": clean,
@@ -105,8 +160,14 @@ class TrainerAdapter:
             "status": decision.status,
             "reason_codes": list(decision.reason_codes),
             "query_id": query_id,
-            "reward": float(decision.score or 0.0),
-            "resources": {"broker_queries": 1},
+            "reward": float(decision.score)
+            if decision.score is not None
+            else (1.0 if decision.accepted is True else 0.0),
+            "resources": {
+                "broker_queries": 1,
+                "candidates": 1,
+                "compute_units": 1.0,
+            },
         }
 
     def finalize(self) -> dict[str, Any]:
@@ -116,6 +177,8 @@ class TrainerAdapter:
             if self.build_trajectory is not None
             else {"schema_version": "1", "steps": steps, "seed": self._state.get("seed")}
         )
+        if isinstance(traj, dict):
+            traj = _strip_gt(traj)
         if "steps" not in traj:
             traj = {**traj, "steps": steps}
         return {
@@ -126,6 +189,8 @@ class TrainerAdapter:
             "trajectory_digest": digest_of(traj),
             "n_steps": len(self.history),
             "query_count": len(self.broker.events) if self.broker else 0,
+            "candidates": len(self.history),
+            "compute_units": float(len(self.history)),
             "history": [
                 {
                     "step": h.step,

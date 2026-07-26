@@ -619,7 +619,7 @@ def test_stats_schema_fails_when_required_missing() -> None:
 
 
 def test_trainer_adapter_broker_only() -> None:
-    ledger = ProvenanceLedger(budget=Budget(max_queries=20))
+    ledger = ProvenanceLedger(budget=Budget(max_queries=20, max_candidates=10, max_compute_units=10))
     broker = VerifierBroker(
         profile=VerifierProfile.for_callable(fake_refund_verifier),
         verifier=fake_refund_verifier,
@@ -629,9 +629,24 @@ def test_trainer_adapter_broker_only() -> None:
     out = run_trainer_loop(broker, steps=3, seed=7)
     assert out["framework"] == "trainer"
     assert out["query_count"] == 3
+    assert out["candidates"] == 3
     assert ledger.queries == 3
+    assert ledger.candidates == 3
+    assert ledger.compute_units == pytest.approx(3.0)
     for row in out["history"]:
         assert "gt_valid" not in row or row.get("gt_valid") is None
+
+
+def test_trainer_adapter_rejects_gt_actions() -> None:
+    broker = VerifierBroker(
+        profile=VerifierProfile.for_callable(fake_refund_verifier),
+        verifier=fake_refund_verifier,
+        access_model="black-box",
+    )
+    adapter = TrainerAdapter(broker=broker)
+    adapter.reset(seed=0)
+    with pytest.raises(AccessDenied, match="GT"):
+        adapter.step({"op": "refund", "amount": 10, "gt_valid": True})
 
 
 def test_trainer_adapter_conformance() -> None:
@@ -645,3 +660,210 @@ def test_trainer_adapter_conformance() -> None:
     result = run_conformance(adapter, seed=0)  # type: ignore[arg-type]
     assert result.checks.get("config_capture")
     assert result.checks.get("hidden_label_separation")
+    assert adapter.capture_config().get("isolation") == "broker_only"
+
+
+# ---------------------------------------------------------------------------
+# Adversarial second pass — enforcement depth
+# ---------------------------------------------------------------------------
+
+
+def test_label_only_episode_feedback_strips_score() -> None:
+    """label_only must not synthesize a score from accept/reject (VALAB-03)."""
+    from verifierlab.attacks.ordinary import OrdinaryBaseline
+    from verifierlab.campaigns.episode import run_episode
+    from verifierlab.targets.fake import FakeEnvironment
+
+    env = FakeEnvironment(max_steps=1)
+    broker = VerifierBroker(
+        profile=VerifierProfile.for_callable(fake_refund_verifier),
+        verifier=fake_refund_verifier,
+        access_model="label_only",
+    )
+    seen: list[dict] = []
+
+    class _Capture(OrdinaryBaseline):
+        def observe(self, feedback: dict) -> None:  # type: ignore[override]
+            seen.append(dict(feedback))
+            super().observe(feedback)
+
+    result = run_episode(
+        unit_id="lo0",
+        seed=1,
+        max_steps=1,
+        env=env,
+        strategy=_Capture(),
+        strategy_config={},
+        cohort="ordinary",
+        access_model="label_only",
+        strategy_name="ordinary",
+        commitment_nonce="n0",
+        broker=broker,
+    )
+    assert result["verifier_accepted"] is not None
+    assert result.get("verifier_score") is None
+    assert seen
+    assert seen[0].get("score") is None
+    assert seen[0].get("verifier_accepted") is not None
+
+
+def test_score_only_episode_feedback_strips_accepted() -> None:
+    """score_only must expose score and never a hard accept label."""
+    from verifierlab.attacks.ordinary import OrdinaryBaseline
+    from verifierlab.campaigns.episode import run_episode
+    from verifierlab.targets.fake import FakeEnvironment
+
+    env = FakeEnvironment(max_steps=1)
+    broker = VerifierBroker(
+        profile=VerifierProfile.for_callable(fake_refund_verifier),
+        verifier=fake_refund_verifier,
+        access_model="score_only",
+    )
+    seen: list[dict] = []
+
+    class _Capture(OrdinaryBaseline):
+        def observe(self, feedback: dict) -> None:  # type: ignore[override]
+            seen.append(dict(feedback))
+            super().observe(feedback)
+
+    result = run_episode(
+        unit_id="so0",
+        seed=1,
+        max_steps=1,
+        env=env,
+        strategy=_Capture(),
+        strategy_config={},
+        cohort="ordinary",
+        access_model="score_only",
+        strategy_name="ordinary",
+        commitment_nonce="n0",
+        broker=broker,
+    )
+    assert result["verifier_accepted"] is None
+    assert result.get("verifier_score") is not None
+    assert seen
+    assert seen[0].get("verifier_accepted") is None
+    assert seen[0].get("score") is not None
+
+def test_stateful_rejects_gt_episode_state() -> None:
+    broker = VerifierBroker(
+        profile=VerifierProfile.for_callable(fake_refund_verifier),
+        verifier=fake_refund_verifier,
+        access_model="stateful",
+    )
+    broker.retain_episode_state("ok", {"count": 1})
+    with pytest.raises(AccessDenied, match="GT"):
+        broker.retain_episode_state("gt_valid", True)
+    with pytest.raises(AccessDenied, match="GT"):
+        broker.retain_episode_state("cache", {"gt_valid": False})
+
+
+def test_voucher_merge_charges_all_before_stop(tmp_path: Path) -> None:
+    """Crash-merge must charge the full voucher batch before raising STOP."""
+    coordinator = ProvenanceLedger(
+        budget=Budget(max_queries=5, max_candidates=2, overrun_policy=OverrunPolicy.STOP),
+        persist_path=tmp_path / "spend.json",
+    )
+    voucher_events = [
+        {"kind": "queries", "amount": 3, "total": 3},
+        {"kind": "candidates", "amount": 2, "total": 2},
+        {"kind": "compute_units", "amount": 1.5, "total": 1.5},
+        {"kind": "queries", "amount": 3, "total": 6},  # pushes queries over limit
+        {"kind": "candidates", "amount": 1, "total": 3},  # would be lost if mid-raise
+    ]
+    with pytest.raises(BudgetExceeded):
+        coordinator.merge_events(voucher_events, refund=False)
+    assert coordinator.queries == 6
+    assert coordinator.candidates == 3
+    assert coordinator.compute_units == pytest.approx(1.5)
+    coordinator.assert_consistent()
+
+
+def test_compute_units_metered_in_candidate_eval() -> None:
+    from verifierlab.attacks.runtime import evaluate_candidate_trajectory
+    from verifierlab.targets.fake import FakeEnvironment
+
+    env = FakeEnvironment(max_steps=2)
+    env.reset(seed=1)
+    ledger = ProvenanceLedger(
+        budget=Budget(max_queries=10, max_candidates=5, max_compute_units=5.0)
+    )
+    broker = VerifierBroker(
+        profile=VerifierProfile.for_callable(fake_refund_verifier),
+        verifier=fake_refund_verifier,
+        access_model="black-box",
+        ledger=ledger,
+    )
+    evaluate_candidate_trajectory(env, {"op": "refund", "amount": 50}, broker, caller="t")
+    assert ledger.candidates == 1
+    assert ledger.compute_units == pytest.approx(1.0)
+    assert ledger.queries == 1
+
+
+def test_sealed_manifest_required_fields(tmp_path: Path) -> None:
+    workspace = init_workspace(tmp_path / ".valab")
+    result = run_campaign(FAKE_SMOKE, workspace=workspace, max_workers=1, use_processes=False)
+    freeze_run(result.run_dir)
+    sealed = json.loads((result.run_dir / "sealed_run.json").read_text(encoding="utf-8"))
+    body = {k: v for k, v in sealed.items() if k != "content_digest"}
+    manifest = SealedRunManifest.model_validate(body)
+    required = [
+        "campaign_digest",
+        "freeze_digest",
+        "attack_digests",
+        "environment_fingerprint",
+        "random_seeds",
+        "budget_digest",
+        "inputs_digest",
+        "outputs_digest",
+        "vault_tip_digest",
+        "report_config_digest",
+    ]
+    for field in required:
+        value = getattr(manifest, field)
+        assert value is not None, field
+        if field == "attack_digests":
+            assert isinstance(value, list)
+    assert manifest.content_digest() == sealed["content_digest"]
+
+
+def test_tip_rewrite_rejected_after_seal(tmp_path: Path) -> None:
+    from verifierlab.artifacts.cas import ContentAddressedStore
+    from verifierlab.campaigns.lifecycle import LifecycleState, write_tip_index
+
+    workspace = init_workspace(tmp_path / ".valab")
+    result = run_campaign(FAKE_SMOKE, workspace=workspace, max_workers=1, use_processes=False)
+    freeze_run(result.run_dir)
+    store = ContentAddressedStore(workspace / "store")
+    with pytest.raises(ValueError, match=r"after seal|illegal lifecycle"):
+        write_tip_index(
+            result.run_dir,
+            store=store,
+            tip_payload={"run_id": result.run_id, "campaign_digest": "x", "status": "mutated"},
+            tip_kind="freeze",
+            lifecycle=LifecycleState.FREEZE,
+            run_id=str(result.run_id),
+        )
+
+
+def test_prior_run_private_holdout_path_quarantine(tmp_path: Path) -> None:
+    """Attackers reading a prior run dir cannot open private_holdout plaintext."""
+    vault = fresh_ephemeral_vault(tmp_path / "prior_run" / "vault")
+    marker = "PRIOR_RUN_PRIVATE_LABEL_SECRET"
+    c = vault.commit(
+        {"steps": [{"op": "refund", "amount": 1}]},
+        {"valid": True, "note": marker},
+        role="adjudicator",
+        label_tier=LabelTier.PRIVATE_HOLDOUT.value,
+    )
+    vault.freeze(role="coordinator")
+    vault.release(role="coordinator")
+    prior = tmp_path / "prior_run"
+    # Filesystem scrape must not yield plaintext.
+    scraped = (prior / "vault" / "private" / "labels" / f"{c}.json").read_text(encoding="utf-8")
+    assert marker not in scraped
+    # Role denial even with path knowledge.
+    with pytest.raises(PermissionError):
+        vault.get_label(c, role="attacker")
+    with pytest.raises(PermissionError):
+        vault.get_label(c, role="worker")

@@ -173,6 +173,10 @@ class ProvenanceLedger:
 
         Completed query / candidate / compute events remain charged even if the
         worker crashed after reserve (``refund`` must stay False).
+
+        All events in the batch are applied before any STOP overrun is raised so
+        a mid-merge ``BudgetExceeded`` cannot drop remaining completed spend
+        (VALAB-04 process crash paths).
         """
         if refund:
             raise ValueError("ledger merges never refund completed spend")
@@ -185,19 +189,16 @@ class ProvenanceLedger:
                     self.events.append(
                         {"kind": "queries", "amount": int(amount), "total": self.queries}
                     )
-                    self._check_unlocked("queries", self.queries, self.budget.max_queries)
                 elif kind == "steps" and isinstance(amount, (int, float)):
                     self.steps += int(amount)
                     self.events.append(
                         {"kind": "steps", "amount": int(amount), "total": self.steps}
                     )
-                    self._check_unlocked("steps", self.steps, self.budget.max_steps)
                 elif kind == "tokens" and isinstance(amount, (int, float)):
                     self.tokens += int(amount)
                     self.events.append(
                         {"kind": "tokens", "amount": int(amount), "total": self.tokens}
                     )
-                    self._check_unlocked("tokens", self.tokens, self.budget.max_tokens)
                 elif kind == "cost_usd" and isinstance(amount, (int, float)):
                     self.cost_usd += float(amount)
                     self.events.append(
@@ -207,7 +208,6 @@ class ProvenanceLedger:
                             "total": self.cost_usd,
                         }
                     )
-                    self._check_unlocked("cost_usd", self.cost_usd, self.budget.max_cost_usd)
                 elif kind == "candidates" and isinstance(amount, (int, float)):
                     self.candidates += int(amount)
                     self.events.append(
@@ -217,7 +217,6 @@ class ProvenanceLedger:
                             "total": self.candidates,
                         }
                     )
-                    self._check_unlocked("candidates", self.candidates, self.budget.max_candidates)
                 elif kind == "compute_units" and isinstance(amount, (int, float)):
                     self.compute_units += float(amount)
                     self.events.append(
@@ -227,15 +226,46 @@ class ProvenanceLedger:
                             "total": self.compute_units,
                         }
                     )
-                    self._check_unlocked(
-                        "compute_units",
-                        self.compute_units,
-                        self.budget.max_compute_units,
-                    )
                 else:
                     # Provenance-only events (verifier_query, overrun, …).
                     self.events.append(dict(event))
+            # Defer limit checks until the full voucher batch is charged.
             self._persist_unlocked()
+            self._raise_if_over_after_merge_unlocked()
+
+    def _raise_if_over_after_merge_unlocked(self) -> None:
+        """Record overruns for any exceeded dimension; raise once if STOP."""
+        checks: list[tuple[str, float, float | int | None]] = [
+            ("queries", float(self.queries), self.budget.max_queries),
+            ("steps", float(self.steps), self.budget.max_steps),
+            ("tokens", float(self.tokens), self.budget.max_tokens),
+            ("cost_usd", float(self.cost_usd), self.budget.max_cost_usd),
+            ("candidates", float(self.candidates), self.budget.max_candidates),
+            ("compute_units", float(self.compute_units), self.budget.max_compute_units),
+            ("wall_time_s", float(self.wall_time_s()), self.budget.max_wall_time_s),
+        ]
+        first_stop: OverrunRecord | None = None
+        for dimension, actual, limit in checks:
+            if limit is None or actual <= float(limit):
+                continue
+            stopped = self.budget.overrun_policy == OverrunPolicy.STOP
+            record = OverrunRecord(
+                dimension=dimension,
+                limit=float(limit),
+                actual=float(actual),
+                policy=self.budget.overrun_policy,
+                stopped=stopped,
+                message=f"budget exceeded on {dimension}: {actual} > {limit}",
+            )
+            self.overruns.append(record)
+            self.events.append({"kind": "overrun", **record.model_dump(mode="json")})
+            if stopped and first_stop is None:
+                first_stop = record
+                self.stopped = True
+                self._wall_time_s = self.wall_time_s()
+        self._persist_unlocked()
+        if first_stop is not None:
+            raise BudgetExceeded(first_stop)
 
     def _persist_unlocked(self) -> None:
         if self.persist_path is None:

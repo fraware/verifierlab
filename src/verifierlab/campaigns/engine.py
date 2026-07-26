@@ -287,18 +287,20 @@ async def run_campaign_async(
     )
 
 
-def _digest_tree(path: Path) -> str | None:
-    """Digest sorted relative paths + file digests under ``path`` (if any)."""
+def _digest_tree(path: Path) -> str:
+    """Digest sorted relative paths + file digests under ``path``.
+
+    Missing or empty trees yield a stable empty-tree digest (never ``None``)
+    so sealed manifests remain complete and digest-stable (VALAB-05).
+    """
     if not path.is_dir():
-        return None
+        return digest_of({"tree": str(path.as_posix()), "entries": []})
     rows: list[dict[str, str]] = []
     for child in sorted(path.rglob("*")):
         if child.is_file():
             rel = child.relative_to(path).as_posix()
             rows.append({"path": rel, "sha256": sha256_digest(child.read_bytes())})
-    if not rows:
-        return None
-    return digest_of(rows)
+    return digest_of({"tree": path.as_posix(), "entries": rows})
 
 
 def freeze_run(run_dir: Path, *, store: ContentAddressedStore | None = None) -> FreezeRecord:

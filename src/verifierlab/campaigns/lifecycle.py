@@ -99,8 +99,25 @@ def write_tip_index(
     prev_chain: list[str] | None = None,
     extra_index: dict[str, Any] | None = None,
 ) -> tuple[str, dict[str, Any]]:
-    """Persist an immutable tip to CAS and update ``manifest.json`` pointer only."""
+    """Persist an immutable tip to CAS and update ``manifest.json`` pointer only.
+
+    Tip-index mutation is allowed only via legal lifecycle transitions
+    (VALAB-05). After a sealed run exists, callers cannot rewind or skip states.
+    """
     run_dir = Path(run_dir)
+    nxt = LifecycleState(lifecycle) if not isinstance(lifecycle, LifecycleState) else lifecycle
+    manifest_path = run_dir / "manifest.json"
+    if manifest_path.is_file():
+        current = lifecycle_of(run_dir)
+        # Advancing requires a legal transition. Same-lifecycle tip refreshes are
+        # allowed only before seal (attack-plane checkpoint updates).
+        if current != nxt.value:
+            assert_transition(current, nxt)
+        elif (run_dir / "sealed_run.json").is_file():
+            raise ValueError(
+                f"tip rewrite rejected after seal at lifecycle={current!r} "
+                f"(kind={tip_kind!r}); only forward lifecycle transitions allowed"
+            )
     tip_digest = store.put_json(tip_payload)
     chain = list(prev_chain or [])
     if tip_digest not in chain:
@@ -109,7 +126,7 @@ def write_tip_index(
         run_id=run_id,
         tip_digest=tip_digest,
         tip_kind=tip_kind,
-        lifecycle=str(lifecycle.value if isinstance(lifecycle, LifecycleState) else lifecycle),
+        lifecycle=str(nxt.value),
         campaign_digest=tip_payload.get("campaign_digest"),
         chain=chain,
         status=tip_payload.get("status"),
@@ -118,9 +135,7 @@ def write_tip_index(
         overrun=bool(tip_payload.get("overrun")),
         metadata={
             **dict(tip_payload.get("metadata") or {}),
-            "lifecycle": str(
-                lifecycle.value if isinstance(lifecycle, LifecycleState) else lifecycle
-            ),
+            "lifecycle": str(nxt.value),
             **dict((extra_index or {}).get("metadata") or {}),
         },
     )

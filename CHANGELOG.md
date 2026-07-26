@@ -19,25 +19,32 @@ with pre-release tags (`a` = alpha, `b` = beta, `rc` = release candidate).
   (`legacy_contract` escape for planted verifiers)
 - **VALAB-03:** Access models extended with `score_only`, `label_only`,
   `partial_feedback`, `stateful` + `may_retain_episode_state`; broker channel
-  stripping
+  stripping; episode feedback capability-gated (no score synthesis under
+  `label_only`); stateful episode state rejects GT keys
 - **VALAB-04:** `max_candidates` / `max_compute_units`; thread-safe ledger;
-  crash-no-refund persist; verifier invocations ≡ queries
+  crash-no-refund persist; verifier invocations ≡ queries; LocalLauncher
+  prefers atomic voucher `merge_events` (full batch charged before STOP);
+  candidate eval meters compute units
 - **VALAB-05:** `SealedRunManifest` on freeze; sealed immutability checks;
-  incomplete-run resume restores spend without double-charging; byte-identical
-  canonical report rebuild
+  tip-index mutation only via legal lifecycle transitions (same-lifecycle
+  rewrite rejected after seal); incomplete-run resume restores spend without
+  double-charging; byte-identical canonical report rebuild
 - **VALAB-06:** `LabelTier` (development/regression/release/private_holdout);
   private quarantine under `vault/private/`; reports omit raw private labels
 - **VALAB-07:** Repair gates incl. `trivial_reject_detected` failure
 - **VALAB-08:** StatsPlan `stopping_rule` / `multiple_comparison_policy`;
   censored counts; required optimization_gap; schema validation fails if missing
-- **VALAB-09:** Trainer adapter + six-adapter release matrix; gym fixture
-  mandatory in `adapter-fixtures` CI
+- **VALAB-09:** Trainer adapter (GT-isolating, broker-metered) + six-adapter
+  release matrix; gym fixture mandatory in `adapter-fixtures` CI; `[adapters]`
+  includes `[trainer]`
 
 ### Planned
 
 - Optional `[stats]` extra with SciPy-backed exact intervals
 - Stronger OS/sandbox enforcement for untrusted plugins (default remains process-local)
 - CLI surfaces for disclosure and adapter routing (today: Python APIs)
+- Cross-process voucher issuance under concurrent workers still snapshots
+  remaining budget at submit time (serialized merge; not a distributed lock)
 
 ## [0.2.0rc1] — 2026-07-25
 

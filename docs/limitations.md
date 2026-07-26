@@ -15,11 +15,12 @@ integrations or as a soundness proof. Cross-links:
 | Typed decisions | Fail-closed `normalize_decision` / `VerifierDecision` status set (including repair/minimize paths) |
 | GT isolation | Attack workers do not import GT; refuse GT-like refs; `gt_valid` only post-adjudication |
 | Vault / freeze | Vault v2 salted + encrypted; append-only freeze → adjudicate → release |
-| Access models | Capability-gated at `VerifierBroker` |
-| Optimized loops | Persistent attacker runtime; candidate-level BoN/beam/evo/RL metering; worker budget vouchers |
+| Access models | Capability-gated at `VerifierBroker`; episode feedback respects score_only / label_only |
+| Optimized loops | Persistent attacker runtime; candidate-level BoN/beam/evo/RL metering; worker budget vouchers; compute_units on candidate eval |
 | Splits / StatsPlan | Materialized splits + StatsPlan compiler (CIs + gap bootstrap); no default pooling |
 | Adapter conformance | Shared decision / timeout / isolation suite; live SDKs scheduled |
 | RC acceptance suite | `tests/test_acceptance_gates.py` encodes gates 1–6 |
+| Sealed runs | `SealedRunManifest`; tip index only advances via lifecycle transitions after seal |
 
 Package version is **`0.2.0rc1`**. Remaining thin surfaces below are intentional non-claims, not untested scaffolding.
 
@@ -91,7 +92,8 @@ Package version is **`0.2.0rc1`**. Remaining thin surfaces below are intentional
 | NeMo training stack | HTTP protocol only — not Ray/NVIDIA containers. |
 | OpenEnv Docker / Spaces | Protocol + reference env live; upstream providers optional. |
 | Clopper–Pearson | Pure-Python incomplete beta; extreme params may differ from SciPy. |
-| RL path | Local tabular Q-learning in base; heavy trainers optional/external. |
+| RL path | Local tabular Q-learning in base; `TrainerAdapter` is broker-only step loop (not a product RL trainer); heavy trainers optional/external. |
+| Concurrent vouchers | Process workers snapshot remaining budget at submit; coordinator merges without refund. Parallel workers can race remaining quota (serialized merge, not distributed reservation). |
 | Sandbox profiles | Declarative tags + optional Docker runner (`[sandbox]`); default local path trusts host Python. |
 | Threat model doc | Research-draft, expanded beyond M0. |
 

@@ -86,6 +86,7 @@ adapters = [
     "verifierlab[harbor]",
     "verifierlab[openenv]",
     "verifierlab[nemo]",
+    "verifierlab[trainer]",
 ]
 
 [project.scripts]

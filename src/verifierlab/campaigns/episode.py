@@ -207,9 +207,20 @@ def run_episode(
     }:
         accepted_value = None
 
+    # Capability-gated feedback score (VALAB-03): never synthesize a score from
+    # accept/reject under label_only; never drop the real score under score_only.
+    caps = capabilities_for(access_model)
+    feedback_score: float | None = None
+    if caps.may_read_score:
+        if decision.score is not None:
+            feedback_score = float(decision.score)
+        elif caps.may_read_decision and accepted_value is not None:
+            feedback_score = 1.0 if accepted_value else 0.0
+    # Attack-visible reward stays environmental; score channel is separate.
+    observe_score = feedback_score if feedback_score is not None else 0.0
+
     commitment = trajectory_commitment(trajectory, commitment_nonce)
 
-    caps = capabilities_for(access_model)
     coverage: list[str] = []
     verifier_fn = broker.verifier if broker is not None else verifier
     reason_fn = getattr(verifier_fn, "reason_codes", None) if verifier_fn else None
@@ -227,27 +238,35 @@ def run_episode(
         except Exception:
             coverage = []
     if not coverage:
-        coverage = [
-            f"accept:{accepted_value}",
-            f"ops:{[s.get('op') for s in trajectory.get('steps', [])]}",
-        ]
+        if caps.may_read_decision:
+            coverage = [
+                f"accept:{accepted_value}",
+                f"ops:{[s.get('op') for s in trajectory.get('steps', [])]}",
+            ]
+        elif caps.may_read_score:
+            coverage = [f"score:{feedback_score}"]
+        else:
+            coverage = ["feedback:none"]
 
     # Black-box strategies only see decision/score; gray may keep allowlisted codes.
-    public_coverage = (
-        caps.filter_reason_codes(coverage)
-        if caps.may_read_reason_codes
-        else [f"accept:{accepted_value}"]
-    )
+    if caps.may_read_reason_codes:
+        public_coverage = caps.filter_reason_codes(coverage)
+    elif caps.may_read_score and not caps.may_read_decision:
+        public_coverage = [f"score:{feedback_score}"]
+    elif caps.may_read_decision:
+        public_coverage = [f"accept:{accepted_value}"]
+    else:
+        public_coverage = ["feedback:none"]
 
     raw_feedback = {
-        "verifier_accepted": accepted_value,
+        "verifier_accepted": accepted_value if caps.may_read_decision else None,
         "reward": total_reward,
         "observation": last_obs,
         "trajectory": trajectory,
         "coverage": public_coverage,
-        "reason_codes": public_coverage,
+        "reason_codes": public_coverage if caps.may_read_reason_codes else [],
         "cost": float(max_steps),
-        "score": total_reward + (1.0 if accepted_value else 0.0),
+        "score": observe_score if caps.may_read_score else None,
         "novel": False,
     }
     strategy.observe(public_attack_feedback(raw_feedback))
@@ -264,9 +283,10 @@ def run_episode(
         "trajectory": trajectory,
         "commitment": commitment,
         "commitment_nonce": commitment_nonce,
-        "verifier_accepted": accepted_value,
+        "verifier_accepted": accepted_value if caps.may_read_decision else None,
         "verifier_status": decision.status,
         "verifier_kind": decision.kind.value,
+        "verifier_score": decision.score if caps.may_read_score else None,
         "verifier_invocations": invocations,
         "query_count": len(invocations),
         "coverage": public_coverage,
