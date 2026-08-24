@@ -6,8 +6,10 @@ container with mandatory isolation controls, inspects the effective runtime
 configuration before execution, and emits content-addressed boundary and
 execution records.
 
-Security-grade execution is fail-closed. A digest-pinned worker image and a
-rootless container daemon are mandatory. No host bind/volume/device mount is
+A digest-pinned worker image is mandatory. Rootless daemon execution is required
+for ``security_grade=True``. The policy may explicitly permit a rootful daemon
+for CI/conformance exercises, but such a run remains below security grade even
+when every container-local control passes. No host bind/volume/device mount is
 permitted. Mutable persistent-attacker state is intentionally unsupported until
 it has a dedicated protocol that cannot expose coordinator state.
 """
@@ -24,13 +26,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from verifierlab.artifacts.canonical import digest_of
 
-_IMAGE_DIGEST_RE = re.compile(r"@sha256:([0-9a-f]{64})$")
+_IMAGE_DIGEST_RE = re.compile(r"(?:@sha256:|^sha256:)([0-9a-f]{64})$")
 _WORKER_DATA = "/var/lib/verifierlab/worker"
 _TMP = "/tmp"
 
 
 class ContainerIsolationPolicy(BaseModel):
-    """Non-negotiable controls for the strict worker execution path."""
+    """Mandatory controls for the isolated worker execution path."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -42,13 +44,13 @@ class ContainerIsolationPolicy(BaseModel):
     nano_cpus: int = Field(default=1_000_000_000, ge=100_000_000, le=8_000_000_000)
     tmpfs_bytes: int = Field(default=64 * 1024 * 1024, ge=4 * 1024 * 1024)
     timeout_s: float = Field(default=120.0, gt=0.0, le=3600.0)
-    require_rootless: Literal[True] = True
+    require_rootless: bool = True
 
     @field_validator("image")
     @classmethod
     def _image_must_be_digest_pinned(cls, value: str) -> str:
         if _IMAGE_DIGEST_RE.search(value) is None:
-            raise ValueError("security-grade worker image must be pinned by sha256 digest")
+            raise ValueError("isolated worker image must be pinned by sha256 digest")
         return value
 
     @property
@@ -70,6 +72,7 @@ class ExecutionBoundaryManifest(BaseModel):
     image_digest: str = Field(min_length=64, max_length=64)
     container_id_digest: str = Field(min_length=64, max_length=64)
     daemon_security_options: tuple[str, ...]
+    policy_requires_rootless: bool
     daemon_rootless: bool
     network_none: bool
     read_only_root: bool
@@ -89,6 +92,7 @@ class ExecutionBoundaryManifest(BaseModel):
     nano_cpus: int
     create_command_digest: str = Field(min_length=64, max_length=64)
     inspect_digest: str = Field(min_length=64, max_length=64)
+    policy_satisfied: bool
     security_grade: bool
 
     @property
@@ -221,6 +225,11 @@ def boundary_manifest_from_inspect(
         and observed_memory == policy.memory_bytes
         and observed_nano_cpus == policy.nano_cpus
     )
+    container_controls_ok = all(
+        value for name, value in controls.items() if name != "daemon_rootless"
+    )
+    rootless_policy_ok = controls["daemon_rootless"] or not policy.require_rootless
+    policy_satisfied = container_controls_ok and resources_match and rootless_policy_ok
     security_grade = all(controls.values()) and resources_match
 
     manifest = ExecutionBoundaryManifest(
@@ -228,16 +237,22 @@ def boundary_manifest_from_inspect(
         image_digest=policy.image_digest,
         container_id_digest=digest_of({"container_id": container_id}),
         daemon_security_options=tuple(sorted(str(v) for v in daemon_security_options)),
+        policy_requires_rootless=policy.require_rootless,
         pids_limit=observed_pids,
         memory_bytes=observed_memory,
         nano_cpus=observed_nano_cpus,
         create_command_digest=digest_of(create_command),
         inspect_digest=digest_of(inspect_payload),
+        policy_satisfied=policy_satisfied,
         security_grade=security_grade,
         **controls,
     )
-    if not manifest.security_grade:
-        failed = [name for name, ok in controls.items() if not ok]
+    if not manifest.policy_satisfied:
+        failed = [
+            name
+            for name, ok in controls.items()
+            if not ok and (name != "daemon_rootless" or policy.require_rootless)
+        ]
         if not resources_match:
             failed.append("resource_limits_mismatch")
         raise RuntimeError("container isolation attestation failed: " + ", ".join(failed))
@@ -256,7 +271,7 @@ def assert_security_compatible_work_unit(work_unit: dict[str, Any]) -> None:
 
 
 class ContainerWorkerExecutor:
-    """Execute one worker request in an inspected, rootless, mount-free container."""
+    """Execute one worker request in an inspected, mount-free container."""
 
     def __init__(
         self,
