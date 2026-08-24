@@ -1,12 +1,12 @@
-"""Fake environment and planted oracle GT."""
+"""Fake environment and planted oracle ground truth."""
 
 from __future__ import annotations
 
 import pytest
 
+from verifierlab.labels.planted_fake import PlantedOracleGroundTruth
 from verifierlab.targets.fake import (
     FakeEnvironment,
-    PlantedOracleGroundTruth,
     fake_refund_verifier,
     propose_fake_action,
 )
@@ -28,7 +28,6 @@ def test_snapshot_restore() -> None:
     env.reset(seed=99)
     env.act({"op": "noop"})
     snap = env.snapshot()
-    # Exact RNG restore: next draw must match the original stream.
     next_noise = env._rng.randint(0, 10_000)
     other = FakeEnvironment()
     other.restore(snap)
@@ -45,7 +44,6 @@ def test_planted_gt_commitment_not_boolean_guessable() -> None:
     }
     gt = PlantedOracleGroundTruth()
     commitment = gt.commit(traj, nonce="fixed-nonce")
-    # Offline Boolean guessing against digest(traj||valid) must fail for v2.
     from verifierlab.artifacts.canonical import digest_of
 
     guess_true = digest_of({"schema_version": "1", "trajectory": traj, "valid": True})
@@ -69,12 +67,11 @@ def test_planted_gt_and_verifier_far() -> None:
         gt.label(commitment, after_freeze=False)
     label = gt.label(commitment, after_freeze=True)
     assert label["valid"] is False
-    # Planted FAR: public verifier accepts even amount > 100
     assert fake_refund_verifier(traj) is True
 
     traj_odd = {"seed": 1, "steps": [{"op": "refund", "amount": 121}], "observation": {}}
     assert fake_refund_verifier(traj_odd) is False
-    assert gt.commit(traj_odd)  # still invalid for GT
+    assert gt.commit(traj_odd)
 
 
 def test_propose_fake_action_deterministic() -> None:
