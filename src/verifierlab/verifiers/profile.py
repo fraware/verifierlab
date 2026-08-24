@@ -19,7 +19,9 @@ def _default_applicability(
     """Public applicability contract: where this verifier may be mounted."""
     payload: dict[str, Any] = {
         "decision_space": (
-            decision_space.value if isinstance(decision_space, DecisionSpace) else str(decision_space)
+            decision_space.value
+            if isinstance(decision_space, DecisionSpace)
+            else str(decision_space)
         ),
         "target_kinds": ["python", "native"],
         "requires_hidden_labels": False,
