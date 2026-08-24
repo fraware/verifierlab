@@ -20,12 +20,14 @@ from typing import Any
 
 
 ROLE = "worker"
-_FORBIDDEN_PACKAGE_DIRS = (
+_FORBIDDEN_PACKAGE_PATHS = (
     "labels",
     "repairs",
     "disclosure",
     "reports",
-    "cli",
+    "cli.py",
+    "campaigns/engine.py",
+    "campaigns/lifecycle.py",
 )
 
 
@@ -38,7 +40,7 @@ def _package_root() -> Path:
 
 def _assert_pruned_runtime() -> None:
     root = _package_root()
-    leaked = [name for name in _FORBIDDEN_PACKAGE_DIRS if (root / name).exists()]
+    leaked = [rel for rel in _FORBIDDEN_PACKAGE_PATHS if (root / rel).exists()]
     if leaked:
         raise SystemExit(
             "worker image contains coordinator-only package surfaces: " + ", ".join(leaked)
