@@ -1,6 +1,7 @@
 """Evidence-derived assurance maturity gates."""
 
 from verifierlab.assurance.maturity import (
+    AssuranceClaim,
     AssuranceEvidence,
     AssuranceLevel,
     AssuranceQualification,
@@ -8,6 +9,7 @@ from verifierlab.assurance.maturity import (
 )
 
 __all__ = [
+    "AssuranceClaim",
     "AssuranceEvidence",
     "AssuranceLevel",
     "AssuranceQualification",
