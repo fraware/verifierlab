@@ -9,7 +9,7 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
-from verifierlab.artifacts.records import AccessModel, DecisionSpace, DisclosureClass
+from verifierlab.artifacts.records import AccessModel, DisclosureClass
 from verifierlab.budgets.budget import Budget, OverrunPolicy
 from verifierlab.diagnostics.codes import Diagnostic, DiagnosticSeverity
 
@@ -24,7 +24,6 @@ class CampaignSpecError(ValueError):
 
 class TargetRef(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     kind: str
     ref: str
     version: str | None = None
@@ -33,7 +32,6 @@ class TargetRef(BaseModel):
 
 class GroundTruthSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     provider: str
     version: str | None = None
     config: dict[str, Any] = Field(default_factory=dict)
@@ -41,7 +39,6 @@ class GroundTruthSpec(BaseModel):
 
 class BaselineSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     strategy: str = "ordinary"
     config: dict[str, Any] = Field(default_factory=dict)
 
@@ -50,7 +47,6 @@ class AttackSpec(BaseModel):
     """Named attack cohort within a campaign."""
 
     model_config = ConfigDict(extra="forbid")
-
     name: str
     strategy: str
     cohort: str = "optimized"
@@ -61,13 +57,11 @@ class AttackSpec(BaseModel):
 class StatsPlan(BaseModel):
     """Executable statistical analysis plan (VAL-R12 / VALAB-08).
 
-    The model deliberately contains only controls the compiler can either
-    execute or reject fail-closed. A declared option must never be copied into
-    a report as if it had been applied when no implementation exists.
+    A declared option must be implemented by the compiler or rejected
+    fail-closed; it must never be copied into a report as if it had run.
     """
 
     model_config = ConfigDict(extra="forbid")
-
     methods: list[str] = Field(default_factory=lambda: ["wilson"])
     alpha: float = Field(default=0.05, gt=0.0, lt=1.0)
     bootstrap_samples: int = Field(default=1000, ge=0)
@@ -120,7 +114,6 @@ class StatsPlan(BaseModel):
 
 class SplitSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     name: str
     fraction: float | None = Field(default=None, ge=0.0, le=1.0)
     count: int | None = Field(default=None, ge=0)
@@ -153,7 +146,6 @@ class CampaignSpec(BaseModel):
     """Pinned campaign plan C = (E, V, G, P, A, B, X, S) binding."""
 
     model_config = ConfigDict(extra="forbid")
-
     schema_version: str = "1"
     name: str
     description: str | None = None
@@ -202,8 +194,7 @@ def _diagnostic_from_validation_error(exc: ValidationError) -> list[Diagnostic]:
 def validate_campaign_semantics(spec: CampaignSpec) -> list[Diagnostic]:
     """Return semantic diagnostics (errors and warnings) for a loaded spec."""
     diags: list[Diagnostic] = []
-    required_pins = ("verifierlab", "campaign")
-    for key in required_pins:
+    for key in ("verifierlab", "campaign"):
         if key not in spec.pinned_versions:
             diags.append(
                 Diagnostic(
