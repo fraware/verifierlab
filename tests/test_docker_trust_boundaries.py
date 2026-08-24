@@ -61,12 +61,13 @@ def test_distinct_default_data_paths() -> None:
 
 def test_worker_image_physically_prunes_coordinator_surfaces() -> None:
     text = _dockerfile("worker").read_text(encoding="utf-8")
-    for surface in ("labels", "repairs", "disclosure", "reports", "cli"):
+    for surface in ("labels", "repairs", "disclosure", "reports"):
         assert f'"{surface}"' in text
-    assert '"campaigns/engine.py"' in text
-    assert '"campaigns/lifecycle.py"' in text
+    for module_path in ("cli.py", "campaigns/engine.py", "campaigns/lifecycle.py"):
+        assert f'"{module_path}"' in text
     assert "shutil.rmtree" in text
     assert "target.unlink" in text
+    assert 'rglob("__pycache__")' in text
     assert "worker image pruning failed" in text
 
 
@@ -86,8 +87,16 @@ def test_worker_entrypoint_is_one_shot_not_general_cli() -> None:
     assert "from verifierlab.campaigns.worker import execute_work_unit" in text
     assert "_assert_pruned_runtime()" in text
     assert "worker accepts at most one JSON request file" in text
-    for surface in ("labels", "repairs", "disclosure", "reports", "cli"):
-        assert f'"{surface}"' in text
+    for path_name in (
+        "labels",
+        "repairs",
+        "disclosure",
+        "reports",
+        "cli.py",
+        "campaigns/engine.py",
+        "campaigns/lifecycle.py",
+    ):
+        assert f'"{path_name}"' in text
 
 
 def test_adjudicator_entrypoint_bans_campaign_run() -> None:
