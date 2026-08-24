@@ -14,7 +14,7 @@ from verifierlab.campaigns.splits import materialize_split_manifest
 from verifierlab.config.campaign import CampaignSpec
 from verifierlab.repairs.canonical_evidence import load_canonical_fresh_run
 
-_REPAIR_DIGEST = "1" * 64
+_CANDIDATE_DIGEST = "1" * 64
 _VERIFIER_DIGEST = "2" * 64
 
 
@@ -68,7 +68,7 @@ def _campaign(*, max_queries: int = 8) -> CampaignSpec:
             "stats_plan": {"methods": ["wilson"], "alpha": 0.05},
             "seed": 17,
             "work_units": 2,
-            "metadata": {"repair_parent_digest": _REPAIR_DIGEST},
+            "metadata": {"repair_candidate_digest": _CANDIDATE_DIGEST},
         }
     )
 
@@ -188,13 +188,14 @@ def test_derives_qualification_evidence_only_from_consistent_artifacts(tmp_path:
 
     rows, evidence = load_canonical_fresh_run(
         run_dir,
-        expected_repair_artifact_digest=_REPAIR_DIGEST,
+        expected_repair_candidate_digest=_CANDIDATE_DIGEST,
     )
 
     assert [row["unit_id"] for row in rows] == [refs["holdout_id"]]
     assert evidence.fresh_attacker_established is True
     assert evidence.execution_security_grade is True
     assert evidence.holdout_isolated is True
+    assert evidence.repair_candidate_digest == _CANDIDATE_DIGEST
     assert evidence.sealed_holdout_work_digests == (refs["work_digest"],)
     assert evidence.qualification_blockers == ()
 
@@ -204,7 +205,7 @@ def test_process_local_or_missing_boundary_cannot_establish_freshness(tmp_path: 
 
     _, evidence = load_canonical_fresh_run(
         run_dir,
-        expected_repair_artifact_digest=_REPAIR_DIGEST,
+        expected_repair_candidate_digest=_CANDIDATE_DIGEST,
     )
 
     assert evidence.fresh_attacker_established is False
@@ -222,7 +223,7 @@ def test_tampered_split_manifest_is_rejected_even_with_new_self_digest(tmp_path:
     _write_json(path, body)
 
     with pytest.raises(RuntimeError, match="does not reconstruct"):
-        load_canonical_fresh_run(run_dir, expected_repair_artifact_digest=_REPAIR_DIGEST)
+        load_canonical_fresh_run(run_dir, expected_repair_candidate_digest=_CANDIDATE_DIGEST)
 
 
 def test_sealed_run_file_must_match_cas(tmp_path: Path) -> None:
@@ -235,7 +236,7 @@ def test_sealed_run_file_must_match_cas(tmp_path: Path) -> None:
     _write_json(path, body)
 
     with pytest.raises((KeyError, RuntimeError)):
-        load_canonical_fresh_run(run_dir, expected_repair_artifact_digest=_REPAIR_DIGEST)
+        load_canonical_fresh_run(run_dir, expected_repair_candidate_digest=_CANDIDATE_DIGEST)
 
 
 def test_released_analysis_row_cannot_mutate_attack_evidence(tmp_path: Path) -> None:
@@ -246,21 +247,21 @@ def test_released_analysis_row_cannot_mutate_attack_evidence(tmp_path: Path) -> 
     _write_json(path, row)
 
     with pytest.raises(RuntimeError, match="diverges from sealed attack artifact"):
-        load_canonical_fresh_run(run_dir, expected_repair_artifact_digest=_REPAIR_DIGEST)
+        load_canonical_fresh_run(run_dir, expected_repair_candidate_digest=_CANDIDATE_DIGEST)
 
 
-def test_wrong_repair_parent_binding_is_rejected(tmp_path: Path) -> None:
+def test_wrong_repair_candidate_binding_is_rejected(tmp_path: Path) -> None:
     run_dir, _ = _build_bundle(tmp_path)
 
     with pytest.raises(RuntimeError, match="pre-bound"):
-        load_canonical_fresh_run(run_dir, expected_repair_artifact_digest="9" * 64)
+        load_canonical_fresh_run(run_dir, expected_repair_candidate_digest="9" * 64)
 
 
 def test_ledger_spend_above_campaign_budget_is_rejected(tmp_path: Path) -> None:
     run_dir, _ = _build_bundle(tmp_path, ledger_queries=9, max_queries=8)
 
     with pytest.raises(RuntimeError, match="inconsistent with campaign budget"):
-        load_canonical_fresh_run(run_dir, expected_repair_artifact_digest=_REPAIR_DIGEST)
+        load_canonical_fresh_run(run_dir, expected_repair_candidate_digest=_CANDIDATE_DIGEST)
 
 
 def test_persistent_attacker_state_blocks_freshness(tmp_path: Path) -> None:
@@ -268,7 +269,7 @@ def test_persistent_attacker_state_blocks_freshness(tmp_path: Path) -> None:
 
     _, evidence = load_canonical_fresh_run(
         run_dir,
-        expected_repair_artifact_digest=_REPAIR_DIGEST,
+        expected_repair_candidate_digest=_CANDIDATE_DIGEST,
     )
 
     assert evidence.fresh_attacker_established is False
