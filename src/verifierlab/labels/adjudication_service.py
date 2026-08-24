@@ -32,7 +32,7 @@ def resolve_is_valid(spec: CampaignSpec) -> Callable[[dict[str, Any]], bool] | N
         candidates.append(f"{mod}:refund_is_valid")
         candidates.append(f"{mod}:_is_valid")
     if spec.environment.kind == "fake" or "fake" in spec.environment.ref:
-        candidates.append("verifierlab.targets.fake:PlantedOracleGroundTruth._is_valid")
+        candidates.append("verifierlab.labels.planted_fake:PlantedOracleGroundTruth._is_valid")
     for ref in candidates:
         try:
             fn = load_object(ref)
@@ -72,7 +72,6 @@ def adjudicate_run(
 
     if is_valid is None:
         if spec is None:
-            # Recover campaign from CAS via campaign_digest if possible.
             raise ValueError("adjudicate_run requires spec or is_valid")
         is_valid = resolve_is_valid(spec)
     if is_valid is None:
@@ -101,7 +100,6 @@ def adjudicate_run(
         if traj is None:
             continue
         unit_count += 1
-        # Evaluate GT only here — never in workers.
         enriched = enrich_episode_with_gt(
             row,
             is_valid=is_valid,
@@ -114,7 +112,6 @@ def adjudicate_run(
         dimensions = {
             "outcome": "pass" if gt_valid else "fail",
         }
-        # Preserve any multidimensional adjudication attached by enrichment.
         extra_dims = enriched.get("adjudication_dimensions") or enriched.get("dimensions")
         if isinstance(extra_dims, dict):
             for key, value in extra_dims.items():
@@ -133,7 +130,6 @@ def adjudicate_run(
             nonce=str(row.get("commitment_nonce") or row.get("unit_id") or ""),
         )
         sealed.append(vault_c)
-        # Persist adjudication sidecar (not work_units — those stay attack-plane).
         side = {
             "unit_id": row.get("unit_id"),
             "external_commitment": external,
