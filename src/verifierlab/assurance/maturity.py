@@ -1,15 +1,23 @@
 """Evidence-derived assurance maturity.
 
 A maturity label is an output of evidence checks, never a campaign setting.
-This module intentionally caps process-local evidence below scientific
-qualification even if every software-level check passes.
+The policy compiler binds one exact proposition to its scope, assumptions,
+trust boundary, specifications, and evidence references. Process-local
+execution is explicitly capped below scientific qualification.
+
+This module does not validate referenced artifacts itself. Callers must derive
+predicate values from validated immutable artifacts; supplying booleans is not
+itself assurance evidence.
 """
 
 from __future__ import annotations
 
 from enum import IntEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from verifierlab.artifacts.canonical import digest_of
 
 
 class AssuranceLevel(IntEnum):
@@ -23,19 +31,39 @@ class AssuranceLevel(IntEnum):
     @property
     def label(self) -> str:
         return {
-            self.NOT_IMPLEMENTED: "not_implemented",
-            self.IMPLEMENTED_UNVERIFIED: "implemented_unverified",
-            self.INTERNALLY_VERIFIED: "internally_verified",
-            self.INDEPENDENTLY_VERIFIED: "independently_verified",
-            self.SCIENTIFICALLY_QUALIFIED: "scientifically_qualified",
-            self.DEPLOYMENT_CALIBRATED: "deployment_calibrated",
+            AssuranceLevel.NOT_IMPLEMENTED: "not_implemented",
+            AssuranceLevel.IMPLEMENTED_UNVERIFIED: "implemented_unverified",
+            AssuranceLevel.INTERNALLY_VERIFIED: "internally_verified",
+            AssuranceLevel.INDEPENDENTLY_VERIFIED: "independently_verified",
+            AssuranceLevel.SCIENTIFICALLY_QUALIFIED: "scientifically_qualified",
+            AssuranceLevel.DEPLOYMENT_CALIBRATED: "deployment_calibrated",
         }[self]
 
 
-class AssuranceEvidence(BaseModel):
-    """Machine-checkable evidence predicates for a single assurance proposition."""
+class AssuranceClaim(BaseModel):
+    """The exact proposition and semantic boundary a maturity label qualifies."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["1"] = "1"
+    proposition: str = Field(min_length=1)
+    scope: str = Field(min_length=1)
+    assumptions: tuple[str, ...]
+    trust_boundary: str = Field(min_length=1)
+    specification_refs: tuple[str, ...] = Field(min_length=1)
+
+    @property
+    def digest(self) -> str:
+        return digest_of(self.model_dump(mode="json"))
+
+
+class AssuranceEvidence(BaseModel):
+    """Predicates derived from validation of immutable assurance artifacts."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["1"] = "1"
+    evidence_refs: tuple[str, ...] = ()
 
     implemented: bool = False
     internal_tests_passed: bool = False
@@ -45,7 +73,12 @@ class AssuranceEvidence(BaseModel):
     hidden_labels_outside_attack_plane: bool = False
 
     # Execution trust boundary. `process_local` is explicitly non-security-grade.
-    execution_mode: str = "process_local"
+    execution_mode: Literal[
+        "process_local",
+        "container_isolated",
+        "microvm_isolated",
+        "separate_host",
+    ] = "process_local"
     worker_no_network: bool = False
     worker_read_only_root: bool = False
     worker_no_secret_mounts: bool = False
@@ -67,16 +100,28 @@ class AssuranceEvidence(BaseModel):
     calibration_analysis_complete: bool = False
     applicability_regime_declared: bool = False
 
+    @property
+    def digest(self) -> str:
+        return digest_of(self.model_dump(mode="json"))
+
 
 class AssuranceQualification(BaseModel):
+    """Maturity decision cryptographically bound to one claim and evidence set."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    schema_version: Literal["1"] = "1"
     level: str
     ordinal: int
     blockers: tuple[str, ...] = ()
     satisfied: tuple[str, ...] = ()
     security_grade_execution: bool = False
-    proposition: str = Field(min_length=1)
+    claim_digest: str = Field(min_length=64, max_length=64)
+    evidence_digest: str = Field(min_length=64, max_length=64)
+
+    @property
+    def digest(self) -> str:
+        return digest_of(self.model_dump(mode="json"))
 
 
 def _security_grade(e: AssuranceEvidence) -> bool:
@@ -91,32 +136,56 @@ def _security_grade(e: AssuranceEvidence) -> bool:
     )
 
 
+def _decision(
+    *,
+    level: AssuranceLevel,
+    claim: AssuranceClaim,
+    evidence: AssuranceEvidence,
+    blockers: list[str],
+    satisfied: list[str],
+) -> AssuranceQualification:
+    return AssuranceQualification(
+        level=level.label,
+        ordinal=int(level),
+        blockers=tuple(blockers),
+        satisfied=tuple(satisfied),
+        security_grade_execution=_security_grade(evidence),
+        claim_digest=claim.digest,
+        evidence_digest=evidence.digest,
+    )
+
+
 def qualify_assurance(
     evidence: AssuranceEvidence,
     *,
-    proposition: str,
+    claim: AssuranceClaim,
 ) -> AssuranceQualification:
-    """Return the strongest level justified by the supplied evidence.
+    """Return the strongest maturity level justified by supplied predicates.
 
     Progression is monotone and cumulative: later levels require all earlier
-    obligations. This prevents a strong external experiment from laundering a
-    weak artifact chain, and prevents an impressive local test suite from being
-    called scientific qualification.
+    obligations. The returned record binds the decision to canonical digests of
+    both the claim context and evidence predicate set.
+
+    This function is a policy compiler, not an artifact validator. A caller
+    must not set a predicate true unless the corresponding immutable evidence
+    has been validated and is referenced by ``evidence_refs``.
     """
     satisfied: list[str] = []
     blockers: list[str] = []
 
     if not evidence.implemented:
-        return AssuranceQualification(
-            level=AssuranceLevel.NOT_IMPLEMENTED.label,
-            ordinal=int(AssuranceLevel.NOT_IMPLEMENTED),
-            blockers=("implementation_missing",),
-            proposition=proposition,
+        return _decision(
+            level=AssuranceLevel.NOT_IMPLEMENTED,
+            claim=claim,
+            evidence=evidence,
+            blockers=["implementation_missing"],
+            satisfied=[],
         )
     satisfied.append("implementation_present")
     level = AssuranceLevel.IMPLEMENTED_UNVERIFIED
 
     internal_requirements = {
+        "evidence_references_missing": bool(evidence.evidence_refs),
         "internal_tests_not_passed": evidence.internal_tests_passed,
         "artifacts_not_immutably_bound": evidence.immutable_artifacts_bound,
         "budget_evidence_missing": evidence.exact_budget_evidence,
@@ -126,16 +195,16 @@ def qualify_assurance(
     missing_internal = [name for name, ok in internal_requirements.items() if not ok]
     if missing_internal:
         blockers.extend(missing_internal)
-        return AssuranceQualification(
-            level=level.label,
-            ordinal=int(level),
-            blockers=tuple(blockers),
-            satisfied=tuple(satisfied),
-            security_grade_execution=_security_grade(evidence),
-            proposition=proposition,
+        return _decision(
+            level=level,
+            claim=claim,
+            evidence=evidence,
+            blockers=blockers,
+            satisfied=satisfied,
         )
     satisfied.extend(
         [
+            "evidence_references_present",
             "internal_tests_passed",
             "immutable_artifacts_bound",
             "exact_budget_evidence",
@@ -145,19 +214,18 @@ def qualify_assurance(
     )
     level = AssuranceLevel.INTERNALLY_VERIFIED
 
-    # Independent verification is a review/reconstruction property, not a local CI property.
+    # Independent verification is a review/reconstruction property, not a local test property.
     if not (evidence.independent_review and evidence.independent_reconstruction):
         if not evidence.independent_review:
             blockers.append("independent_review_missing")
         if not evidence.independent_reconstruction:
             blockers.append("independent_reconstruction_missing")
-        return AssuranceQualification(
-            level=level.label,
-            ordinal=int(level),
-            blockers=tuple(blockers),
-            satisfied=tuple(satisfied),
-            security_grade_execution=_security_grade(evidence),
-            proposition=proposition,
+        return _decision(
+            level=level,
+            claim=claim,
+            evidence=evidence,
+            blockers=blockers,
+            satisfied=satisfied,
         )
     satisfied.extend(["independent_review", "independent_reconstruction"])
     level = AssuranceLevel.INDEPENDENTLY_VERIFIED
@@ -173,13 +241,12 @@ def qualify_assurance(
     missing_scientific = [name for name, ok in scientific_requirements.items() if not ok]
     if missing_scientific:
         blockers.extend(missing_scientific)
-        return AssuranceQualification(
-            level=level.label,
-            ordinal=int(level),
-            blockers=tuple(blockers),
-            satisfied=tuple(satisfied),
-            security_grade_execution=_security_grade(evidence),
-            proposition=proposition,
+        return _decision(
+            level=level,
+            claim=claim,
+            evidence=evidence,
+            blockers=blockers,
+            satisfied=satisfied,
         )
     satisfied.extend(
         [
@@ -202,13 +269,12 @@ def qualify_assurance(
     missing_deployment = [name for name, ok in deployment_requirements.items() if not ok]
     if missing_deployment:
         blockers.extend(missing_deployment)
-        return AssuranceQualification(
-            level=level.label,
-            ordinal=int(level),
-            blockers=tuple(blockers),
-            satisfied=tuple(satisfied),
-            security_grade_execution=True,
-            proposition=proposition,
+        return _decision(
+            level=level,
+            claim=claim,
+            evidence=evidence,
+            blockers=blockers,
+            satisfied=satisfied,
         )
 
     satisfied.extend(
@@ -219,18 +285,17 @@ def qualify_assurance(
             "applicability_regime_declared",
         ]
     )
-    level = AssuranceLevel.DEPLOYMENT_CALIBRATED
-    return AssuranceQualification(
-        level=level.label,
-        ordinal=int(level),
-        blockers=(),
-        satisfied=tuple(satisfied),
-        security_grade_execution=True,
-        proposition=proposition,
+    return _decision(
+        level=AssuranceLevel.DEPLOYMENT_CALIBRATED,
+        claim=claim,
+        evidence=evidence,
+        blockers=[],
+        satisfied=satisfied,
     )
 
 
 __all__ = [
+    "AssuranceClaim",
     "AssuranceEvidence",
     "AssuranceLevel",
     "AssuranceQualification",
