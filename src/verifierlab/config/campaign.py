@@ -9,7 +9,7 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
-from verifierlab.artifacts.records import AccessModel, DisclosureClass
+from verifierlab.artifacts.records import AccessModel, DecisionSpace, DisclosureClass
 from verifierlab.budgets.budget import Budget, OverrunPolicy
 from verifierlab.diagnostics.codes import Diagnostic, DiagnosticSeverity
 
@@ -59,13 +59,23 @@ class AttackSpec(BaseModel):
 
 
 class StatsPlan(BaseModel):
-    """Declared statistical analysis plan (VALAB-08)."""
+    """Executable statistical analysis plan (VAL-R12 / VALAB-08).
+
+    The model deliberately contains only controls the compiler can either
+    execute or reject fail-closed. A declared option must never be copied into
+    a report as if it had been applied when no implementation exists.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     methods: list[str] = Field(default_factory=lambda: ["wilson"])
     alpha: float = Field(default=0.05, gt=0.0, lt=1.0)
     bootstrap_samples: int = Field(default=1000, ge=0)
+    bootstrap_seed: int = 0
+    pairing_key: str | None = Field(
+        default=None,
+        description="Optional row field identifying ordinary/optimized paired units.",
+    )
     stopping_rule: str = Field(
         default="fixed_n",
         description="fixed_n | budget_exhausted | sequential_alpha",
@@ -74,6 +84,22 @@ class StatsPlan(BaseModel):
         default="none",
         description="none | bonferroni | pre_registered_primary",
     )
+
+    @field_validator("methods")
+    @classmethod
+    def _known_methods(cls, values: list[str]) -> list[str]:
+        allowed = {"wilson", "exact"}
+        unknown = sorted(set(values) - allowed)
+        if unknown:
+            raise ValueError(f"unsupported interval methods: {unknown}; allowed={sorted(allowed)}")
+        return values
+
+    @field_validator("pairing_key")
+    @classmethod
+    def _pairing_key_nonempty(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("pairing_key must be non-empty when supplied")
+        return value
 
     @field_validator("stopping_rule")
     @classmethod
@@ -155,7 +181,6 @@ class CampaignSpec(BaseModel):
 
     @model_validator(mode="after")
     def _require_pinned_core(self) -> CampaignSpec:
-        # Soft requirement enforced via diagnostics; keep model flexible.
         return self
 
 
@@ -224,6 +249,30 @@ def validate_campaign_semantics(spec: CampaignSpec) -> list[Diagnostic]:
                 path="stats_plan.methods",
             )
         )
+    if spec.stats_plan.stopping_rule == "sequential_alpha":
+        diags.append(
+            Diagnostic(
+                code="VALAB.CAMPAIGN.SEQUENTIAL_UNSUPPORTED",
+                severity=DiagnosticSeverity.ERROR,
+                message=(
+                    "stopping_rule='sequential_alpha' is not implemented; use a fixed/budget "
+                    "design or add a preregistered sequential alpha-spending procedure"
+                ),
+                path="stats_plan.stopping_rule",
+            )
+        )
+    if spec.stats_plan.multiple_comparison_policy == "pre_registered_primary":
+        diags.append(
+            Diagnostic(
+                code="VALAB.CAMPAIGN.PRIMARY_FAMILY_UNSUPPORTED",
+                severity=DiagnosticSeverity.ERROR,
+                message=(
+                    "pre_registered_primary requires an explicit estimand family compiler; "
+                    "use none/bonferroni until that implementation exists"
+                ),
+                path="stats_plan.multiple_comparison_policy",
+            )
+        )
     if not isinstance(spec.access_model, AccessModel):
         diags.append(
             Diagnostic(
@@ -269,7 +318,6 @@ def _validate_verifier_contract(spec: CampaignSpec) -> list[Diagnostic]:
         try:
             vspec = get_verifier_spec(fn)
         except AttributeError:
-            # Undecorated callables are allowed with a warning (adapter paths).
             diags.append(
                 Diagnostic(
                     code="VALAB.CAMPAIGN.VERIFIER_CONTRACT",
@@ -286,8 +334,7 @@ def _validate_verifier_contract(spec: CampaignSpec) -> list[Diagnostic]:
                     code="VALAB.CAMPAIGN.VERIFIER_CONTRACT",
                     severity=DiagnosticSeverity.ERROR,
                     message=(
-                        f"verifier {ref!r} missing required contract fields: "
-                        f"{', '.join(gaps)} "
+                        f"verifier {ref!r} missing required contract fields: {', '.join(gaps)} "
                         "(set metadata.legacy_contract=True for one-release migration)"
                     ),
                     path="verifier.ref",
@@ -324,7 +371,6 @@ def load_campaign(path: Path | str) -> tuple[CampaignSpec, list[Diagnostic]]:
     elif suffix == ".json":
         raw = json.loads(text)
     else:
-        # Try YAML first, then JSON.
         try:
             raw = yaml.safe_load(text)
         except yaml.YAMLError:
@@ -344,14 +390,10 @@ def load_campaign(path: Path | str) -> tuple[CampaignSpec, list[Diagnostic]]:
     spec, diags = load_campaign_dict(raw)
     errors = [d for d in diags if d.severity == DiagnosticSeverity.ERROR]
     if spec is None or errors:
-        raise CampaignSpecError(
-            f"campaign validation failed for {path}",
-            diags,
-        )
+        raise CampaignSpecError(f"campaign validation failed for {path}", diags)
     return spec, diags
 
 
-# Re-export enums commonly used with specs.
 __all__ = [
     "AccessModel",
     "AttackSpec",
