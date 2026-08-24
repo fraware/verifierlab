@@ -54,10 +54,13 @@ jobs:
           uv run python - <<'PY'
           import json
           import os
-          from verifierlab.execution.container import ContainerIsolationPolicy, StrictContainerExecutor
+          from verifierlab.execution.container import ContainerIsolationPolicy, ContainerWorkerExecutor
 
           image = os.environ["WORKER_IMAGE"]
-          executor = StrictContainerExecutor(ContainerIsolationPolicy(image=image))
+          # Hosted runners provide a rootful daemon. Permit that only for this
+          # conformance exercise; the resulting boundary must remain non-security-grade.
+          policy = ContainerIsolationPolicy(image=image, require_rootless=False)
+          executor = ContainerWorkerExecutor(policy)
           payload = {
               "unit_id": "isolation-probe-1",
               "seed": 1,
@@ -81,31 +84,38 @@ jobs:
           second = executor.execute(second_payload)
 
           for result in (first, second):
-              probe = result["trajectory"]["observation"].get("isolation_probe") or {}
+              probe = result.get("trajectory", {}).get("probe") or {}
               required_false = (
-                  "oracle_importable",
-                  "vault_importable",
-                  "coordinator_importable",
+                  "labels_importable",
                   "root_write_succeeded",
                   "network_connect_succeeded",
-                  "container_socket_exposed",
-                  "cross_unit_state_seen",
+                  "docker_socket_visible",
+                  "stale_cross_unit_state",
               )
               for key in required_false:
                   if probe.get(key) is not False:
                       raise SystemExit(f"isolation probe failed: {key}={probe.get(key)!r}")
-              if probe.get("sensitive_env_keys"):
-                  raise SystemExit(f"sensitive environment visible: {probe['sensitive_env_keys']!r}")
-              if int(str(probe.get("effective_capabilities") or "0"), 16) != 0:
+              required_true = (
+                  "non_root",
+                  "tmp_write_succeeded",
+                  "cap_eff_zero",
+                  "worker_state_tmpfs_writable",
+              )
+              for key in required_true:
+                  if probe.get(key) is not True:
+                      raise SystemExit(f"isolation probe failed: {key}={probe.get(key)!r}")
+              if probe.get("sensitive_env_names") != []:
                   raise SystemExit(
-                      f"effective capabilities not empty: {probe.get('effective_capabilities')!r}"
+                      f"sensitive environment visible: {probe.get('sensitive_env_names')!r}"
                   )
+              if result.get("verifier_accepted") is not True:
+                  raise SystemExit("probe verifier did not accept the observed boundary")
 
           boundary = first.get("execution_boundary") or {}
           if not boundary.get("policy_satisfied"):
               raise SystemExit("effective container policy was not satisfied")
-          # Hosted runners use a rootful daemon. This workflow establishes policy
-          # conformance only and must never promote that evidence to security-grade.
+          if boundary.get("daemon_rootless"):
+              raise SystemExit("hosted conformance run unexpectedly reported a rootless daemon")
           if boundary.get("security_grade"):
               raise SystemExit("rootful hosted execution must not be security-grade")
           print(json.dumps({"policy_satisfied": True, "security_grade": False}, sort_keys=True))
