@@ -71,31 +71,20 @@ def _reject_gt_ref(ref: str, *, field: str) -> None:
 
 
 def _worker_ledger(payload: dict[str, Any]) -> ProvenanceLedger | None:
-    """Build a per-unit budget voucher for atomic broker reserve (VAL-R10).
-
-    When ``query_budget_remaining`` is set, each ``broker.query`` reserves
-    against this ledger before the call. Events are returned to the coordinator
-    for exact merge — not post-hoc soft counting alone.
-    """
+    """Build a per-unit budget voucher for atomic broker reserve (VAL-R10)."""
     remaining = payload.get("query_budget_remaining")
     if remaining is None:
         return None
-    rem = int(remaining)
-    if rem < 0:
-        rem = 0
+    rem = max(0, int(remaining))
     policy_raw = str(payload.get("budget_overrun_policy") or "stop")
     try:
         policy = OverrunPolicy(policy_raw)
     except ValueError:
         policy = OverrunPolicy.STOP
-    # Budget requires at least one limit; voucher always caps queries.
-    return ProvenanceLedger(
-        budget=Budget(max_queries=rem, overrun_policy=policy),
-    )
+    return ProvenanceLedger(budget=Budget(max_queries=rem, overrun_policy=policy))
 
 
 def _run_work_unit(payload: dict[str, Any]) -> dict[str, Any]:
-    # Hard isolation: never import GT providers on the attack worker path.
     if "ground_truth_ref" in payload:
         payload = {k: v for k, v in payload.items() if k != "ground_truth_ref"}
 
@@ -137,11 +126,19 @@ def _run_work_unit(payload: dict[str, Any]) -> dict[str, Any]:
                 memory_bytes=ver_cfg.get("memory_bytes"),
             )
             verifier = runner.as_callable()
-            profile = runner.profile or VerifierProfile.for_callable(verifier, name=ver_ref)
+            profile = runner.profile or VerifierProfile.for_callable(
+                verifier,
+                name=ver_ref,
+                config=ver_cfg,
+            )
         else:
             runner = None
             verifier = load_object(payload["verifier_ref"])
-            profile = VerifierProfile.for_callable(verifier)
+            # Verifier configuration is part of the verifier under evaluation.
+            # This is also where an explicit decision_mapping lives; omitting it
+            # would change both decision semantics and the content-addressed
+            # profile digest between coordinator intent and worker execution.
+            profile = VerifierProfile.for_callable(verifier, config=ver_cfg)
 
     caps = capabilities_for(access_model)
     voucher = _worker_ledger(payload)
@@ -170,7 +167,6 @@ def _run_work_unit(payload: dict[str, Any]) -> dict[str, Any]:
             restore_strategy(strategy, prior)
             strategy._restored = True  # type: ignore[attr-defined]
 
-    # Holdout units must never see train-only artifacts beyond the frozen weights.
     if split and str(split).lower() in {"holdout", "test", "eval", "evaluation"}:
         learning = False
 
@@ -192,7 +188,6 @@ def _run_work_unit(payload: dict[str, Any]) -> dict[str, Any]:
             split=str(split) if split is not None else None,
         )
     except BudgetExceeded as exc:
-        # Exact stop: voucher exhausted mid-search. Surface broker events so far.
         budget_stopped = True
         result = {
             "schema_version": "2",
@@ -210,16 +205,14 @@ def _run_work_unit(payload: dict[str, Any]) -> dict[str, Any]:
             "budget_voucher_queries": voucher.queries if voucher is not None else None,
         }
 
-    # Prefer broker event count (true metered queries) over strategy estimates.
     result["query_count"] = len(broker.events)
     result["verifier_invocations"] = broker.event_dicts()
+    result["verifier_profile_digest"] = broker.profile_digest
     if voucher is not None:
         result["budget_voucher_queries"] = voucher.queries
         result["budget_metered"] = True
         result["ledger_events"] = list(voucher.events)
         result["budget_voucher_reserved"] = int(payload.get("query_budget_reserved") or 0)
-        # Persist spend before return so crash after reserve cannot refund
-        # completed queries (VALAB-04).
         spend_dir = payload.get("run_dir") or payload.get("attacker_dir")
         if spend_dir:
             spend_path = Path(spend_dir) / "budget_spend.json"
