@@ -162,6 +162,8 @@ class BeamSearch:
         self._schema = dict(DEFAULT_SCHEMA)
         self._beam_width = 4
         self._seed = 0
+        # Min-heap keyed by the real score. When the beam exceeds its width,
+        # heappop removes the *lowest* score and therefore retains top-k candidates.
         self._beam: list[tuple[float, int, dict[str, Any]]] = []
         self._counter = 0
         self._queries = 0
@@ -231,7 +233,7 @@ class BeamSearch:
             )
             self._queries += 1
             if self._learning:
-                heapq.heappush(self._beam, (-score, self._counter, dict(cand)))
+                heapq.heappush(self._beam, (score, self._counter, dict(cand)))
                 self._counter += 1
             if score > best_score:
                 best_score = score
@@ -252,7 +254,7 @@ class BeamSearch:
         if feedback.get("verifier_accepted"):
             score += 1.0 + float(feedback.get("reward", 0.0)) * 0.01
         action = dict(getattr(self, "_last", {"op": "noop"}))
-        heapq.heappush(self._beam, (-score, self._counter, action))
+        heapq.heappush(self._beam, (score, self._counter, action))
         self._counter += 1
         while len(self._beam) > self._beam_width:
             heapq.heappop(self._beam)
