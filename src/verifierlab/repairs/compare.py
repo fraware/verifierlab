@@ -17,13 +17,20 @@ from verifierlab.artifacts.canonical import digest_of
 from verifierlab.artifacts.records import ArtifactBase
 from verifierlab.attacks.registry import create_strategy
 from verifierlab.campaigns.episode import public_attack_feedback
+from verifierlab.repairs.candidate import RepairCandidateBinding, build_repair_candidate_binding
+from verifierlab.repairs.canonical_evidence import CanonicalFreshRunEvidence
 from verifierlab.reports.metrics import compute_metrics
 from verifierlab.statistics.intervals import paired_bootstrap
 from verifierlab.verifiers.profile import VerifierProfile
 
 
 class FreshAttackProvenance(BaseModel):
-    """Binding for post-adjudication results from a canonical fresh campaign."""
+    """Legacy assertion record for a post-adjudication fresh campaign.
+
+    This object is retained for compatibility and cross-checking. Its booleans
+    are never sufficient for qualification. Qualification requires a
+    :class:`CanonicalFreshRunEvidence` derived from immutable run artifacts.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -43,10 +50,11 @@ class FreshAttackProvenance(BaseModel):
 class RepairCampaignArtifact(ArtifactBase):
     """Immutable repair comparison record."""
 
-    schema_version: str = "4"
+    schema_version: str = "5"
     campaign_id: str
     old_profile: dict[str, Any]
     new_profile: dict[str, Any]
+    repair_candidate: dict[str, Any] = Field(default_factory=dict)
     budget: dict[str, Any] = Field(default_factory=dict)
     regression: dict[str, Any] = Field(default_factory=dict)
     holdout: dict[str, Any] = Field(default_factory=dict)
@@ -232,24 +240,66 @@ def _run_development_fresh_attack(
     return rows, ledger
 
 
-def _validate_fresh_provenance(
-    provenance: FreshAttackProvenance,
+def _canonical_evidence(
+    value: CanonicalFreshRunEvidence | dict[str, Any],
+) -> CanonicalFreshRunEvidence:
+    if isinstance(value, CanonicalFreshRunEvidence):
+        return value
+    return CanonicalFreshRunEvidence.model_validate(value)
+
+
+def _legacy_provenance(
+    value: FreshAttackProvenance | dict[str, Any],
+) -> FreshAttackProvenance:
+    if isinstance(value, FreshAttackProvenance):
+        return value
+    return FreshAttackProvenance.model_validate(value)
+
+
+def _validate_canonical_fresh_evidence(
+    evidence: CanonicalFreshRunEvidence,
     *,
     results: list[dict[str, Any]],
     new_profile_digest: str,
     minimum_budget: int,
+    repair_candidate_digest: str,
+    legacy: FreshAttackProvenance | None = None,
 ) -> list[str]:
+    """Cross-check qualification evidence against the repair comparison inputs."""
     failures: list[str] = []
-    if provenance.results_digest != digest_of(results):
-        failures.append("fresh_results_digest_mismatch")
-    if provenance.verifier_profile_digest != new_profile_digest:
-        failures.append("fresh_verifier_profile_mismatch")
-    if provenance.budget_queries < minimum_budget:
-        failures.append("fresh_budget_smaller_than_required")
-    if not provenance.holdout_isolated:
-        failures.append("fresh_holdout_not_isolated")
-    if not provenance.fresh_attacker:
-        failures.append("attacker_not_fresh")
+    result_digest = digest_of(results)
+    if evidence.results_digest != result_digest:
+        failures.append("canonical_fresh_results_digest_mismatch")
+    if evidence.verifier_profile_digest != new_profile_digest:
+        failures.append("canonical_fresh_verifier_profile_mismatch")
+    if evidence.repair_candidate_digest != repair_candidate_digest:
+        failures.append("canonical_repair_candidate_mismatch")
+    if evidence.budget_limit_queries < minimum_budget:
+        failures.append("canonical_fresh_budget_smaller_than_required")
+    if not evidence.labels_released:
+        failures.append("canonical_labels_not_released")
+    if not evidence.holdout_isolated:
+        failures.append("canonical_holdout_not_isolated")
+    if not evidence.execution_security_grade:
+        failures.append("canonical_execution_not_security_grade")
+    if not evidence.fresh_attacker_established:
+        failures.append("canonical_attacker_not_fresh")
+    if evidence.qualification_blockers:
+        failures.append("canonical_evidence_has_blockers")
+
+    if legacy is not None:
+        if legacy.run_digest != evidence.release_tip_digest:
+            failures.append("legacy_run_digest_disagrees_with_canonical")
+        if legacy.results_digest != evidence.results_digest:
+            failures.append("legacy_results_digest_disagrees_with_canonical")
+        if legacy.verifier_profile_digest != evidence.verifier_profile_digest:
+            failures.append("legacy_profile_disagrees_with_canonical")
+        if legacy.budget_queries != evidence.budget_limit_queries:
+            failures.append("legacy_budget_disagrees_with_canonical")
+        if legacy.holdout_isolated != evidence.holdout_isolated:
+            failures.append("legacy_holdout_disagrees_with_canonical")
+        if legacy.fresh_attacker != evidence.fresh_attacker_established:
+            failures.append("legacy_freshness_disagrees_with_canonical")
     return failures
 
 
@@ -280,6 +330,7 @@ def run_repair_campaign(
     holdout_trajectories: list[dict[str, Any]] | None = None,
     fresh_attack_results: list[dict[str, Any]] | None = None,
     fresh_attack_provenance: FreshAttackProvenance | dict[str, Any] | None = None,
+    fresh_attack_canonical_evidence: CanonicalFreshRunEvidence | dict[str, Any] | None = None,
     fresh_attack_strategy: str = "structured_fuzz",
     fresh_attack_config: dict[str, Any] | None = None,
     fresh_episodes: int = 8,
@@ -298,20 +349,23 @@ def run_repair_campaign(
 ) -> RepairCampaignArtifact:
     """Compare old/new verifiers and require canonical evidence for qualification.
 
-    A `status="pass"` is possible only when fresh results are caller-supplied
-    with a valid :class:`FreshAttackProvenance` binding to the canonical campaign
-    engine. The built-in helper can produce development diagnostics only.
+    A `status="pass"` is possible only when fresh results are bound to a
+    :class:`CanonicalFreshRunEvidence` derived from a released canonical run.
+    Legacy :class:`FreshAttackProvenance` values are cross-checked when supplied
+    but cannot establish qualification by themselves. The built-in helper can
+    produce development diagnostics only.
     """
     del independent_strategy  # textual independence is not a qualification boundary
     cfg = dict(fresh_attack_config or {})
     old_p = old_profile or _profile_for(old_verifier, name="repair_old", config={"role": "old"})
     new_p = new_profile or _profile_for(new_verifier, name="repair_new", config={"role": "new"})
+    old_profile_digest = old_p.content_digest()
     new_profile_digest = new_p.content_digest()
 
     notes: list[str] = [
-        "RepairCampaignArtifact schema_version=4",
+        "RepairCampaignArtifact schema_version=5",
         "Automated repair metrics are not ground truth.",
-        "Qualification requires canonical fresh-campaign provenance.",
+        "Qualification requires artifact-derived canonical fresh-run evidence.",
     ]
     failure_taxonomy: list[str] = []
     gate_failures: list[str] = []
@@ -325,6 +379,7 @@ def run_repair_campaign(
         is_valid=is_valid,
     )
 
+    caller_supplied_holdout = holdout_trajectories is not None
     if holdout_trajectories is None:
         split_at = max(0, len(clean_reg) // 2)
         holdout_trajectories = list(clean_reg[:split_at])
@@ -374,6 +429,28 @@ def run_repair_campaign(
     if baseline_attack_budget is not None and eq_budget < int(baseline_attack_budget):
         gate_failures.append("budget_smaller_than_baseline")
 
+    candidate_campaign_id = campaign_id or digest_of(
+        {
+            "old_profile_digest": old_profile_digest,
+            "new_profile_digest": new_profile_digest,
+            "regression_corpus_digest": digest_of(regression_trajectories),
+            "holdout_corpus_digest": digest_of(holdout_trajectories),
+            "minimum_budget": minimum_budget,
+        }
+    )[:16]
+    repair_candidate: RepairCandidateBinding | None = None
+    if caller_supplied_holdout and holdout_trajectories:
+        repair_candidate = build_repair_candidate_binding(
+            campaign_id=candidate_campaign_id,
+            old_profile=old_p,
+            new_profile=new_p,
+            regression_trajectories=regression_trajectories,
+            holdout_trajectories=holdout_trajectories,
+            required_minimum_query_budget=minimum_budget,
+        )
+    else:
+        gate_failures.append("repair_candidate_not_preparable")
+
     qualification_grade = False
     fresh_ledger: dict[str, Any]
     if fresh_attack_results is None:
@@ -397,32 +474,51 @@ def run_repair_campaign(
                 "error": str(exc),
             }
         gate_failures.append("fresh_attack_not_canonical_campaign")
+    elif fresh_attack_canonical_evidence is None:
+        fresh_ledger = {
+            "attack_engine": "caller_supplied_without_canonical_evidence",
+            "qualification_grade": False,
+            "results_digest": digest_of(fresh_attack_results),
+        }
+        gate_failures.append("missing_canonical_fresh_run_evidence")
+        if fresh_attack_provenance is not None:
+            legacy = _legacy_provenance(fresh_attack_provenance)
+            fresh_ledger["legacy_provenance"] = legacy.model_dump(mode="json")
+    elif repair_candidate is None:
+        evidence = _canonical_evidence(fresh_attack_canonical_evidence)
+        fresh_ledger = {
+            "attack_engine": "campaign_engine",
+            "qualification_grade": False,
+            "canonical_evidence": evidence.model_dump(mode="json"),
+        }
+        gate_failures.append("repair_candidate_missing")
     else:
-        if fresh_attack_provenance is None:
-            fresh_ledger = {
-                "attack_engine": "caller_supplied_unbound",
-                "qualification_grade": False,
-                "results_digest": digest_of(fresh_attack_results),
-            }
-            gate_failures.append("missing_fresh_attack_provenance")
-        else:
-            provenance = (
-                fresh_attack_provenance
-                if isinstance(fresh_attack_provenance, FreshAttackProvenance)
-                else FreshAttackProvenance.model_validate(fresh_attack_provenance)
-            )
-            provenance_failures = _validate_fresh_provenance(
-                provenance,
-                results=fresh_attack_results,
-                new_profile_digest=new_profile_digest,
-                minimum_budget=minimum_budget,
-            )
-            gate_failures.extend(provenance_failures)
-            qualification_grade = not provenance_failures
-            fresh_ledger = {
-                **provenance.model_dump(mode="json"),
-                "qualification_grade": qualification_grade,
-            }
+        evidence = _canonical_evidence(fresh_attack_canonical_evidence)
+        legacy = (
+            _legacy_provenance(fresh_attack_provenance)
+            if fresh_attack_provenance is not None
+            else None
+        )
+        evidence_failures = _validate_canonical_fresh_evidence(
+            evidence,
+            results=fresh_attack_results,
+            new_profile_digest=new_profile_digest,
+            minimum_budget=minimum_budget,
+            repair_candidate_digest=repair_candidate.content_digest,
+            legacy=legacy,
+        )
+        gate_failures.extend(evidence_failures)
+        qualification_grade = not evidence_failures
+        fresh_ledger = {
+            "attack_engine": "campaign_engine",
+            "qualification_grade": qualification_grade,
+            "canonical_evidence": evidence.model_dump(mode="json"),
+            "canonical_evidence_digest": evidence.content_digest,
+            "queries_used": evidence.queries_used,
+            "budget_queries": evidence.budget_limit_queries,
+        }
+        if legacy is not None:
+            fresh_ledger["legacy_provenance"] = legacy.model_dump(mode="json")
 
     if not fresh_attack_results and fresh_episodes > 0:
         gate_failures.append("missing_fresh_attacker_results")
@@ -491,24 +587,22 @@ def run_repair_campaign(
     else:
         failure_taxonomy.append("no_baseline_exploits")
 
-    cid = campaign_id or digest_of(
-        {
-            "old": old_p.content_digest(),
-            "new": new_profile_digest,
-            "n_reg": len(regression_all),
-            "n_hold": len(holdout_trajectories),
-            "fresh_results": digest_of(fresh_attack_results),
-        }
-    )[:16]
-
     gate_failures = list(dict.fromkeys(gate_failures))
     status = "pass" if qualification_grade and not gate_failures and not trivial_reject_detected else "fail"
     notes.extend(f"gate_fail:{failure}" for failure in gate_failures)
 
     return RepairCampaignArtifact(
-        campaign_id=cid,
+        campaign_id=candidate_campaign_id,
         old_profile=old_p.model_dump(mode="json"),
         new_profile=new_p.model_dump(mode="json"),
+        repair_candidate=(
+            {
+                **repair_candidate.model_dump(mode="json"),
+                "content_digest": repair_candidate.content_digest,
+            }
+            if repair_candidate is not None
+            else {}
+        ),
         budget={
             "equalized_queries": eq_budget,
             "minimum_required_queries": minimum_budget,
@@ -557,8 +651,11 @@ def run_repair_campaign(
         failure_taxonomy=failure_taxonomy,
         notes=notes,
         metadata={
-            "old_profile_digest": old_p.content_digest(),
+            "old_profile_digest": old_profile_digest,
             "new_profile_digest": new_profile_digest,
+            "repair_candidate_digest": (
+                repair_candidate.content_digest if repair_candidate is not None else None
+            ),
             "gate_failures": gate_failures,
             "independence_justification": independence_justification,
         },
@@ -615,6 +712,7 @@ def compare_repair(
         "campaign_id": artifact.campaign_id,
         "old_profile_digest": artifact.metadata.get("old_profile_digest"),
         "new_profile_digest": artifact.metadata.get("new_profile_digest"),
+        "repair_candidate_digest": artifact.metadata.get("repair_candidate_digest"),
         "holdout": artifact.holdout,
         "paired_stats": artifact.paired_stats,
         "budget": artifact.budget,
