@@ -5,7 +5,7 @@ artifacts* from *asserting that a repair passed*. A caller cannot turn a local
 run into qualification evidence by setting booleans after the fact.
 
 A canonical fresh reattack must be label-released, bind the repaired verifier,
-bind the repair artifact in the campaign definition before execution, expose a
+bind a pre-reattack repair candidate in the campaign definition, expose a
 finite query budget and an integrity-checked spend ledger, use an explicit
 non-learning holdout split, and carry execution-boundary records on every
 qualification row. Released analysis rows must trace back to the work-unit CAS
@@ -44,7 +44,7 @@ class CanonicalFreshRunEvidence(BaseModel):
     ledger_digest: str = Field(min_length=64, max_length=64)
     split_manifest_digest: str = Field(min_length=64, max_length=64)
     results_digest: str = Field(min_length=64, max_length=64)
-    repair_parent_digest: str = Field(min_length=64, max_length=64)
+    repair_candidate_digest: str = Field(min_length=64, max_length=64)
     budget_limit_queries: int = Field(gt=0)
     queries_used: int = Field(ge=0)
     holdout_unit_ids: tuple[str, ...]
@@ -201,20 +201,20 @@ def _execution_evidence(rows: list[dict[str, Any]]) -> tuple[tuple[str, ...], bo
 def load_canonical_fresh_run(
     run_dir: Path | str,
     *,
-    expected_repair_artifact_digest: str,
+    expected_repair_candidate_digest: str,
 ) -> tuple[list[dict[str, Any]], CanonicalFreshRunEvidence]:
     """Derive fresh-reattack evidence from a released canonical run bundle.
 
     `fresh_attacker_established` is true only when the campaign was pre-bound to
-    `expected_repair_artifact_digest`, every qualification row was executed in a
-    security-grade mount-free boundary, no persistent attacker checkpoint
+    `expected_repair_candidate_digest`, every qualification row was executed in
+    a security-grade mount-free boundary, no persistent attacker checkpoint
     channel appears on those rows, and each released row traces back to an
     attack-plane CAS object bound by the sealed run.
     """
     run_dir = Path(run_dir)
-    expected_repair = _hex64(
-        expected_repair_artifact_digest,
-        field="expected_repair_artifact_digest",
+    expected_candidate = _hex64(
+        expected_repair_candidate_digest,
+        field="expected_repair_candidate_digest",
     )
     index = read_tip_index(run_dir)
     lifecycle = str(index.get("lifecycle") or "")
@@ -257,9 +257,12 @@ def load_canonical_fresh_run(
     campaign_raw = store.get_json(campaign_digest)
     spec = CampaignSpec.model_validate(campaign_raw)
     metadata = dict(spec.metadata or {})
-    repair_parent = _hex64(metadata.get("repair_parent_digest"), field="repair_parent_digest")
-    if repair_parent != expected_repair:
-        raise RuntimeError("campaign was not pre-bound to the expected repair artifact")
+    repair_candidate = _hex64(
+        metadata.get("repair_candidate_digest"),
+        field="repair_candidate_digest",
+    )
+    if repair_candidate != expected_candidate:
+        raise RuntimeError("campaign was not pre-bound to the expected repair candidate")
     if spec.budget.max_queries is None or int(spec.budget.max_queries) <= 0:
         raise RuntimeError("qualification run requires a finite positive query budget")
     budget_limit = int(spec.budget.max_queries)
@@ -299,7 +302,7 @@ def load_canonical_fresh_run(
         execution_security_grade
         and holdout_isolated
         and not persistent_rows
-        and repair_parent == expected_repair
+        and repair_candidate == expected_candidate
     )
     if not fresh_attacker_established:
         blockers.append("fresh_attacker_not_established")
@@ -313,7 +316,7 @@ def load_canonical_fresh_run(
         ledger_digest=ledger_digest,
         split_manifest_digest=split_digest,
         results_digest=digest_of(rows),
-        repair_parent_digest=repair_parent,
+        repair_candidate_digest=repair_candidate,
         budget_limit_queries=budget_limit,
         queries_used=queries_used,
         holdout_unit_ids=holdout_ids,
