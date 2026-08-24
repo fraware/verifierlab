@@ -156,6 +156,38 @@ def _order_units_for_persistence(units: list[dict[str, Any]]) -> list[dict[str, 
     return sorted(units, key=_key)
 
 
+def _single_verifier_profile_digest(rows: list[dict[str, Any]]) -> str:
+    """Return one verifier profile digest shared by all attributable worker rows.
+
+    Infrastructure failures that never construct a verifier profile may omit the
+    digest. Any non-error row must carry one. A campaign with no attributable
+    profile, more than one profile, or a malformed digest is not eligible for a
+    canonical attack-run manifest and fails closed.
+    """
+    observed: set[str] = set()
+    for row in rows:
+        raw = row.get("verifier_profile_digest")
+        if raw is None:
+            if not row.get("error"):
+                raise RuntimeError(
+                    "integrity violation: completed work unit missing verifier profile digest"
+                )
+            continue
+        value = str(raw).lower()
+        if len(value) != 64 or any(ch not in "0123456789abcdef" for ch in value):
+            raise RuntimeError("integrity violation: malformed verifier profile digest")
+        observed.add(value)
+
+    if not observed:
+        raise RuntimeError("cannot bind campaign: no verifier profile digest was produced")
+    if len(observed) != 1:
+        raise RuntimeError(
+            "integrity violation: campaign produced multiple verifier profile digests: "
+            + ", ".join(sorted(observed))
+        )
+    return next(iter(observed))
+
+
 async def run_campaign_async(
     spec: CampaignSpec,
     *,
@@ -204,9 +236,12 @@ async def run_campaign_async(
             AttackerStore(Path(adir)).freeze()
             frozen_dirs.add(adir)
 
+    rows = list(outcome["results"])
+    verifier_profile_digest = _single_verifier_profile_digest(rows)
+
     work_digests: list[str] = []
     failed_count = 0
-    for row in outcome["results"]:
+    for row in rows:
         if row.get("error") and "trajectory" not in row:
             failed_count += 1
             if row.get("unit_digest") or row.get("cas_digest"):
@@ -244,6 +279,8 @@ async def run_campaign_async(
             "lifecycle": LifecycleState.ATTACK.value,
             "gt_evaluated_on": None,
             "plane": "attack",
+            "verifier_profile_digest": verifier_profile_digest,
+            "verifier_profile_digest_source": "worker_consensus",
             "stats_plan": spec.stats_plan.model_dump(mode="json"),
         },
     )
@@ -362,7 +399,9 @@ def freeze_run(run_dir: Path, *, store: ContentAddressedStore | None = None) -> 
         run_id=str(index["run_id"]),
         freeze_digest=tip_digest,
         campaign_digest=campaign_digest,
-        verifier_digest=meta.get("verifier_digest") or meta.get("profile_digest"),
+        verifier_digest=meta.get("verifier_profile_digest")
+        or meta.get("verifier_digest")
+        or meta.get("profile_digest"),
         attack_digests=attack_digests,
         environment_fingerprint=meta.get("environment_fingerprint")
         or digest_of({"env": meta.get("environment") or meta.get("environment_kind")}),
