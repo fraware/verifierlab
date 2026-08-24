@@ -18,8 +18,6 @@ from verifierlab.verifiers.profile import VerifierProfile
 from verifierlab.verifiers.runner import PythonVerifierRunner
 
 _KNOWN_ACCESS = frozenset(m.value for m in AccessModel)
-
-# Keys / markers that must never enter stateful episode retention (VALAB-03).
 _GT_EPISODE_DENY = frozenset(
     {
         "gt_valid",
@@ -69,18 +67,7 @@ class QueryEvent:
 
 @dataclass
 class VerifierBroker:
-    """Sole public path for verifier calls during attack / evaluation.
-
-    Enforces access-model **capability objects**, atomically reserves budget
-    (when a ledger is attached), records query provenance, and returns typed
-    decisions. Verifier invocations are metered as ``ledger.add_queries`` —
-    equivalent to the ``max_queries`` budget dimension (VALAB-04).
-
-    When ``runner`` is set (packaged native verifiers), invocations prefer the
-    :class:`~verifierlab.verifiers.runner.PythonVerifierRunner` subprocess
-    boundary. Trusted local ``@verifier`` callables remain in-process when
-    ``runner`` is omitted.
-    """
+    """Sole public path for verifier calls during attack / evaluation."""
 
     profile: VerifierProfile
     verifier: Callable[[dict[str, Any]], Any]
@@ -98,7 +85,6 @@ class VerifierBroker:
         if self.capabilities is None:
             self.capabilities = capabilities_for(self.access_model)
         if self.runner is not None and self.profile.name == self.runner.ref:
-            # Prefer runner profile digests when broker was constructed with a stub.
             self.profile = self.runner.profile or self.profile
 
     @property
@@ -106,7 +92,6 @@ class VerifierBroker:
         return self.profile.content_digest()
 
     def _default_capability(self) -> str:
-        """Pick the primary feedback channel for this access model."""
         assert self.capabilities is not None
         if self.capabilities.may_read_decision:
             return "decision"
@@ -121,7 +106,7 @@ class VerifierBroker:
         caller: str | None = None,
         capability: str | None = None,
     ) -> Decision:
-        """Invoke the verifier under metering and access control."""
+        """Invoke the verifier under metering, profile semantics and access control."""
         assert self.capabilities is not None
         cap = capability or self._default_capability()
         self.capabilities.require(cap)
@@ -129,8 +114,6 @@ class VerifierBroker:
         input_digest = digest_of(trajectory)
 
         if self.ledger is not None:
-            # Atomic reserve: budget check happens before the call.
-            # Verifier invocations ≡ queries (VALAB-04).
             self.ledger.add_queries(1)
             self.ledger.sync_wall_time()
 
@@ -141,6 +124,10 @@ class VerifierBroker:
             else:
                 raw = self.verifier(trajectory)
                 decision = normalize_decision(raw)
+            # Numeric scores become accept/reject only through an immutable,
+            # content-addressed profile mapping. Without one they remain
+            # indeterminate and therefore fail closed.
+            decision = self.profile.normalize_score_decision(decision)
         except Exception as exc:
             decision = Decision.from_raw(
                 {
@@ -152,14 +139,12 @@ class VerifierBroker:
         latency_ms = (time.perf_counter() - started) * 1000.0
         decision = decision.model_copy(update={"profile_ref": self.profile_digest})
 
-        # Capability-gated feedback channels (VALAB-03).
         caps = self.capabilities
         filtered_reasons = caps.filter_reason_codes(list(decision.reason_codes))
         updates: dict[str, Any] = {"reason_codes": filtered_reasons}
         if not caps.may_read_score:
             updates["score"] = None
         if not caps.may_read_decision:
-            # score_only: strip accept/reject hard labels; keep / synthesize score.
             if decision.score is None and decision.accepted is not None:
                 updates["score"] = 1.0 if decision.accepted else 0.0
             updates["accepted"] = None
@@ -175,7 +160,6 @@ class VerifierBroker:
                 updates["raw"] = None
         decision = decision.model_copy(update=updates)
 
-        # Event accepted field mirrors what the caller may observe.
         event_accepted = decision.accepted if caps.may_read_decision else None
         output_digest = digest_of(
             {
@@ -226,17 +210,14 @@ class VerifierBroker:
         return self._episode_state.get(key, default)
 
     def clear_episode_state(self) -> None:
-        """Clear episode state (end of episode)."""
         self._episode_state.clear()
 
     def profile_mount(self) -> VerifierProfile:
-        """Return the immutable profile (white-box / gray-box only)."""
         assert self.capabilities is not None
         self.capabilities.require("profile")
         return self.profile
 
     def read_source(self) -> dict[str, Any]:
-        """White-box only: expose profile implementation digests (not live source)."""
         assert self.capabilities is not None
         self.capabilities.require("source")
         return {
@@ -248,13 +229,11 @@ class VerifierBroker:
         }
 
     def adaptive_round(self, artifact: dict[str, Any]) -> dict[str, Any]:
-        """Adaptive access: accept an explicit prior-round artifact reference."""
         assert self.capabilities is not None
         self.capabilities.require("adaptive")
         return {"accepted": True, "artifact_digest": digest_of(artifact)}
 
     def transfer_artifact(self, artifact: dict[str, Any]) -> dict[str, Any]:
-        """Transfer access: accept an explicit source-campaign artifact."""
         assert self.capabilities is not None
         self.capabilities.require("transfer")
         return {"accepted": True, "artifact_digest": digest_of(artifact)}
@@ -262,15 +241,15 @@ class VerifierBroker:
     def event_dicts(self) -> list[dict[str, Any]]:
         return [
             {
-                "query_id": e.query_id,
-                "input_digest": e.input_digest,
-                "output_digest": e.output_digest,
-                "latency_ms": e.latency_ms,
-                "caller": e.caller,
-                "access_model": e.access_model,
-                "profile_digest": e.profile_digest,
-                "status": e.status,
-                "accepted": e.accepted,
+                "query_id": event.query_id,
+                "input_digest": event.input_digest,
+                "output_digest": event.output_digest,
+                "latency_ms": event.latency_ms,
+                "caller": event.caller,
+                "access_model": event.access_model,
+                "profile_digest": event.profile_digest,
+                "status": event.status,
+                "accepted": event.accepted,
             }
-            for e in self.events
+            for event in self.events
         ]
