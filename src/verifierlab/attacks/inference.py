@@ -156,6 +156,7 @@ class BeamSearch:
     """Keep a beam of high-scoring actions; expand via broker candidate queries."""
 
     COHORT = "optimized"
+    CHECKPOINT_SCHEMA_VERSION = "2"
 
     def __init__(self) -> None:
         self._rng = random.Random(0)
@@ -261,7 +262,7 @@ class BeamSearch:
 
     def checkpoint(self) -> dict[str, Any]:
         return {
-            "schema_version": "1",
+            "schema_version": self.CHECKPOINT_SCHEMA_VERSION,
             "strategy": "beam",
             "cohort": self.COHORT,
             "seed": self._seed,
@@ -275,6 +276,10 @@ class BeamSearch:
         }
 
     def restore(self, state: dict[str, Any]) -> None:
+        version = str(state.get("schema_version", "1"))
+        if version not in {"1", self.CHECKPOINT_SCHEMA_VERSION}:
+            raise ValueError(f"unsupported BeamSearch checkpoint schema_version: {version!r}")
+
         self._seed = int(state.get("seed", self._seed))
         self._beam_width = int(state.get("beam_width", self._beam_width))
         self._queries = int(state.get("queries", 0))
@@ -282,8 +287,12 @@ class BeamSearch:
         self._counter = int(state.get("counter", 0))
         self._beam = []
         for item in state.get("beam") or []:
-            score, counter, action = item
-            heapq.heappush(self._beam, (float(score), int(counter), dict(action)))
+            stored_score, counter, action = item
+            # v1 was written by the buggy implementation and therefore persisted
+            # negated scores. Convert once at the schema boundary; v2 stores the
+            # real score and can be restored directly.
+            score = -float(stored_score) if version == "1" else float(stored_score)
+            heapq.heappush(self._beam, (score, int(counter), dict(action)))
         if "schema" in state:
             self._schema = dict(state["schema"])
         if state.get("rng_state") is not None:
