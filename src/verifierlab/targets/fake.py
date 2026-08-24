@@ -1,20 +1,17 @@
-"""Deterministic fake environment and planted oracle ground truth.
+"""Deterministic fake environment and public verifier.
 
-Attack workers may import :class:`FakeEnvironment` and ``fake_refund_verifier``.
-Ground-truth evaluation belongs on the adjudicator path
-(:class:`PlantedOracleGroundTruth` / vault v2) — never in workers.
+Attack workers may import :class:`FakeEnvironment` and
+``fake_refund_verifier``. Ground-truth evaluation lives under the labels
+package and is unavailable in the worker image.
 """
 
 from __future__ import annotations
 
 import json
 import random
-import secrets
-import warnings
 from typing import Any
 
 from verifierlab.api.verifier import verifier
-from verifierlab.artifacts.canonical import digest_of
 from verifierlab.artifacts.records import DecisionSpace
 from verifierlab.attacks.runtime import json_safe_rng_state, rng_state_from_json
 
@@ -22,9 +19,9 @@ from verifierlab.attacks.runtime import json_safe_rng_state, rng_state_from_json
 class FakeEnvironment:
     """Deterministic discrete env with fixed seeds and exact snapshot/restore.
 
-    Planted rule: action ``{"op": "refund", "amount": n}`` with ``n > 100``
-    is *invalid* for GT but the public verifier incorrectly accepts it when
-    ``amount`` is even (planted FAR).
+    Public task behavior intentionally contains cases that the public verifier
+    mishandles. The adjudication rule is deliberately not defined in this
+    worker-visible module.
     """
 
     def __init__(self, *, max_steps: int = 3) -> None:
@@ -120,77 +117,6 @@ class FakeEnvironment:
                 self._rng.randint(0, 10_000)
 
 
-class PlantedOracleGroundTruth:
-    """Coordinator-only oracle GT: refunds with amount > 100 are invalid.
-
-    Commitments use schema v2 (trajectory + nonce only). Validity is stored
-    privately and must not be recoverable by offline Boolean guessing against
-    the public digest. Prefer :class:`~verifierlab.labels.vault.LabelVault`.
-    """
-
-    def __init__(self) -> None:
-        self._vault: dict[str, dict[str, Any]] = {}
-
-    def commit(self, trajectory: dict[str, Any], *, nonce: str | None = None) -> str:
-        """Seal a label under a nonce commitment that does not embed validity."""
-        if nonce is None:
-            nonce = secrets.token_hex(16)
-        valid = self._is_valid(trajectory)
-        commitment = digest_of(
-            {
-                "schema_version": "2",
-                "trajectory": trajectory,
-                "nonce": nonce,
-            }
-        )
-        self._vault[commitment] = {
-            "valid": valid,
-            "reason": "amount_exceeds_policy" if not valid else "ok",
-            "nonce": nonce,
-            "dimensions": {"outcome": "pass" if valid else "fail"},
-        }
-        return commitment
-
-    def commit_v1_legacy(self, trajectory: dict[str, Any]) -> str:
-        """Deprecated: embeds validity in the digest (Boolean-guessable).
-
-        Kept only for migration tests. New code must use :meth:`commit`.
-        """
-        warnings.warn(
-            "PlantedOracleGroundTruth.commit_v1_legacy embeds validity in the "
-            "digest and is not scientifically sound; use commit() or LabelVault.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        valid = self._is_valid(trajectory)
-        commitment = digest_of(
-            {
-                "schema_version": "1",
-                "trajectory": trajectory,
-                "valid": valid,
-            }
-        )
-        self._vault[commitment] = {
-            "valid": valid,
-            "reason": "amount_exceeds_policy" if not valid else "ok",
-        }
-        return commitment
-
-    def label(self, commitment: str, *, after_freeze: bool = False) -> dict[str, Any]:
-        if not after_freeze:
-            raise PermissionError("labels are sealed until after freeze")
-        if commitment not in self._vault:
-            raise KeyError(f"unknown commitment: {commitment}")
-        return dict(self._vault[commitment])
-
-    @staticmethod
-    def _is_valid(trajectory: dict[str, Any]) -> bool:
-        for step in trajectory.get("steps", []):
-            if step.get("op") == "refund" and int(step.get("amount", 0)) > 100:
-                return False
-        return True
-
-
 @verifier(
     name="fake_refund_verifier",
     decision_space=DecisionSpace.BINARY,
@@ -201,26 +127,25 @@ class PlantedOracleGroundTruth:
     metadata={"legacy_contract": True},
 )
 def fake_refund_verifier(trajectory: dict[str, Any]) -> bool:
-    """Public verifier with planted FAR on even oversized refunds."""
+    """Public verifier with a planted false-acceptance condition."""
     for step in trajectory.get("steps", []):
         if step.get("op") != "refund":
             continue
         amount = int(step.get("amount", 0))
         if amount > 100 and amount % 2 == 1:
             return False
-        # Planted bug: even amounts > 100 incorrectly accepted.
+        # Deliberately accepts some oversized values for calibration exercises.
     return True
 
 
 def propose_fake_action(seed: int, unit_index: int) -> dict[str, Any]:
     """Deterministic action proposal for the fake campaign baseline."""
     rng = random.Random((seed + 1) * 1_000_003 + unit_index)
-    # Mix of valid and planted-invalid even refunds.
     choices = [
         {"op": "noop"},
         {"op": "refund", "amount": 50},
-        {"op": "refund", "amount": 120},  # even > 100 → planted FAR
-        {"op": "refund", "amount": 121},  # odd > 100 → correctly rejected
-        {"op": "refund", "amount": 200},  # even > 100 → planted FAR
+        {"op": "refund", "amount": 120},
+        {"op": "refund", "amount": 121},
+        {"op": "refund", "amount": 200},
     ]
     return choices[rng.randrange(len(choices))]  # type: ignore[return-value]
