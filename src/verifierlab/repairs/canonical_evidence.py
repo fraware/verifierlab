@@ -8,8 +8,9 @@ A canonical fresh reattack must be label-released, bind the repaired verifier,
 bind the repair artifact in the campaign definition before execution, expose a
 finite query budget and an integrity-checked spend ledger, use an explicit
 non-learning holdout split, and carry execution-boundary records on every
-qualification row. Security-grade freshness additionally requires every such
-boundary to be security-grade and mount-free.
+qualification row. Released analysis rows must trace back to the work-unit CAS
+objects bound by the sealed run. Security-grade freshness additionally requires
+every such boundary to be security-grade and mount-free.
 """
 
 from __future__ import annotations
@@ -25,6 +26,8 @@ from verifierlab.artifacts.cas import ContentAddressedStore
 from verifierlab.campaigns.lifecycle import LifecycleState, read_tip_index
 from verifierlab.campaigns.splits import materialize_split_manifest
 from verifierlab.config.campaign import CampaignSpec
+
+_RELEASE_ONLY_FIELDS = frozenset({"gt_valid", "exploit", "vault_commitment", "labels_released"})
 
 
 class CanonicalFreshRunEvidence(BaseModel):
@@ -45,6 +48,7 @@ class CanonicalFreshRunEvidence(BaseModel):
     budget_limit_queries: int = Field(gt=0)
     queries_used: int = Field(ge=0)
     holdout_unit_ids: tuple[str, ...]
+    sealed_holdout_work_digests: tuple[str, ...]
     execution_boundary_digests: tuple[str, ...]
     labels_released: bool
     holdout_isolated: bool
@@ -82,7 +86,13 @@ def _hex64(value: Any, *, field: str) -> str:
     return text
 
 
-def _assert_cas_object(store: ContentAddressedStore, digest: str, expected: dict[str, Any], *, name: str) -> None:
+def _assert_cas_object(
+    store: ContentAddressedStore,
+    digest: str,
+    expected: dict[str, Any],
+    *,
+    name: str,
+) -> None:
     stored = store.get_json(digest)
     if stored != expected:
         raise RuntimeError(f"{name} CAS object does not match the run artifact")
@@ -118,27 +128,49 @@ def _assert_split_matches_campaign(spec: CampaignSpec, split_manifest: dict[str,
     if len(unit_ids) != len(units) or any(not unit_id for unit_id in unit_ids):
         raise RuntimeError("split manifest contains invalid unit ids")
     expected = materialize_split_manifest(spec, unit_ids=unit_ids, run_dir=None)
-    if expected != {**split_manifest, "content_digest": digest_of(split_manifest)}:
-        # The caller passes the body with content_digest removed. Reconstruct the
-        # canonical body comparison explicitly to avoid trusting a self-digest.
-        expected_body = {k: v for k, v in expected.items() if k != "content_digest"}
-        if expected_body != split_manifest:
-            raise RuntimeError("split manifest does not reconstruct from campaign specification")
+    expected_body = {k: v for k, v in expected.items() if k != "content_digest"}
+    if expected_body != split_manifest:
+        raise RuntimeError("split manifest does not reconstruct from campaign specification")
 
 
-def _qualification_rows(run_dir: Path, holdout_ids: tuple[str, ...]) -> list[dict[str, Any]]:
-    root = run_dir / "analysis" / "work_units"
+def _qualification_rows(
+    run_dir: Path,
+    holdout_ids: tuple[str, ...],
+    *,
+    store: ContentAddressedStore,
+    sealed_attack_digests: set[str],
+) -> tuple[list[dict[str, Any]], tuple[str, ...]]:
+    analysis_root = run_dir / "analysis" / "work_units"
+    attack_root = run_dir / "work_units"
     rows: list[dict[str, Any]] = []
+    work_digests: list[str] = []
     for unit_id in holdout_ids:
-        row = _read_json(root / f"{unit_id}.json")
+        attack_row = _read_json(attack_root / f"{unit_id}.json")
+        if str(attack_row.get("unit_id") or "") != unit_id:
+            raise RuntimeError(f"attack row id mismatch for {unit_id}")
+        cas_digest = _hex64(attack_row.get("cas_digest"), field=f"cas_digest:{unit_id}")
+        if cas_digest not in sealed_attack_digests:
+            raise RuntimeError(f"holdout work unit is not bound by sealed run: {unit_id}")
+        cas_body = dict(attack_row)
+        cas_body.pop("cas_digest", None)
+        _assert_cas_object(store, cas_digest, cas_body, name=f"work_unit:{unit_id}")
+
+        row = _read_json(analysis_root / f"{unit_id}.json")
         if str(row.get("unit_id") or "") != unit_id:
             raise RuntimeError(f"analysis row id mismatch for {unit_id}")
         if row.get("labels_released") is not True:
             raise RuntimeError(f"analysis row is not label-released: {unit_id}")
         if not isinstance(row.get("gt_valid"), bool):
             raise RuntimeError(f"analysis row lacks adjudicated ground truth: {unit_id}")
+        analysis_attack_fields = {k: v for k, v in row.items() if k not in _RELEASE_ONLY_FIELDS}
+        original_attack_fields = {
+            k: v for k, v in attack_row.items() if k not in _RELEASE_ONLY_FIELDS
+        }
+        if analysis_attack_fields != original_attack_fields:
+            raise RuntimeError(f"released analysis row diverges from sealed attack artifact: {unit_id}")
         rows.append(row)
-    return rows
+        work_digests.append(cas_digest)
+    return rows, tuple(sorted(work_digests))
 
 
 def _execution_evidence(rows: list[dict[str, Any]]) -> tuple[tuple[str, ...], bool, list[str]]:
@@ -175,12 +207,15 @@ def load_canonical_fresh_run(
 
     `fresh_attacker_established` is true only when the campaign was pre-bound to
     `expected_repair_artifact_digest`, every qualification row was executed in a
-    security-grade mount-free boundary, and no persistent attacker checkpoint
-    channel appears on those rows. This is intentionally stronger than a caller
-    assertion and intentionally impossible for the current process-local path.
+    security-grade mount-free boundary, no persistent attacker checkpoint
+    channel appears on those rows, and each released row traces back to an
+    attack-plane CAS object bound by the sealed run.
     """
     run_dir = Path(run_dir)
-    expected_repair = _hex64(expected_repair_artifact_digest, field="expected_repair_artifact_digest")
+    expected_repair = _hex64(
+        expected_repair_artifact_digest,
+        field="expected_repair_artifact_digest",
+    )
     index = read_tip_index(run_dir)
     lifecycle = str(index.get("lifecycle") or "")
     if lifecycle != LifecycleState.LABEL_RELEASE.value:
@@ -200,7 +235,10 @@ def load_canonical_fresh_run(
     release_payload = store.get_json(release_tip)
     if not isinstance(release_payload, dict):
         raise RuntimeError("release tip CAS object must be a JSON object")
-    if release_payload.get("kind") != "adjudication_release" or str(release_payload.get("run_id") or "") != run_id:
+    if (
+        release_payload.get("kind") != "adjudication_release"
+        or str(release_payload.get("run_id") or "") != run_id
+    ):
         raise RuntimeError("release tip CAS object does not match lifecycle index")
 
     sealed_payload = _read_json(run_dir / "sealed_run.json")
@@ -209,6 +247,12 @@ def load_canonical_fresh_run(
     if str(sealed.get("campaign_digest") or "") != campaign_digest:
         raise RuntimeError("sealed run campaign digest does not match lifecycle index")
     verifier_digest = _hex64(sealed.get("verifier_digest"), field="verifier_profile_digest")
+    raw_attack_digests = sealed.get("attack_digests")
+    if not isinstance(raw_attack_digests, list) or not raw_attack_digests:
+        raise RuntimeError("sealed run has no attack digests")
+    sealed_attack_digests = {
+        _hex64(value, field="sealed_attack_digest") for value in raw_attack_digests
+    }
 
     campaign_raw = store.get_json(campaign_digest)
     spec = CampaignSpec.model_validate(campaign_raw)
@@ -224,7 +268,12 @@ def load_canonical_fresh_run(
     split_manifest, split_digest = _verified_embedded_digest(split_payload, name="split_manifest")
     _assert_split_matches_campaign(spec, split_manifest)
     holdout_ids = _holdout_units(split_manifest)
-    rows = _qualification_rows(run_dir, holdout_ids)
+    rows, holdout_work_digests = _qualification_rows(
+        run_dir,
+        holdout_ids,
+        store=store,
+        sealed_attack_digests=sealed_attack_digests,
+    )
 
     ledger = store.get_json(ledger_digest)
     if not isinstance(ledger, dict):
@@ -268,6 +317,7 @@ def load_canonical_fresh_run(
         budget_limit_queries=budget_limit,
         queries_used=queries_used,
         holdout_unit_ids=holdout_ids,
+        sealed_holdout_work_digests=holdout_work_digests,
         execution_boundary_digests=boundary_digests,
         labels_released=True,
         holdout_isolated=holdout_isolated,
