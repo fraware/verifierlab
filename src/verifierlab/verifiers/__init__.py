@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from verifierlab.verifiers.broker import QueryEvent, VerifierBroker
 from verifierlab.verifiers.capabilities import AccessCapabilities, AccessDenied, capabilities_for
-from verifierlab.verifiers.profile import VerifierProfile
+from verifierlab.verifiers.profile import ScoreDecisionMapping, VerifierProfile
 from verifierlab.verifiers.runner import PythonVerifierRunner, prefers_subprocess_isolation
 
 __all__ = [
@@ -12,6 +12,7 @@ __all__ = [
     "AccessDenied",
     "PythonVerifierRunner",
     "QueryEvent",
+    "ScoreDecisionMapping",
     "VerifierBroker",
     "VerifierProfile",
     "capabilities_for",
