@@ -26,10 +26,11 @@ from verifierlab.campaigns.episode import (
     run_episode,
 )
 from verifierlab.labels.freeze import FreezeRecord, assert_freeze_immutable
+from verifierlab.labels.planted_fake import PlantedOracleGroundTruth
 from verifierlab.reports.html import build_report
 from verifierlab.reports.metrics import compute_metrics
 from verifierlab.statistics.intervals import exact_clopper_pearson, wilson_interval
-from verifierlab.targets.fake import FakeEnvironment, PlantedOracleGroundTruth, fake_refund_verifier
+from verifierlab.targets.fake import FakeEnvironment, fake_refund_verifier
 
 
 def test_public_attack_feedback_strips_gt() -> None:
@@ -64,7 +65,7 @@ def test_strategies_ignore_injected_gt_keys() -> None:
         public_attack_feedback(
             {
                 "verifier_accepted": True,
-                "gt_valid": False,  # would be stripped
+                "gt_valid": False,
                 "trajectory": {"steps": [{"op": "refund", "amount": 120}]},
                 "reward": 1.0,
                 "score": 1.0,
@@ -221,7 +222,7 @@ def test_metrics_abstention_vs_missing_vs_failed() -> None:
     rows = [
         {"cohort": "ordinary", "verifier_accepted": True, "gt_valid": True},
         {"cohort": "ordinary", "verifier_accepted": None, "gt_valid": True, "abstain": True},
-        {"cohort": "ordinary", "verifier_accepted": True, "gt_valid": None},  # missing GT
+        {"cohort": "ordinary", "verifier_accepted": True, "gt_valid": None},
         {"cohort": "optimized", "verifier_accepted": True, "gt_valid": False},
         {"cohort": "optimized", "error": "boom", "status": "failed"},
     ]
@@ -231,8 +232,7 @@ def test_metrics_abstention_vs_missing_vs_failed() -> None:
     assert ordinary.abstentions == 1
     assert ordinary.missing == 1
     assert ordinary.n == 3
-    # Abstention must not enter FAR/FRR denominators.
-    assert ordinary.frr == 0.0  # 0 fn / (0 fn + 1 tp)
+    assert ordinary.frr == 0.0
 
     optimized = report.cohorts["optimized"]
     assert optimized.fp == 1
@@ -244,15 +244,12 @@ def test_metrics_abstention_vs_missing_vs_failed() -> None:
 
 
 def test_clopper_pearson_known_vector() -> None:
-    # Classic: 0 successes in 20 trials, 95% CI upper should be ~0.168 (rule of 3 ≈ 0.15).
     iv = exact_clopper_pearson(0, 20, alpha=0.05)
     assert iv.low == 0.0
     assert 0.15 < iv.high < 0.18
-    # Symmetric: all successes.
     iv2 = exact_clopper_pearson(20, 20, alpha=0.05)
     assert iv2.high == 1.0
     assert 0.82 < iv2.low < 0.85
-    # Interior point monotonicity vs Wilson.
     w = wilson_interval(2, 10, alpha=0.05)
     e = exact_clopper_pearson(2, 10, alpha=0.05)
     assert e.low <= w.estimate <= e.high
@@ -327,7 +324,6 @@ def test_budget_undercount_detected() -> None:
     ledger.add_queries(3)
     ledger.add_steps(2)
     ledger.assert_consistent()
-    # Simulate silent counter inflation without a matching event (undercount of events).
     ledger.queries += 5
     with pytest.raises(BudgetUndercount, match="queries"):
         ledger.assert_consistent()
@@ -402,7 +398,6 @@ def test_label_leakage_absent_from_worker_and_public_feedback() -> None:
     assert 'gt_valid": null' in blob or '"gt_valid": null' in blob
     assert result["worker_safe"]["label"] is None
     assert result.get("label") is None
-    # Public feedback path must strip injected GT even if smuggled.
     smuggled = public_attack_feedback(
         {
             "verifier_accepted": True,
@@ -433,6 +428,5 @@ def test_vault_worker_credentials_isolation(tmp_path: Path) -> None:
     )
     payload = vault.worker_payload(c)
     assert payload["label"] is None
-    # Worker view must not serialize sealed label fields.
     assert "secret" not in json.dumps(payload)
     assert "valid" not in json.dumps(payload)
