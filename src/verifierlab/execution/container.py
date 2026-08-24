@@ -3,8 +3,8 @@
 The local process launcher is a development convenience, not a security
 boundary. This module defines a separate one-shot worker executor that creates a
 container with mandatory isolation controls, inspects the effective runtime
-configuration before execution, and emits a content-addressed boundary
-manifest.
+configuration before execution, and emits content-addressed boundary and
+execution records.
 
 Security-grade execution is fail-closed. A digest-pinned worker image and a
 rootless container daemon are mandatory. No host bind/volume/device mount is
@@ -18,7 +18,6 @@ import json
 import re
 import subprocess
 import uuid
-from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -60,7 +59,7 @@ class ContainerIsolationPolicy(BaseModel):
 
 
 class ExecutionBoundaryManifest(BaseModel):
-    """Observed execution controls for one worker container."""
+    """Observed isolation controls for one worker container."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -91,6 +90,24 @@ class ExecutionBoundaryManifest(BaseModel):
     create_command_digest: str = Field(min_length=64, max_length=64)
     inspect_digest: str = Field(min_length=64, max_length=64)
     security_grade: bool
+
+    @property
+    def content_digest(self) -> str:
+        return digest_of(self.model_dump(mode="json"))
+
+
+class ContainerExecutionRecord(BaseModel):
+    """Bind one request/result pair to the attested boundary and final state."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["1"] = "1"
+    boundary_digest: str = Field(min_length=64, max_length=64)
+    request_digest: str = Field(min_length=64, max_length=64)
+    worker_result_digest: str = Field(min_length=64, max_length=64)
+    final_inspect_digest: str = Field(min_length=64, max_length=64)
+    container_exit_code: int
+    attach_return_code: int
 
     @property
     def content_digest(self) -> str:
@@ -328,7 +345,14 @@ class ContainerWorkerExecutor:
 
             request = json.dumps(work_unit, sort_keys=True, separators=(",", ":"))
             executed = self._run(
-                [self.docker_binary, "container", "start", "--attach", "--interactive", container_id],
+                [
+                    self.docker_binary,
+                    "container",
+                    "start",
+                    "--attach",
+                    "--interactive",
+                    container_id,
+                ],
                 input_text=request,
                 timeout=self.policy.timeout_s,
                 check=False,
@@ -339,7 +363,12 @@ class ContainerWorkerExecutor:
             )
             try:
                 final_rows = json.loads(final_inspect.stdout)
-                state = final_rows[0]["State"]
+                if not isinstance(final_rows, list) or len(final_rows) != 1:
+                    raise TypeError("unexpected final inspect shape")
+                final_payload = final_rows[0]
+                if not isinstance(final_payload, dict):
+                    raise TypeError("unexpected final inspect row")
+                state = final_payload["State"]
                 exit_code = int(state["ExitCode"])
             except (json.JSONDecodeError, KeyError, IndexError, TypeError, ValueError) as exc:
                 raise RuntimeError("cannot verify worker container exit state") from exc
@@ -349,25 +378,41 @@ class ContainerWorkerExecutor:
                 )
 
             try:
-                result = json.loads(executed.stdout)
+                worker_result = json.loads(executed.stdout)
             except json.JSONDecodeError as exc:
                 raise RuntimeError("isolated worker emitted invalid JSON") from exc
-            if not isinstance(result, dict):
+            if not isinstance(worker_result, dict):
                 raise RuntimeError("isolated worker result must be a JSON object")
-            result = dict(result)
+
+            record = ContainerExecutionRecord(
+                boundary_digest=boundary.content_digest,
+                request_digest=digest_of(work_unit),
+                worker_result_digest=digest_of(worker_result),
+                final_inspect_digest=digest_of(final_payload),
+                container_exit_code=exit_code,
+                attach_return_code=executed.returncode,
+            )
+            result = dict(worker_result)
             result["execution_boundary"] = boundary.model_dump(mode="json")
             result["execution_boundary_digest"] = boundary.content_digest
+            result["execution_record"] = record.model_dump(mode="json")
+            result["execution_record_digest"] = record.content_digest
             return result
         finally:
             if container_id:
-                self._run(
-                    [self.docker_binary, "container", "rm", "--force", container_id],
-                    timeout=15.0,
-                    check=False,
-                )
+                try:
+                    self._run(
+                        [self.docker_binary, "container", "rm", "--force", container_id],
+                        timeout=15.0,
+                        check=False,
+                    )
+                except Exception:
+                    # Cleanup failure must not overwrite the primary execution error.
+                    pass
 
 
 __all__ = [
+    "ContainerExecutionRecord",
     "ContainerIsolationPolicy",
     "ContainerWorkerExecutor",
     "ExecutionBoundaryManifest",
