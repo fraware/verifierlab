@@ -1,0 +1,112 @@
+name: Container isolation
+
+on:
+  pull_request:
+    branches: [main, release/0.2-rc]
+    paths:
+      - "docker/worker/**"
+      - "src/verifierlab/execution/container.py"
+      - "src/verifierlab/targets/isolation_probe.py"
+      - "tests/test_container_execution_policy.py"
+      - ".github/workflows/container-isolation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  policy-and-adversarial-probes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        run: uv sync --extra dev
+
+      - name: Static policy tests
+        run: uv run pytest tests/test_container_execution_policy.py -q
+
+      - name: Build worker image
+        run: docker build -f docker/worker/Dockerfile -t verifierlab-worker:isolation .
+
+      - name: Resolve immutable image digest
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          image_id="$(docker image inspect verifierlab-worker:isolation --format '{{.Id}}')"
+          case "$image_id" in
+            sha256:????????????????????????????????????????????????????????????????) ;;
+            *) echo "unexpected image id: $image_id" >&2; exit 1 ;;
+          esac
+          printf 'ref=verifierlab-worker@%s\n' "$image_id" >> "$GITHUB_OUTPUT"
+
+      - name: Run strict-boundary probes
+        env:
+          WORKER_IMAGE: ${{ steps.image.outputs.ref }}
+        run: |
+          uv run python - <<'PY'
+          import json
+          import os
+          from verifierlab.execution.container import ContainerIsolationPolicy, StrictContainerExecutor
+
+          image = os.environ["WORKER_IMAGE"]
+          executor = StrictContainerExecutor(ContainerIsolationPolicy(image=image))
+          payload = {
+              "unit_id": "isolation-probe-1",
+              "seed": 1,
+              "max_steps": 1,
+              "cohort": "optimized",
+              "access_model": "black-box",
+              "strategy": "ordinary",
+              "strategy_config": {"actions": [{"op": "noop"}]},
+              "environment_kind": "python",
+              "environment_ref": "verifierlab.targets.isolation_probe:IsolationProbeEnvironment",
+              "verifier_ref": "verifierlab.targets.isolation_probe:isolation_probe_verifier",
+              "commitment_nonce": "probe-1",
+              "query_budget_remaining": 4,
+              "budget_overrun_policy": "stop",
+              "learning": False,
+          }
+          first = executor.execute(payload)
+          second_payload = dict(payload)
+          second_payload["unit_id"] = "isolation-probe-2"
+          second_payload["commitment_nonce"] = "probe-2"
+          second = executor.execute(second_payload)
+
+          for result in (first, second):
+              probe = result["trajectory"]["observation"].get("isolation_probe") or {}
+              required_false = (
+                  "oracle_importable",
+                  "vault_importable",
+                  "coordinator_importable",
+                  "root_write_succeeded",
+                  "network_connect_succeeded",
+                  "container_socket_exposed",
+                  "cross_unit_state_seen",
+              )
+              for key in required_false:
+                  if probe.get(key) is not False:
+                      raise SystemExit(f"isolation probe failed: {key}={probe.get(key)!r}")
+              if probe.get("sensitive_env_keys"):
+                  raise SystemExit(f"sensitive environment visible: {probe['sensitive_env_keys']!r}")
+              if int(str(probe.get("effective_capabilities") or "0"), 16) != 0:
+                  raise SystemExit(
+                      f"effective capabilities not empty: {probe.get('effective_capabilities')!r}"
+                  )
+
+          boundary = first.get("execution_boundary") or {}
+          if not boundary.get("policy_satisfied"):
+              raise SystemExit("effective container policy was not satisfied")
+          # Hosted runners use a rootful daemon. This workflow establishes policy
+          # conformance only and must never promote that evidence to security-grade.
+          if boundary.get("security_grade"):
+              raise SystemExit("rootful hosted execution must not be security-grade")
+          print(json.dumps({"policy_satisfied": True, "security_grade": False}, sort_keys=True))
+          PY
