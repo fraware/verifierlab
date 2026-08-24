@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from verifierlab.artifacts.canonical import digest_of
 from verifierlab.artifacts.cas import ContentAddressedStore
 from verifierlab.campaigns.lifecycle import LifecycleState, read_tip_index
+from verifierlab.campaigns.splits import materialize_split_manifest
 from verifierlab.config.campaign import CampaignSpec
 
 
@@ -81,6 +82,12 @@ def _hex64(value: Any, *, field: str) -> str:
     return text
 
 
+def _assert_cas_object(store: ContentAddressedStore, digest: str, expected: dict[str, Any], *, name: str) -> None:
+    stored = store.get_json(digest)
+    if stored != expected:
+        raise RuntimeError(f"{name} CAS object does not match the run artifact")
+
+
 def _holdout_units(split_manifest: dict[str, Any]) -> tuple[str, ...]:
     units = split_manifest.get("units")
     if not isinstance(units, list):
@@ -101,6 +108,22 @@ def _holdout_units(split_manifest: dict[str, Any]) -> tuple[str, ...]:
     if not holdout:
         raise RuntimeError("qualification run has no explicit non-learning holdout units")
     return tuple(sorted(holdout))
+
+
+def _assert_split_matches_campaign(spec: CampaignSpec, split_manifest: dict[str, Any]) -> None:
+    units = split_manifest.get("units")
+    if not isinstance(units, list):
+        raise RuntimeError("split manifest missing units")
+    unit_ids = [str(row.get("unit_id") or "") for row in units if isinstance(row, dict)]
+    if len(unit_ids) != len(units) or any(not unit_id for unit_id in unit_ids):
+        raise RuntimeError("split manifest contains invalid unit ids")
+    expected = materialize_split_manifest(spec, unit_ids=unit_ids, run_dir=None)
+    if expected != {**split_manifest, "content_digest": digest_of(split_manifest)}:
+        # The caller passes the body with content_digest removed. Reconstruct the
+        # canonical body comparison explicitly to avoid trusting a self-digest.
+        expected_body = {k: v for k, v in expected.items() if k != "content_digest"}
+        if expected_body != split_manifest:
+            raise RuntimeError("split manifest does not reconstruct from campaign specification")
 
 
 def _qualification_rows(run_dir: Path, holdout_ids: tuple[str, ...]) -> list[dict[str, Any]]:
@@ -168,20 +191,25 @@ def load_canonical_fresh_run(
     release_tip = _hex64(index.get("tip_digest"), field="release_tip_digest")
     campaign_digest = _hex64(index.get("campaign_digest"), field="campaign_digest")
     ledger_digest = _hex64(index.get("ledger_digest"), field="ledger_digest")
+    run_id = str(index.get("run_id") or "")
+    if not run_id:
+        raise RuntimeError("release index is missing run id")
+
+    workspace = run_dir.parent.parent
+    store = ContentAddressedStore(workspace / "store")
+    release_payload = store.get_json(release_tip)
+    if not isinstance(release_payload, dict):
+        raise RuntimeError("release tip CAS object must be a JSON object")
+    if release_payload.get("kind") != "adjudication_release" or str(release_payload.get("run_id") or "") != run_id:
+        raise RuntimeError("release tip CAS object does not match lifecycle index")
 
     sealed_payload = _read_json(run_dir / "sealed_run.json")
     sealed, sealed_digest = _verified_embedded_digest(sealed_payload, name="sealed_run")
+    _assert_cas_object(store, sealed_digest, sealed, name="sealed_run")
     if str(sealed.get("campaign_digest") or "") != campaign_digest:
         raise RuntimeError("sealed run campaign digest does not match lifecycle index")
     verifier_digest = _hex64(sealed.get("verifier_digest"), field="verifier_profile_digest")
 
-    split_payload = _read_json(run_dir / "splits" / "manifest.json")
-    split_manifest, split_digest = _verified_embedded_digest(split_payload, name="split_manifest")
-    holdout_ids = _holdout_units(split_manifest)
-    rows = _qualification_rows(run_dir, holdout_ids)
-
-    workspace = run_dir.parent.parent
-    store = ContentAddressedStore(workspace / "store")
     campaign_raw = store.get_json(campaign_digest)
     spec = CampaignSpec.model_validate(campaign_raw)
     metadata = dict(spec.metadata or {})
@@ -191,6 +219,12 @@ def load_canonical_fresh_run(
     if spec.budget.max_queries is None or int(spec.budget.max_queries) <= 0:
         raise RuntimeError("qualification run requires a finite positive query budget")
     budget_limit = int(spec.budget.max_queries)
+
+    split_payload = _read_json(run_dir / "splits" / "manifest.json")
+    split_manifest, split_digest = _verified_embedded_digest(split_payload, name="split_manifest")
+    _assert_split_matches_campaign(spec, split_manifest)
+    holdout_ids = _holdout_units(split_manifest)
+    rows = _qualification_rows(run_dir, holdout_ids)
 
     ledger = store.get_json(ledger_digest)
     if not isinstance(ledger, dict):
@@ -222,7 +256,7 @@ def load_canonical_fresh_run(
         blockers.append("fresh_attacker_not_established")
 
     evidence = CanonicalFreshRunEvidence(
-        run_id=str(index.get("run_id") or ""),
+        run_id=run_id,
         release_tip_digest=release_tip,
         sealed_run_digest=sealed_digest,
         campaign_digest=campaign_digest,
