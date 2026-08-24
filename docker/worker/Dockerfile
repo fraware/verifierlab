@@ -64,6 +64,11 @@ for rel in (
     target = root / rel
     if target.exists():
         target.unlink()
+# pip may have precompiled bytecode before pruning. Remove every package cache
+# so deleted coordinator modules cannot survive as residual code artifacts.
+for cache in list(root.rglob("__pycache__")):
+    if cache.exists():
+        shutil.rmtree(cache)
 for rel in (
     "labels",
     "repairs",
