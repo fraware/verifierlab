@@ -52,12 +52,12 @@ for rel in (
     "repairs",
     "disclosure",
     "reports",
-    "cli",
 ):
     target = root / rel
     if target.exists():
         shutil.rmtree(target)
 for rel in (
+    "cli.py",
     "campaigns/engine.py",
     "campaigns/lifecycle.py",
 ):
@@ -74,7 +74,7 @@ for rel in (
     "repairs",
     "disclosure",
     "reports",
-    "cli",
+    "cli.py",
     "campaigns/engine.py",
     "campaigns/lifecycle.py",
 ):
