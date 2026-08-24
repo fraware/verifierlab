@@ -445,17 +445,16 @@ def lint_pack(path: Path) -> tuple[bool, list[Diagnostic], dict[str, Any]]:
                     path=str(yaml_path),
                 )
             )
-        if not spec.splits:
-            # Sidecar splits are acceptable; warn only if sidecar also missing.
-            if not (side / "splits.json").is_file():
-                diags.append(
-                    Diagnostic(
-                        code="VALAB.PACK.MISSING_SPLITS",
-                        severity=DiagnosticSeverity.ERROR,
-                        message="science pack requires splits in YAML or splits.json sidecar",
-                        path=str(yaml_path),
-                    )
+        # Sidecar splits are acceptable when YAML omits splits.
+        if not spec.splits and not (side / "splits.json").is_file():
+            diags.append(
+                Diagnostic(
+                    code="VALAB.PACK.MISSING_SPLITS",
+                    severity=DiagnosticSeverity.ERROR,
+                    message="science pack requires splits in YAML or splits.json sidecar",
+                    path=str(yaml_path),
                 )
+            )
         if not spec.stats_plan.methods:
             diags.append(
                 Diagnostic(
