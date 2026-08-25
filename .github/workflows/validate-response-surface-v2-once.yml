@@ -5,6 +5,8 @@ on:
     branches: [research/robustness-response-surface-v2]
     paths:
       - ".github/workflows/validate-response-surface-v2-once.yml"
+      - "src/verifierlab/statistics/response_surface.py"
+      - "tests/test_robustness_response_surface.py"
 
 permissions:
   contents: read
