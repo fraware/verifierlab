@@ -162,7 +162,7 @@ def _print_verifier_spec_text(payload: dict[str, object]) -> None:
     if isinstance(source, dict):
         console.print(f"source: {source.get('module')}:{source.get('qualname')}")
     limitations = payload.get("limitations")
-    if isinstance(limitations, (list, tuple)):
+    if isinstance(limitations, list | tuple):
         for lim in limitations:
             console.print(f"limitation: {lim}")
 
@@ -708,6 +708,44 @@ def stats_power(
         _print_json(payload)
     else:
         typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    raise typer.Exit(0)
+
+
+@stats_app.command("surface-compile")
+def stats_surface_compile(
+    plan: Path = typer.Argument(
+        ..., help="RobustnessResponseSurfacePlan or TransferSurfacePlan JSON"
+    ),
+    refs: Path = typer.Option(..., "--refs", help="JSON array of ReleasedBundleRef"),
+    format: str = typer.Option("json", "--format", help="Output format: json|text"),
+) -> None:
+    """Expand/compile an exact-coordinate response surface from released bundle refs."""
+    from verifierlab.statistics.response_surface import (
+        RobustnessResponseSurfacePlan,
+        TransferSurfacePlan,
+        compile_surface_study,
+    )
+
+    body = json.loads(Path(plan).read_text(encoding="utf-8"))
+    try:
+        if "discovery_coordinates" in body:
+            frozen = TransferSurfacePlan.model_validate(body)
+        else:
+            frozen = RobustnessResponseSurfacePlan.model_validate(body)
+        artifact = compile_surface_study(frozen, refs)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    payload = artifact.model_dump(mode="json")
+    payload["content_digest"] = artifact.content_digest
+    if format == "json":
+        _print_json(payload)
+    else:
+        typer.echo(f"cells: {len(artifact.cells)}")
+        typer.echo(f"complete: {artifact.complete_coordinate_count}")
+        typer.echo(f"missing: {artifact.missing_coordinate_count}")
+        typer.echo(f"indeterminate: {artifact.indeterminate_coordinate_count}")
+        typer.echo(f"digest: {artifact.content_digest}")
     raise typer.Exit(0)
 
 
