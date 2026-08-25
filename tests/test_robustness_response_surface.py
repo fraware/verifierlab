@@ -200,7 +200,7 @@ def test_exact_interval_method_is_recorded() -> None:
     )
     interval = artifact.cells[0].interval
     assert interval is not None
-    assert interval["method"] == "clopper_pearson_exact"
+    assert interval["method"] == "exact"
 
 
 def test_surface_digest_is_order_invariant_for_batch_input() -> None:
