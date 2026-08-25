@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from verifierlab.artifacts.records import AccessModel, DisclosureClass
 from verifierlab.budgets.budget import Budget, OverrunPolicy
 from verifierlab.diagnostics.codes import Diagnostic, DiagnosticSeverity
+from verifierlab.statistics.preregistration import AnalysisPreregistration
 
 
 class CampaignSpecError(ValueError):
@@ -78,6 +79,7 @@ class StatsPlan(BaseModel):
         default="none",
         description="none | bonferroni | pre_registered_primary",
     )
+    preregistration: AnalysisPreregistration | None = None
 
     @field_validator("methods")
     @classmethod

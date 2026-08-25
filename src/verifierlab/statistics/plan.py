@@ -357,6 +357,15 @@ def compile_stats_plan(
     never replaced by row-order pairing.
     """
     plan = plan or StatsPlan()
+    if plan.multiple_comparison_policy == "pre_registered_primary":
+        from verifierlab.statistics.preregistered import compile_preregistered_stats_plan
+
+        return compile_preregistered_stats_plan(
+            results,
+            plan=plan,
+            access_model=access_model,
+            pool_overall=pool_overall,
+        )
     rows = results if isinstance(results, list) else list(results)
     metrics: MetricsReport = compute_metrics_iter(
         rows,
