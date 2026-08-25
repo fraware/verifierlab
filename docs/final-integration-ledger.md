@@ -371,3 +371,51 @@ found on this tree beyond what #7 already landed.
 
 WP-13 flagship study, WP-14–22 remain for later agents. Hooks/schemas above are
 consumable by WP-13 (surface plan, portfolio manifest, HFS artifact, layer section).
+
+### WP-14 — EnvAssure interoperability
+
+| Item | Status |
+| ---- | ------ |
+| `EnvironmentAssuranceRef` on `CampaignSpec`; digest in run/study identity | done |
+| `AssuranceChainManifest` binds env + verifier + agent + proposition | done |
+| Upstream indeterminate propagates; verifier success cannot erase | done |
+| Golden synthetic EnvAssure fixture; tamper/schema mismatch fail closed | done |
+| Tests | `tests/test_envassure_wp14.py` |
+
+### WP-15 — Prospective deployment calibration capability
+
+| Item | Status |
+| ---- | ------ |
+| Prediction / outcome / plan / report schemas | done |
+| Append-only hash-chain chronology (self-authored ts insufficient) | done |
+| Synthetic fixtures marked `synthetic_non_deployment_evidence` | done |
+| CLI: `valab deployment register-prediction\|ingest-outcome\|calibration-report` | done |
+| `deployment_calibrated` only after real prospective non-synthetic outcomes | done (resolver facts) |
+| Tests | `tests/test_deployment_wp15.py` |
+
+### WP-21 — Independent reconstruction interface
+
+| Item | Status |
+| ---- | ------ |
+| Self-contained reproduction bundle + `ReconstructionReport` | done |
+| CLI `valab reproduce BUNDLE` | done |
+| External attestation vs trust roots; reject self-issued/mismatch | done |
+| Internal clean-room dry-run marked NOT independent | done |
+| Protocol doc | `docs/clean-room-protocol.md` |
+| Tests | `tests/test_reproduce_wp21.py` |
+
+### WP-13 — Flagship preregistered scientific study
+
+| Item | Status |
+| ---- | ------ |
+| Study bundle | `studies/flagship-2026/` |
+| Partitions + E1–E8 preregistration + claim table | done |
+| Security-grade attempted; host refused → fail-closed | done |
+| Derived maturity | **`internally_verified`** |
+| Ladder blockers | `independent_review_missing`, `independent_reconstruction_missing` |
+| Prospective scientific blockers | includes `security_grade_execution` (+ underpowered estimands) |
+| Never claimed `scientifically_qualified` / `security_grade` / `deployment_calibrated` | honest |
+| Tests | `tests/test_flagship_wp13.py` |
+
+WP-16–22 (adapter matrix honesty polish, coverage partitions, protected main,
+full docs rewrite, final acceptance gates) remain for the next agent.
