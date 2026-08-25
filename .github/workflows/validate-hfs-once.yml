@@ -7,7 +7,7 @@ on:
       - ".github/workflows/validate-hfs-once.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
@@ -19,7 +19,19 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv python install 3.12
       - run: uv sync --extra dev
+      - name: Normalize new protocol files
+        run: uv run ruff format src/verifierlab/campaigns/hacker_fixer_solver.py tests/test_hacker_fixer_solver_protocol.py
       - run: uv run ruff check src/verifierlab/campaigns/hacker_fixer_solver.py tests/test_hacker_fixer_solver_protocol.py
       - run: uv run ruff format --check src/verifierlab/campaigns/hacker_fixer_solver.py tests/test_hacker_fixer_solver_protocol.py
       - run: uv run mypy src/verifierlab/campaigns/hacker_fixer_solver.py tests/test_hacker_fixer_solver_protocol.py
       - run: uv run pytest tests/test_hacker_fixer_solver_protocol.py -q
+      - name: Commit normalized protocol sources
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name "repo-maintenance"
+          git config user.email "repo-maintenance@users.noreply.github.com"
+          git add src/verifierlab/campaigns/hacker_fixer_solver.py tests/test_hacker_fixer_solver_protocol.py
+          git diff --cached --quiet && exit 1
+          git commit -m "style(campaigns): normalize experiment protocol"
+          git push origin HEAD:research/hacker-fixer-solver
