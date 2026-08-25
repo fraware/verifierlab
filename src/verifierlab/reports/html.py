@@ -97,10 +97,21 @@ REPORT_TEMPLATE = Template(
 )
 
 
-def _fmt(value: float | None) -> str:
+def _metric_estimate(value: Any) -> float | None:
+    if isinstance(value, dict):
+        value = value.get("estimate")
     if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"metric estimate must be numeric or null, got {type(value).__name__}")
+    return float(value)
+
+
+def _fmt(value: Any) -> str:
+    estimate = _metric_estimate(value)
+    if estimate is None:
         return "—"
-    return f"{value:.4f}"
+    return f"{estimate:.4f}"
 
 
 def _fmt_ci(ci: dict[str, Any] | None) -> str:
@@ -115,6 +126,31 @@ def _fmt_ci(ci: dict[str, Any] | None) -> str:
         iv = next(iter(intervals.values()))
         return f"[{iv['low']:.4f}, {iv['high']:.4f}]"
     return "—"
+
+
+def _presentation_cohorts(stats: dict[str, Any]) -> list[dict[str, Any]]:
+    cohorts = [dict(value) for value in (stats.get("cohorts") or {}).values()]
+    by_name = {str(item.get("cohort")): item for item in cohorts}
+    for registered in (stats.get("registered_estimands") or {}).values():
+        if not isinstance(registered, dict):
+            continue
+        definition = registered.get("definition") or {}
+        result = registered.get("result") or {}
+        if not isinstance(definition, dict) or not isinstance(result, dict):
+            continue
+        cohort_name = definition.get("cohort")
+        metric = definition.get("metric")
+        interval = result.get("interval")
+        if cohort_name not in by_name or not isinstance(interval, dict):
+            continue
+        if not {"low", "high"}.issubset(interval):
+            continue
+        method = str(interval.get("method") or result.get("interval_method") or "registered")
+        if metric == "cohort_far":
+            by_name[str(cohort_name)]["far_ci"] = {"intervals": {method: interval}}
+        elif metric == "cohort_frr":
+            by_name[str(cohort_name)]["frr_ci"] = {"intervals": {method: interval}}
+    return cohorts
 
 
 def _load_stats_plan(run_dir: Path, manifest: dict[str, Any]) -> StatsPlan:
@@ -248,7 +284,7 @@ def build_report(
         encoding="utf-8",
     )
 
-    cohorts = list((stats.get("cohorts") or {}).values())
+    cohorts = _presentation_cohorts(stats)
     censored = stats.get("censored") or {}
     html = REPORT_TEMPLATE.render(
         run_id=run_id,
@@ -303,8 +339,8 @@ def build_report(
             return {
                 "cohort": c.get("cohort"),
                 "n": c.get("n"),
-                "far": c.get("far"),
-                "frr": c.get("frr"),
+                "far": _metric_estimate(c.get("far")),
+                "frr": _metric_estimate(c.get("frr")),
                 "fp": c.get("fp"),
                 "fn": c.get("fn"),
                 "tp": c.get("tp"),
