@@ -21,7 +21,7 @@
     ]
   },
   "config_digest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
-  "content_digest": "dcd7c6407232701cbb1ea0015bc7979c141b04eb2770001c63972c93d16d2fdf",
+  "content_digest": "b19cfbcb7b755377279b4f09c85ddfeda4fd1789fbf591fc46b6efc279aa51b4",
   "decision_semantics": {
     "fail_closed": true,
     "status_set": [
@@ -38,7 +38,7 @@
   "metadata": {
     "pack": "E",
     "pinned_versions": {
-      "campaign": "pack-e@1",
+      "campaign": "pack-e@2",
       "verifier": "refund_grade@1",
       "verifierlab": "0.2.0rc2"
     },

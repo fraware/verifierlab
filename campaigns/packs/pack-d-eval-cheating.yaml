@@ -3,7 +3,7 @@ name: pack-d-eval-cheating
 description: "Pack D — evaluation cheating / leakage-style attacks"
 pinned_versions:
   verifierlab: "0.2.0rc2"
-  campaign: "pack-d@1"
+  campaign: "pack-d@2"
 access_model: adaptive
 seed: 14
 work_units: 6
@@ -62,6 +62,22 @@ stats_plan:
   alpha: 0.05
   stopping_rule: fixed_n
   multiple_comparison_policy: pre_registered_primary
+  preregistration:
+    schema_version: "1"
+    registration_id: "pack-d@2-far-optimized"
+    estimands:
+      - estimand_id: far_optimized
+        metric: cohort_far
+        role: primary
+        inference: interval
+        cohort: optimized
+        interval_method: wilson
+        alpha: 0.05
+        direction: higher_is_worse
+    assumptions:
+      - FAR interpretation assumes released adjudicated validity labels are the reference-correct labels for this pack.
+      - Optimized-cohort membership is fixed by campaign configuration and treated as fixed for analysis.
+      - Inference is scoped to this pack's configured work units, attack generators, verifier version, and access model; it does not establish population-level robustness outside that regime.
 disclosure_class: embargo
 metadata:
   pack: D
