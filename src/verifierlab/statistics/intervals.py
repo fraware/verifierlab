@@ -1,16 +1,12 @@
-"""Wilson/exact CIs, bootstrap helpers, robustness curves, power analysis.
+"""Wilson/exact CIs, bootstrap helpers, robustness curves, and power analysis.
 
-Limitations (documented honestly):
+Limitations:
 - Wilson uses a fixed z-table for common alphas with a rational fallback.
-- Clopper-Pearson uses a pure-Python regularized incomplete beta (continued
-  fraction + series) - no SciPy dependency in the base package. Extremely
-  skewed (a,b) near machine limits may lose a few ulps vs SciPy; golden tests
-  lock common (successes, n, alpha) vectors.
+- Clopper-Pearson uses a pure-Python regularized incomplete beta; extreme
+  parameters near machine limits may differ slightly from SciPy.
 - Bootstrap helpers use Python's ``random.Random`` (not cryptographic).
-- Optional ``[stats]`` SciPy extra is reserved for golden cross-checks; this
-  release keeps pure-Python intervals as the executable path (WP-06). Install
-  SciPy separately for offline cross-validation if desired — results are not
-  silently substituted.
+- Optional ``[stats]`` SciPy support is for offline cross-validation; it is not
+  silently substituted into the executable path.
 """
 
 from __future__ import annotations
@@ -55,11 +51,7 @@ def wilson_interval(successes: int, n: int, *, alpha: float = 0.05) -> Interval:
 
 
 def exact_clopper_pearson(successes: int, n: int, *, alpha: float = 0.05) -> Interval:
-    """Central Clopper-Pearson exact interval via beta quantiles.
-
-    low  = BetaInv(alpha/2; successes, n-successes+1)   when successes > 0 else 0
-    high = BetaInv(1-alpha/2; successes+1, n-successes) when successes < n else 1
-    """
+    """Central Clopper-Pearson exact interval via beta quantiles."""
     if n <= 0:
         return Interval(0.0, 0.0, 1.0, "exact", 0)
     if successes < 0 or successes > n:
@@ -71,14 +63,11 @@ def exact_clopper_pearson(successes: int, n: int, *, alpha: float = 0.05) -> Int
 
 
 def _z_alpha(alpha: float) -> float:
-    # Inverse CDF for standard normal; table for common alphas + rational approx.
     table = {0.1: 1.6448536269514722, 0.05: 1.959963984540054, 0.01: 2.5758293035489004}
     if alpha in table:
         return table[alpha]
-    # Beasley-Springer/Moro-style rational approximation for Phi^{-1}(1-alpha/2)
-    # used as two-sided z for Wilson / power helpers.
-    p = 1 - alpha / 2
-    t = math.sqrt(-2 * math.log(max(1e-12, 1 - p)))
+    probability = 1 - alpha / 2
+    t = math.sqrt(-2 * math.log(max(1e-12, 1 - probability)))
     return t - (2.515517 + 0.802853 * t + 0.010328 * t * t) / (
         1 + 1.432788 * t + 0.189269 * t * t + 0.001308 * t * t * t
     )
@@ -92,30 +81,24 @@ def _beta_ppf(p: float, a: float, b: float) -> float:
         return 1.0
     if a <= 0 or b <= 0:
         raise ValueError(f"beta parameters must be positive, got a={a}, b={b}")
-    lo, hi = 0.0, 1.0
+    low, high = 0.0, 1.0
     for _ in range(80):
-        mid = 0.5 * (lo + hi)
-        if _betainc(mid, a, b) < p:
-            lo = mid
+        midpoint = 0.5 * (low + high)
+        if _betainc(midpoint, a, b) < p:
+            low = midpoint
         else:
-            hi = mid
-    return 0.5 * (lo + hi)
+            high = midpoint
+    return 0.5 * (low + high)
 
 
 def _betainc(x: float, a: float, b: float) -> float:
-    """Regularized incomplete beta I_x(a,b).
-
-    Uses the power series when x is below the mean switch point, otherwise the
-    continued-fraction complement via the identity I_x(a,b) = 1 - I_{1-x}(b,a).
-    """
+    """Regularized incomplete beta I_x(a,b)."""
     if x <= 0.0:
         return 0.0
     if x >= 1.0:
         return 1.0
     if a <= 0.0 or b <= 0.0:
         raise ValueError(f"beta parameters must be positive, got a={a}, b={b}")
-
-    # Switch to the complementary argument when it yields faster convergence.
     use_complement = x > (a + 1.0) / (a + b + 2.0)
     if use_complement:
         return 1.0 - _betainc_series(1.0 - x, b, a)
@@ -123,17 +106,13 @@ def _betainc(x: float, a: float, b: float) -> float:
 
 
 def _betainc_series(x: float, a: float, b: float) -> float:
-    """I_x(a,b) via power series + Lentz continued fraction hybrid."""
-    # Prefactor: x^a (1-x)^b / (a B(a,b))
+    """I_x(a,b) via a Lentz continued-fraction evaluation."""
     ln_beta = math.lgamma(a) + math.lgamma(b) - math.lgamma(a + b)
     log_front = a * math.log(x) + b * math.log1p(-x) - ln_beta - math.log(a)
     if log_front < -700:
         return 0.0
     front = math.exp(log_front)
-
-    # Continued fraction for the incomplete beta (Lentz).
-    # See Numerical Recipes / AS 26.5.8.
-    eps = 1e-14
+    epsilon = 1e-14
     fpmin = 1e-300
     qab = a + b
     qap = a + 1.0
@@ -146,7 +125,6 @@ def _betainc_series(x: float, a: float, b: float) -> float:
     h = d
     for m in range(1, 200):
         m2 = 2 * m
-        # Even step
         aa = m * (b - m) * x / ((qam + m2) * (a + m2))
         d = 1.0 + aa * d
         if abs(d) < fpmin:
@@ -156,7 +134,6 @@ def _betainc_series(x: float, a: float, b: float) -> float:
             c = fpmin
         d = 1.0 / d
         h *= d * c
-        # Odd step
         aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2))
         d = 1.0 + aa * d
         if abs(d) < fpmin:
@@ -167,7 +144,7 @@ def _betainc_series(x: float, a: float, b: float) -> float:
         d = 1.0 / d
         delta = d * c
         h *= delta
-        if abs(delta - 1.0) < eps:
+        if abs(delta - 1.0) < epsilon:
             break
     return min(1.0, max(0.0, front * h))
 
@@ -179,20 +156,32 @@ def cluster_bootstrap(
     samples: int = 1000,
     seed: int = 0,
 ) -> Interval:
-    """Bootstrap CI on mean rate where each cluster is a Bernoulli mean."""
-    rng = random.Random(seed)
-    if not clusters:
+    """Cluster bootstrap for the equally weighted mean of cluster rates.
+
+    The task/environment cluster is the statistical sampling unit. Both the
+    point estimate and every bootstrap replicate therefore average *cluster
+    means*, rather than flattening observations and silently changing to an
+    observation-weighted estimand when cluster sizes differ.
+    """
+    nonempty = [tuple(cluster) for cluster in clusters if cluster]
+    if not nonempty:
         return Interval(0.0, 0.0, 1.0, "cluster_bootstrap", 0)
-    rates = []
+    if samples <= 0:
+        raise ValueError("cluster_bootstrap samples must be positive")
+
+    cluster_rates = [sum(cluster) / len(cluster) for cluster in nonempty]
+    estimate = sum(cluster_rates) / len(cluster_rates)
+    rng = random.Random(seed)
+    bootstrap_rates: list[float] = []
     for _ in range(samples):
-        chosen = [clusters[rng.randrange(len(clusters))] for _ in range(len(clusters))]
-        flat = [x for c in chosen for x in c]
-        rates.append(sum(flat) / len(flat) if flat else 0.0)
-    rates.sort()
-    estimate = sum(sum(c) / len(c) for c in clusters if c) / max(1, len(clusters))
-    lo = rates[int(alpha / 2 * (samples - 1))]
-    hi = rates[int((1 - alpha / 2) * (samples - 1))]
-    return Interval(estimate, lo, hi, "cluster_bootstrap", len(clusters))
+        sampled_rates = [
+            cluster_rates[rng.randrange(len(cluster_rates))] for _ in range(len(cluster_rates))
+        ]
+        bootstrap_rates.append(sum(sampled_rates) / len(sampled_rates))
+    bootstrap_rates.sort()
+    low = bootstrap_rates[int(alpha / 2 * (samples - 1))]
+    high = bootstrap_rates[int((1 - alpha / 2) * (samples - 1))]
+    return Interval(estimate, low, high, "cluster_bootstrap", len(nonempty))
 
 
 def paired_bootstrap(
@@ -207,16 +196,16 @@ def paired_bootstrap(
     if len(a) != len(b) or not a:
         return Interval(0.0, 0.0, 0.0, "paired_bootstrap", 0)
     rng = random.Random(seed)
-    diffs = [x - y for x, y in zip(a, b, strict=True)]
+    differences = [x - y for x, y in zip(a, b, strict=True)]
     boots = []
     for _ in range(samples):
-        sample = [diffs[rng.randrange(len(diffs))] for _ in range(len(diffs))]
+        sample = [differences[rng.randrange(len(differences))] for _ in range(len(differences))]
         boots.append(sum(sample) / len(sample))
     boots.sort()
-    est = sum(diffs) / len(diffs)
-    lo = boots[int(alpha / 2 * (samples - 1))]
-    hi = boots[int((1 - alpha / 2) * (samples - 1))]
-    return Interval(est, lo, hi, "paired_bootstrap", len(diffs))
+    estimate = sum(differences) / len(differences)
+    low = boots[int(alpha / 2 * (samples - 1))]
+    high = boots[int((1 - alpha / 2) * (samples - 1))]
+    return Interval(estimate, low, high, "paired_bootstrap", len(differences))
 
 
 def robustness_curve(
@@ -225,23 +214,19 @@ def robustness_curve(
     *,
     thresholds: Sequence[float] | None = None,
 ) -> list[dict[str, float]]:
-    """FAR/FRR vs threshold curve for continuous scores (accept if score >= t).
-
-    ``labels_invalid`` is True when ground truth marks the sample invalid.
-    Also returns true-positive / false-negative rates among valid samples.
-    """
+    """FAR/FRR versus threshold for continuous scores (accept if score >= t)."""
     if thresholds is None:
-        thresholds = [i / 10 for i in range(11)]
+        thresholds = [index / 10 for index in range(11)]
     curve: list[dict[str, float]] = []
-    for t in thresholds:
+    for threshold in thresholds:
         fp = tn = tp = fn = 0
         for score, invalid in zip(scores, labels_invalid, strict=True):
-            accepted = score >= t
+            accepted = score >= threshold
             if invalid and accepted:
                 fp += 1
             elif invalid and not accepted:
                 tn += 1
-            elif (not invalid) and accepted:
+            elif not invalid and accepted:
                 tp += 1
             else:
                 fn += 1
@@ -249,7 +234,7 @@ def robustness_curve(
         frr_denom = fn + tp
         curve.append(
             {
-                "threshold": float(t),
+                "threshold": float(threshold),
                 "far": (fp / far_denom) if far_denom else 0.0,
                 "frr": (fn / frr_denom) if frr_denom else 0.0,
                 "fp": float(fp),
@@ -269,26 +254,20 @@ def time_to_exploit(
 ) -> dict[str, Any]:
     """Time-to-first-exploit summary with right-censoring support.
 
-    Parameters
-    ----------
-    event_times:
-        Query/step/wall-time index of each trial endpoint (exploit or censor).
-    exploited:
-        True when an exploit was observed at ``event_times[i]``; False means
-        right-censored (budget exhausted / episode ended without exploit).
-    max_time:
-        Optional study horizon; times above it are treated as censored at
-        ``max_time``.
+    ``median_time`` is retained for compatibility and is the median among
+    observed event times only. ``km_median_time`` is the censoring-aware
+    Kaplan-Meier median and should be preferred for scientific analyses.
     """
     if len(event_times) != len(exploited):
         raise ValueError("event_times and exploited must have equal length")
     if not event_times:
         return {
-            "schema_version": "1",
+            "schema_version": "2",
             "n": 0,
             "n_events": 0,
             "n_censored": 0,
             "median_time": None,
+            "km_median_time": None,
             "mean_time_events": None,
             "horizon": max_time,
             "method": "tte_summary",
@@ -296,26 +275,30 @@ def time_to_exploit(
 
     times: list[float] = []
     events: list[bool] = []
-    for t, hit in zip(event_times, exploited, strict=True):
-        tt = float(t)
-        if max_time is not None and tt > float(max_time):
+    for event_time, hit in zip(event_times, exploited, strict=True):
+        time_value = float(event_time)
+        if max_time is not None and time_value > float(max_time):
             times.append(float(max_time))
             events.append(False)
         else:
-            times.append(tt)
+            times.append(time_value)
             events.append(bool(hit))
 
-    event_only = [t for t, e in zip(times, events, strict=True) if e]
-    n_events = len(event_only)
-    n_censored = len(times) - n_events
-    median = _median(sorted(event_only)) if event_only else None
-    mean_events = (sum(event_only) / n_events) if n_events else None
+    event_only = [time_value for time_value, event in zip(times, events, strict=True) if event]
+    event_median = _median(sorted(event_only)) if event_only else None
+    mean_events = (sum(event_only) / len(event_only)) if event_only else None
+    survival = kaplan_meier_survival(times, exploited=events)
+    km_median = next(
+        (float(point["time"]) for point in survival if point["survival"] <= 0.5),
+        None,
+    )
     return {
-        "schema_version": "1",
+        "schema_version": "2",
         "n": len(times),
-        "n_events": n_events,
-        "n_censored": n_censored,
-        "median_time": median,
+        "n_events": len(event_only),
+        "n_censored": len(times) - len(event_only),
+        "median_time": event_median,
+        "km_median_time": km_median,
         "mean_time_events": mean_events,
         "horizon": max_time,
         "method": "tte_summary",
@@ -327,38 +310,35 @@ def kaplan_meier_survival(
     *,
     exploited: Sequence[bool],
 ) -> list[dict[str, float]]:
-    """Kaplan-Meier survival curve S(t) = P(no exploit by time t).
-
-    ``exploited`` True marks an event (exploit); False is right-censored.
-    Returns step-function points sorted by time. Empty input → [].
-    """
+    """Kaplan-Meier curve S(t) = P(no exploit by time t)."""
     if len(event_times) != len(exploited):
         raise ValueError("event_times and exploited must have equal length")
     if not event_times:
         return []
 
-    # Group by time: at each distinct time, count events and censorings.
     buckets: dict[float, list[int]] = {}
-    for t, hit in zip(event_times, exploited, strict=True):
-        key = float(t)
-        ev, cens = buckets.setdefault(key, [0, 0])
+    for event_time, hit in zip(event_times, exploited, strict=True):
+        key = float(event_time)
+        events, censored = buckets.setdefault(key, [0, 0])
         if hit:
-            buckets[key][0] = ev + 1
+            buckets[key][0] = events + 1
         else:
-            buckets[key][1] = cens + 1
+            buckets[key][1] = censored + 1
 
     at_risk = len(event_times)
     survival = 1.0
-    curve: list[dict[str, float]] = [{"time": 0.0, "survival": 1.0, "at_risk": float(at_risk)}]
-    for t in sorted(buckets):
-        events, censored = buckets[t]
+    curve: list[dict[str, float]] = [
+        {"time": 0.0, "survival": 1.0, "at_risk": float(at_risk)}
+    ]
+    for event_time in sorted(buckets):
+        events, censored = buckets[event_time]
         if at_risk <= 0:
             break
         if events:
-            survival *= 1.0 - (events / at_risk)
+            survival *= 1.0 - events / at_risk
         curve.append(
             {
-                "time": float(t),
+                "time": float(event_time),
                 "survival": float(survival),
                 "at_risk": float(at_risk),
                 "events": float(events),
@@ -369,14 +349,14 @@ def kaplan_meier_survival(
     return curve
 
 
-def _median(sorted_vals: Sequence[float]) -> float | None:
-    if not sorted_vals:
+def _median(sorted_values: Sequence[float]) -> float | None:
+    if not sorted_values:
         return None
-    n = len(sorted_vals)
-    mid = n // 2
+    n = len(sorted_values)
+    middle = n // 2
     if n % 2:
-        return float(sorted_vals[mid])
-    return float(0.5 * (sorted_vals[mid - 1] + sorted_vals[mid]))
+        return float(sorted_values[middle])
+    return float(0.5 * (sorted_values[middle - 1] + sorted_values[middle]))
 
 
 def power_binomial(
@@ -386,13 +366,12 @@ def power_binomial(
     n: int,
     alpha: float = 0.05,
 ) -> dict[str, Any]:
-    """Approximate power for detecting proportion shift p0→p1 (normal approx)."""
+    """Approximate power for detecting a proportion shift p0 to p1."""
     z = _z_alpha(alpha)
     se0 = math.sqrt(max(p0 * (1 - p0), 1e-12) / max(n, 1))
     se1 = math.sqrt(max(p1 * (1 - p1), 1e-12) / max(n, 1))
-    # One-sided-ish detection of increase.
-    crit = p0 + z * se0
-    power = 1 - _phi((crit - p1) / max(se1, 1e-12))
+    critical = p0 + z * se0
+    power = 1 - _phi((critical - p1) / max(se1, 1e-12))
     return {
         "schema_version": "1",
         "p0": p0,
@@ -400,7 +379,7 @@ def power_binomial(
         "n": n,
         "alpha": alpha,
         "power": max(0.0, min(1.0, power)),
-        "critical_value": crit,
+        "critical_value": critical,
         "method": "normal_approx",
     }
 
@@ -413,16 +392,16 @@ def sample_size_for_power(
     alpha: float = 0.05,
     n_max: int = 100_000,
 ) -> dict[str, Any]:
-    lo, hi = 1, n_max
+    low, high = 1, n_max
     best = n_max
-    while lo <= hi:
-        mid = (lo + hi) // 2
-        est = power_binomial(p0=p0, p1=p1, n=mid, alpha=alpha)
-        if est["power"] >= power:
-            best = mid
-            hi = mid - 1
+    while low <= high:
+        midpoint = (low + high) // 2
+        estimate = power_binomial(p0=p0, p1=p1, n=midpoint, alpha=alpha)
+        if estimate["power"] >= power:
+            best = midpoint
+            high = midpoint - 1
         else:
-            lo = mid + 1
+            low = midpoint + 1
     return {
         "n": best,
         "target_power": power,

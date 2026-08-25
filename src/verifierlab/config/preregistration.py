@@ -1,9 +1,8 @@
-"""Content-bound estimand declarations for executable statistical plans (WP-06).
+"""Content-bound estimand declarations for executable statistical plans.
 
 These models bind what will be estimated and how inferential uncertainty may be
 reported. They do not by themselves prove that registration occurred before
-outcomes were observed; temporal ordering must come from the campaign lifecycle
-and immutable artifact history.
+outcomes were observed; chronology comes from immutable lifecycle evidence.
 """
 
 from __future__ import annotations
@@ -32,8 +31,20 @@ EstimandMetric = Literal[
 ]
 EstimandRole = Literal["primary", "secondary", "descriptive"]
 InferenceMode = Literal["interval", "descriptive", "test", "equivalence"]
-IntervalMethod = Literal["wilson", "exact", "bootstrap", "cluster_bootstrap"]
-InterpretationDirection = Literal["higher_is_worse", "lower_is_better", "two_sided"]
+IntervalMethod = Literal[
+    "wilson",
+    "exact",
+    "bootstrap",
+    "cluster_bootstrap",
+    "kaplan_meier",
+]
+InterpretationDirection = Literal[
+    "higher_is_worse",
+    "lower_is_worse",
+    "higher_is_better",
+    "lower_is_better",
+    "two_sided",
+]
 SamplingUnit = Literal["task", "environment", "trajectory", "episode"]
 MissingnessPolicy = Literal[
     "fail_closed",
@@ -59,10 +70,11 @@ _RATE_METRICS = frozenset(
     }
 )
 _CONTRAST_METRICS = frozenset({"optimization_gap", "paired_repair_delta"})
+_SURVIVAL_METRICS = frozenset({"time_to_exploit"})
 
 
 class StoppingPlan(BaseModel):
-    """Preregistered sequential looks with information fractions (Lan-DeMets)."""
+    """Preregistered sequential looks with information fractions."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -73,13 +85,13 @@ class StoppingPlan(BaseModel):
 
     @model_validator(mode="after")
     def _looks_valid(self) -> StoppingPlan:
-        prev = 0.0
+        previous = 0.0
         for look in self.looks:
-            if look <= prev or look > 1.0:
+            if look <= previous or look > 1.0:
                 raise ValueError(
                     "stopping looks must be strictly increasing information fractions in (0, 1]"
                 )
-            prev = look
+            previous = look
         if self.looks[-1] != 1.0:
             raise ValueError("final look must be information fraction 1.0")
         return self
@@ -90,7 +102,7 @@ class StoppingPlan(BaseModel):
 
 
 class MultiplicityPlan(BaseModel):
-    """Family-wise error control across preregistered estimands."""
+    """Family-wise error-control declaration across preregistered estimands."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -104,7 +116,7 @@ class MultiplicityPlan(BaseModel):
 
 
 class EstimandSpec(BaseModel):
-    """One declared estimand with an executable population and interval contract."""
+    """One declared estimand with an executable population and inference contract."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -150,16 +162,7 @@ class EstimandSpec(BaseModel):
         elif self.metric == "exploit_rate":
             if self.cohort is not None or self.contrast is not None:
                 raise ValueError("exploit_rate does not accept cohort or contrast")
-        elif self.metric in {
-            "attack_success",
-            "clean_success",
-            "metamorphic_violation",
-            "planted_sensitivity",
-            "planted_fpr",
-            "deployment_outcome",
-            "time_to_exploit",
-        }:
-            # Optional cohort/split filters allowed; contrast not used.
+        elif self.metric in _RATE_METRICS | _SURVIVAL_METRICS:
             if self.contrast is not None:
                 raise ValueError(f"{self.metric} does not accept contrast")
 
@@ -193,13 +196,21 @@ class EstimandSpec(BaseModel):
                 "cluster_bootstrap",
             }:
                 raise ValueError(f"{self.metric} interval inference requires bootstrap")
-            if self.metric in _RATE_METRICS and self.interval_method == "bootstrap":
-                raise ValueError("rate estimands require wilson, exact, or cluster_bootstrap")
+            if self.metric in _RATE_METRICS and self.interval_method not in {
+                "wilson",
+                "exact",
+                "cluster_bootstrap",
+            }:
+                raise ValueError(
+                    f"{self.metric} rate inference requires wilson, exact, or cluster_bootstrap"
+                )
+            if self.metric in _SURVIVAL_METRICS and self.interval_method != "kaplan_meier":
+                raise ValueError("time_to_exploit interval inference requires kaplan_meier")
         return self
 
 
 class AnalysisPreregistration(BaseModel):
-    """Immutable estimand family bound into a campaign's statistical plan."""
+    """Immutable estimand family bound into a campaign statistical plan."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -221,8 +232,6 @@ class AnalysisPreregistration(BaseModel):
             raise ValueError("preregistration requires at least one primary estimand")
         if any(not assumption.strip() for assumption in self.assumptions):
             raise ValueError("assumptions must be non-empty")
-        # Exploratory surfaces default descriptive: secondary without interval is ok;
-        # primary with trajectory already rejected on EstimandSpec.
         for item in self.estimands:
             if item.sampling_unit == "trajectory" and item.role != "descriptive":
                 raise ValueError(

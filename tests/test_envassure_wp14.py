@@ -31,7 +31,7 @@ def test_tamper_fail_closed(tmp_path: Path) -> None:
     body = json.loads(path.read_text(encoding="utf-8"))
     body["ir_runtime_digest"] = "f" * 64
     path.write_text(json.dumps(body, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    with pytest.raises(EnvAssureBundleError, match="tamper|drift"):
+    with pytest.raises(EnvAssureBundleError, match=r"tamper|drift"):
         verify_frozen_envassure_bundle(path, expected_digest=dig)
 
 

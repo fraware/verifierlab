@@ -1,4 +1,4 @@
-"""WP-05 artifact-derived EvidenceResolver qualification tests."""
+"""WP-05 artifact-validated EvidenceResolver qualification tests."""
 
 from __future__ import annotations
 
@@ -73,8 +73,9 @@ def test_empty_run_stays_not_implemented(tmp_path: Path) -> None:
     result = qualify_run(run, claim=_claim())
     assert result.level == AssuranceLevel.NOT_IMPLEMENTED.label
     assert "implementation_missing" in result.blockers
-    assert result.resolver_version == "1"
+    assert result.resolver_version == "2"
     assert result.security_grade_execution is False
+    assert "0" * 64 not in result.artifact_refs
 
 
 def test_local_sealed_run_caps_below_scientific(tmp_path: Path) -> None:
@@ -86,10 +87,11 @@ def test_local_sealed_run_caps_below_scientific(tmp_path: Path) -> None:
     q = qualify_run(result.run_dir, claim=_claim())
     assert q.ordinal <= AssuranceLevel.INTERNALLY_VERIFIED
     assert q.security_grade_execution is False
-    assert "security_grade_execution" not in q.satisfied or q.security_grade_execution is False
+    assert "security_grade_execution" not in q.satisfied
+    assert "0" * 64 not in q.artifact_refs
 
 
-def test_tamper_sealed_digest_blocks_higher_maturity(tmp_path: Path) -> None:
+def test_tamper_sealed_digest_blocks_maturity(tmp_path: Path) -> None:
     ws = init_workspace(tmp_path / "ws")
     result = run_campaign(FAKE_SMOKE, workspace=ws, use_processes=False)
     freeze_run(result.run_dir)
@@ -98,20 +100,19 @@ def test_tamper_sealed_digest_blocks_higher_maturity(tmp_path: Path) -> None:
     sealed_path = result.run_dir / "sealed_run.json"
     sealed = json.loads(sealed_path.read_text(encoding="utf-8"))
     sealed["budget_digest"] = "0" * 64
-    # Keep content_digest stale → immutable binding fails conceptually; resolver
-    # still reads fields, but flipping security metadata must not promote.
     sealed["metadata"] = {**(sealed.get("metadata") or {}), "security_grade": True}
+    # Deliberately retain the stale content_digest. A content-addressed resolver
+    # must reject this mutation before consulting the security-shaped metadata.
     sealed_path.write_text(json.dumps(sealed, indent=2), encoding="utf-8")
     q = qualify_run(result.run_dir, claim=_claim())
+    assert q.ordinal < AssuranceLevel.INTERNALLY_VERIFIED
     assert q.security_grade_execution is False
 
 
-def test_mutation_ladder_flipping_fact_cannot_promote(tmp_path: Path) -> None:
-    """Flipping any required scientific fact must not promote the level."""
+def test_forged_evidence_shaped_stubs_cannot_promote(tmp_path: Path) -> None:
+    """Arbitrary digest-looking JSON must never become qualification evidence."""
     run = tmp_path / "study"
     run.mkdir()
-    # Minimal sealed stubs so internal level can be reached in isolation via
-    # resolver inspection of fact outcomes after manual artifact placement.
     sealed = {
         "schema_version": "2",
         "kind": "sealed_run",
@@ -128,48 +129,46 @@ def test_mutation_ladder_flipping_fact_cannot_promote(tmp_path: Path) -> None:
         "metadata": {
             "execution_mode": "docker_rootless",
             "security_grade": True,
-            "execution_boundary_digests": ["g" * 64],
+            "execution_boundary_digests": ["a" * 64],
         },
-        "execution_boundary_digests": ["g" * 64],
+        "execution_boundary_digests": ["a" * 64],
     }
     (run / "sealed_run.json").write_text(json.dumps(sealed), encoding="utf-8")
-    (run / "freeze.json").write_text(json.dumps({"content_digest": "a" * 64}), encoding="utf-8")
-    (run / "release.json").write_text(json.dumps({"content_digest": "h" * 64}), encoding="utf-8")
+    (run / "freeze.json").write_text(
+        json.dumps({"content_digest": "a" * 64, "freeze_id": "f"}), encoding="utf-8"
+    )
+    (run / "release.json").write_text(
+        json.dumps({"content_digest": "b" * 64, "release_id": "r"}), encoding="utf-8"
+    )
     (run / "label_release_receipt.json").write_text(
-        json.dumps({"content_digest": "i" * 64}), encoding="utf-8"
+        json.dumps({"content_digest": "c" * 64}), encoding="utf-8"
     )
     (run / "custody").mkdir()
     (run / "custody" / "hidden_split.json").write_text(
         json.dumps({"content_digest": "d" * 64}), encoding="utf-8"
     )
-    (run / "vault" / "private").mkdir(parents=True)
+    (run / "vault" / "commitments").mkdir(parents=True)
 
     claim = _claim()
     roots = {"ext-root": "secret-root-material"}
-    subject = "1" * 64
     att = sign_external_attestation(
         attestation_id="att-1",
-        subject_digest=subject,
+        subject_digest="1" * 64,
         claim=claim,
         reviewer_id="external-reviewer-1",
         trust_root_id="ext-root",
         trust_root_secret="secret-root-material",
-        reconstruction_digest="r" * 64,
+        reconstruction_digest="2" * 64,
     )
-    base = EvidenceResolver(run, claim=claim, trust_roots=roots, attestations=[att]).qualify()
-    assert base.level == AssuranceLevel.SCIENTIFICALLY_QUALIFIED.label
-
-    # Remove security boundary → must drop below scientifically_qualified.
-    sealed2 = dict(sealed)
-    sealed2["metadata"] = {
-        "execution_mode": "local_dev",
-        "security_grade": False,
-    }
-    sealed2.pop("execution_boundary_digests", None)
-    (run / "sealed_run.json").write_text(json.dumps(sealed2), encoding="utf-8")
-    mutated = EvidenceResolver(run, claim=claim, trust_roots=roots, attestations=[att]).qualify()
-    assert mutated.ordinal < AssuranceLevel.SCIENTIFICALLY_QUALIFIED
-    assert mutated.security_grade_execution is False
+    qualification = EvidenceResolver(
+        run,
+        claim=claim,
+        trust_roots=roots,
+        attestations=[att],
+    ).qualify()
+    assert qualification.ordinal < AssuranceLevel.INTERNALLY_VERIFIED
+    assert qualification.security_grade_execution is False
+    assert "0" * 64 not in qualification.artifact_refs
 
 
 def test_self_issued_attestation_rejected(tmp_path: Path) -> None:
@@ -187,7 +186,7 @@ def test_self_issued_attestation_rejected(tmp_path: Path) -> None:
         reviewer_id="self",
         trust_root_id="ext-root",
         trust_root_secret="secret",
-        reconstruction_digest="r" * 64,
+        reconstruction_digest="2" * 64,
     )
     q = EvidenceResolver(
         run, claim=claim, trust_roots={"ext-root": "secret"}, attestations=[att]
@@ -235,4 +234,4 @@ def test_cli_assurance_qualify(tmp_path: Path) -> None:
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["level"] == "not_implemented"
-    assert payload["resolver_version"] == "1"
+    assert payload["resolver_version"] == "2"

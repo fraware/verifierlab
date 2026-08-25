@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from verifierlab.artifacts.canonical import digest_of
 
@@ -67,7 +67,7 @@ class AdapterContractVersion(BaseModel):
         }
 
 
-# Singleton current contract — bump minor when additive; major when breaking.
+# Singleton current contract - bump minor when additive; major when breaking.
 ADAPTER_CONTRACT_V1 = AdapterContractVersion()
 
 
@@ -84,11 +84,12 @@ def assert_matrix_row_honesty(row: dict[str, Any]) -> None:
             f"{sorted(ALLOWED_MATRIX_STATUSES)}"
         )
     live_vs = str(row.get("live_vs_fixture") or "").lower()
-    if status in {"fixture-only", "unsupported"}:
-        if "live-tested" in live_vs or live_vs == "live":
-            raise AdapterMatrixHonestyError(
-                f"adapter {row.get('adapter')!r}: status={status} cannot claim live evidence"
-            )
+    if status in {"fixture-only", "unsupported"} and (
+        "live-tested" in live_vs or live_vs == "live"
+    ):
+        raise AdapterMatrixHonestyError(
+            f"adapter {row.get('adapter')!r}: status={status} cannot claim live evidence"
+        )
     # EnvAssure must remain non-live until installable.
     if row.get("adapter") == "envassure":
         if status == "live-tested":
@@ -144,10 +145,10 @@ def validate_matrix_document(matrix: dict[str, Any]) -> list[str]:
 __all__ = [
     "ADAPTER_CONTRACT_V1",
     "ALLOWED_MATRIX_STATUSES",
+    "CONTRACT_SURFACES",
     "AdapterContractVersion",
     "AdapterMatrixHonestyError",
     "AdapterMatrixStatus",
-    "CONTRACT_SURFACES",
     "assert_matrix_row_honesty",
     "validate_matrix_document",
 ]
