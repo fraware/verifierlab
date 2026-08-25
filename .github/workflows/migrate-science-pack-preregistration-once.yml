@@ -1,4 +1,5 @@
 name: One-shot science-pack analysis registration migration
+# Re-run after registered report compatibility repair.
 
 on:
   push:
