@@ -1,0 +1,20 @@
+{
+  "assumption_set_digest": "f504fa77d49dd16fbebb34d758e685a197973a4b154661cacba927c629af92ed",
+  "claim_boundary": "environment_only",
+  "compiler_commit": "deadbeefcafebabe0123456789abcdef01234567",
+  "compiler_schema": "eac-r15",
+  "content_digest": "96298c0bc49c900761ae2200a56d02f7732e88b6b45cfb061128d1492bf80217",
+  "eac_r15_evidence_refs": [
+    "eac:evidence:fixture-1"
+  ],
+  "eac_r15_registration_refs": [
+    "EAC-R15-FIX-001"
+  ],
+  "ir_runtime_digest": "e90dc315f32c361d03d7cd31b842b50a680046b95a581c0e8c67f14112e6aef2",
+  "metadata": {
+    "non_live": true,
+    "synthetic": true
+  },
+  "schema_version": "1",
+  "validation_status": "determinate"
+}

@@ -1,64 +1,54 @@
 # Methodology
 
 How to run and interpret VerifierLab campaigns without overclaiming.
+Status: `0.2.0rc2` on `integration/final-assurance`. See
+[claim-language.md](claim-language.md).
 
 ## Design intent
 
-1. **Separate channels** — public verifier decisions vs sealed ground truth.
-   Attack workers use the environment + `VerifierBroker` only; GT evaluation
-   happens in the coordinator adjudicator after freeze.
-2. **Separate cohorts** — ordinary baseline vs optimized attack search.
-   Cohort tags are mandatory; persistent optimized strategies (BoN / beam /
-   evolutionary / RL) checkpoint under the attack runtime.
-3. **Pin everything** — campaign digests, seeds, package version, artifact
-   `schema_version`.
-4. **Budget explicitly** — query/step/time limits with a broker-backed ledger
-   for verifier calls (plus env step accounting).
-5. **Freeze before adjudicate/release** — labels must not feed the attacker’s
-   observe loop; reports require `freeze → adjudicate → release-labels`.
+1. **Three trust planes** — worker / coordinator / adjudicator; GT never on the
+   attack plane.
+2. **Separate cohorts** — ordinary baseline vs optimized attack search with
+   mandatory cohort tags and metered budgets.
+3. **Pin everything** — campaign digests, profiles (`ScoreDecisionMapping`),
+   seeds, package version, `schema_version`.
+4. **Freeze before adjudicate/release** — `LabelReleaseReceipt`; reports require
+   the full lifecycle.
+5. **Derive maturity** — `valab assurance qualify` from artifacts; never promote
+   with caller booleans.
 
 ## Recommended workflow
 
-1. Write or select a campaign YAML; `valab campaign validate`.
-2. Run ordinary baseline and optimized-tagged attacks under one access model per
-   campaign (or stratify if multiple). Access models are capability-gated at the
-   broker for black / gray / white / adaptive / transfer.
-3. Freeze the run; adjudicate with the campaign’s GT provider; release labels.
-4. Rebuild the offline report; archive the run digest.
-5. Optionally open disclosure records for confirmed exploits
-   ([disclosure.md](disclosure.md), [templates/disclosure.md](templates/disclosure.md)).
-6. For repairs, use `compare_repair` / `run_repair_campaign` with a **fresh**
-   attacker on the public channel (holdout, equalized budget, paired stats).
-   See [limitations.md](limitations.md) for research-grade depth caveats.
+1. `valab campaign validate` then run under an explicit access model.
+2. Freeze → adjudicate → `release-labels` → offline report.
+3. Optional method surfaces: H/F/S, response surface (exact cells), metamorphic
+   search, planted calibration (not unknown-adversary robustness).
+4. Bind EnvAssure refs when an environment evidence bundle exists; indeterminate
+   upstream cannot be erased by verifier success.
+5. For deployment claims: register predictions **before** outcomes
+   (`valab deployment …`); synthetic fixtures stay non-deployment.
+6. Independent reconstruction: `valab reproduce BUNDLE` (+ external attestation).
 
 ## What a result means
 
 | Result | Interpret as |
 | ------ | ------------ |
-| Exploit recovered under budget | Evidence the verifier failed for that access model / cohort / seed |
-| No exploit recovered | Failure to find an exploit under the stated budget—not a proof of soundness |
-| FAR / FRR with intervals | Descriptive error rates on labeled, non-abstaining units; respect denominators |
-| Pack taxonomy match | Planted class recovered; useful for regression, not field prevalence |
+| Exploit recovered under budget | Evidence of failure for that access/cohort/boundary |
+| No exploit recovered | Failure to find — not soundness |
+| FAR/FRR + intervals | Labeled, non-abstaining units; respect denominators and clustering |
+| Response surface cell | Exact coordinate evidence — not a scalar robustness score |
+| Planted calibration hit | Detector sensitivity under planted truth — not unknown robustness |
+| `internally_verified` study | Publishable with blockers; not `scientifically_qualified` |
 
-## Statistics caveats
+## Statistics
 
-- Wilson and Clopper–Pearson in base are pure Python; extreme parameters may
-  differ slightly from SciPy (see [limitations.md](limitations.md)).
-- Do not pool across access models or cohorts.
-- Abstentions and missing labels are tracked separately from FAR/FRR
-  denominators.
-- Power analysis (`valab stats power`) uses a normal approximation for planning.
-- Prefer StatsPlan-compiled strata over ad-hoc overall pooling.
-
-## Metamorphic / isomorphic checks
-
-`verifierlab.statistics.metamorphic` supports GT invariance checks used by
-isomorphic-style packs. Treat these as campaign-level assertions, not as a
-general equivalence prover.
+- Prefer task/environment cluster sampling; no silent trajectory pseudo-replication.
+- Holm / Bonferroni for families; exploratory surfaces stay descriptive.
+- Equivalence is per-estimand (TOST-compatible); non-rejection ≠ equivalence.
+- Underpowered primary estimands → indeterminate + maturity blocker.
 
 ## Reproduction
 
-Independent reproduction should follow
-[reproduction-checklist.md](reproduction-checklist.md) and compare digests /
-stratified metrics within stated tolerance—not screenshots alone. CI includes a
-reproducible campaign bundle check (`scripts/repro_bundle_check.py`).
+Follow [reproduction-checklist.md](reproduction-checklist.md) and
+[clean-room-protocol.md](clean-room-protocol.md). Compare digests and stratified
+metrics — not screenshots alone.

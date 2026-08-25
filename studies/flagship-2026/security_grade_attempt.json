@@ -1,0 +1,10 @@
+{
+  "content_digest": "dc2902c13120545143aa6b97f9879d9d0ee9c9b4744da439a3c8f075faa18ede",
+  "execution_mode_attempted": "security_grade",
+  "fail_closed": true,
+  "maturity_cap": "internally_verified",
+  "reason": "host_lacks_rootless_docker_or_separate_domain",
+  "requested": true,
+  "result": "refused",
+  "security_grade": false
+}

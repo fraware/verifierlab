@@ -2,15 +2,15 @@
   "access_model": "gray-box",
   "budget_digest": "b1d307581a2ae9accde7867a444bf45d9edf962097c37f75c59d7c4afac6c2ee",
   "campaign": "pack-b-rubric",
-  "campaign_digest": "321967290477985f16e9757648f4055c0d290903126b9433b8ba2f7e37453519",
-  "content_digest": "001daf30201f395aa66cbb77ace8b14aab97eba0daf2fafc001b50b7d57ad54f",
+  "campaign_digest": "0fd41a7789ea0f7d0ce5b642073e4e87d16d9eaf4c7460cc04f83fbd2f781d55",
+  "content_digest": "4679aed15a773f79e0e6b9b5de7f2f329a4731150735089bb27022e8e5a10af2",
   "expected_taxonomies": [
     "rubric_gaming",
     "unauthorized_action"
   ],
   "interval_method": "wilson",
   "pinned_versions": {
-    "campaign": "pack-b@1",
+    "campaign": "pack-b@2",
     "verifierlab": "0.2.0rc2"
   },
   "primary_estimand": "far_optimized",
@@ -24,5 +24,5 @@
     ],
     "mode": "content_addressed"
   },
-  "verifier_profile_digest": "3dc6661e1c3a55f2def214456cc806eb23f209460c82c28f0d23e10b5453ad3d"
+  "verifier_profile_digest": "4310c158aa0d5ed5052ceabdbd5cbc5397169ec6f18aafdeb6360de211a8b622"
 }

@@ -2,15 +2,15 @@
   "access_model": "black-box",
   "budget_digest": "b1d307581a2ae9accde7867a444bf45d9edf962097c37f75c59d7c4afac6c2ee",
   "campaign": "pack-e-coevolution",
-  "campaign_digest": "199809b42d256ece2e4f510e32090d0d8245c30122ce8608da15424e5a463648",
-  "content_digest": "a10b4c516df832697ab5601d1d3adbce7a416e127150e543f8528ba7483f1cab",
+  "campaign_digest": "deac5fa6ff43b106555b70305382c261807d4493b4d740a98734da9f67be7563",
+  "content_digest": "de8669a568069fc9fe25cd2bcc9565752e6e04a204c81975d014efb531c41607",
   "expected_taxonomies": [
     "reward_hacking",
     "duplicate_effect"
   ],
   "interval_method": "wilson",
   "pinned_versions": {
-    "campaign": "pack-e@1",
+    "campaign": "pack-e@2",
     "verifier": "refund_grade@1",
     "verifierlab": "0.2.0rc2"
   },
@@ -25,5 +25,5 @@
     ],
     "mode": "content_addressed"
   },
-  "verifier_profile_digest": "dcd7c6407232701cbb1ea0015bc7979c141b04eb2770001c63972c93d16d2fdf"
+  "verifier_profile_digest": "dcb0422c320a734426f697e042dacfeef9f97f5927b13e21cd1aebd81c7e462b"
 }

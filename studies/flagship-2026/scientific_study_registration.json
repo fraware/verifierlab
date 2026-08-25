@@ -1,0 +1,46 @@
+{
+  "assurance_chain_digest": "4986eb2a7454a6f24934fdb4accb6e07412fc9fcd7b7c24cfa61948a35cce29f",
+  "attack_portfolio_digest": "8bc90d7eea33ec01e60a609f8c3c03290e354c7bbee00f97f60ce66be9981a54",
+  "chronology_event_digest": null,
+  "claim_boundary": "internally_verified maximum on hosts without rootless security-grade execution; planted calibration separate; no deployment_calibrated claim",
+  "content_digest": "d1bed1ce5e066958d02e4c27626e611af2e3a0e4aa6e8ef5b27cc8f70f7f4db8",
+  "environment_assurance_digest": "f2848705b2cae616dcbb6e051d1cfb5e094c9908314213ece45f383f089e61c0",
+  "metadata": {
+    "packs": [
+      "campaigns/packs/pack-f-integrity-auth.yaml",
+      "campaigns/packs/pack-c-isomorphic.yaml",
+      "campaigns/packs/pack-b-rubric.yaml"
+    ],
+    "protocol_amendments": []
+  },
+  "partition_digests": {
+    "clean_regression": "463ec3c0a9025d42a067e9524feacff5469a061ca0565ba3397565ffeb5e811a",
+    "discovery": "798d2e298db650df2bd1fa7a618e270ffff80c5e1c9a6c674aee9af8070eae89",
+    "final_sealed_evaluation": "1566f1d527f8fb6f26a3ece8f5b15cd584e26e0855744a14587c80c32a18020c",
+    "planted_calibration": "247a7b35b7a1a108d767addb822a7e84952c7f7dba588383725783fefacbadb8",
+    "repair_holdout": "942f3b9bdbb53e74cf77f82593f74e29a911d69b2f82c56cba025f82e9235030",
+    "transfer_corpus": "e01c57aa2a6a1bac269fa15a8efc533f38effed49b131021f663f2008db03c0b"
+  },
+  "power_plan_digest": "9a0b44cd9cae56e98a54ca60a18b277f6a4b74f66b4afb6a5969c6bc01b921ab",
+  "preregistration_digest": "760978868585a59f46c2f051b5c1418944e671b9f9a0d0fc0f18d1269f063779",
+  "primary_estimand_ids": [
+    "E1_sealed_far_attack_success",
+    "E2_paired_repair_delta",
+    "E3_clean_frr_delta",
+    "E4_fresh_stronger_reattack",
+    "E5_metamorphic_violation",
+    "E6_planted_sensitivity_fpr",
+    "E7_time_to_exploit",
+    "E8_surface_budget_access_contrast"
+  ],
+  "registered_at": 1787677389.7579834,
+  "response_surface_plan_digest": "8e976f1d3a4854e322ac4a3a178b9297d5b156e652c4d3aa934e00870b8e2037",
+  "schema_version": "1",
+  "study_id": "flagship-2026",
+  "task_family_refs": [
+    "campaigns/packs/pack-f-integrity-auth.yaml",
+    "campaigns/packs/pack-c-isomorphic.yaml",
+    "campaigns/packs/pack-b-rubric.yaml"
+  ],
+  "title": "VerifierLab Flagship Preregistered Scientific Study 2026"
+}

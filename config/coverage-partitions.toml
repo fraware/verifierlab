@@ -1,0 +1,54 @@
+# Coverage partitions for claim-critical / semantic-core modules (WP-18).
+#
+# Global CI floor remains --cov-fail-under=40 (see .github/workflows/ci.yml).
+# These partitions document module-specific targets and are enforced by
+# scripts/check_coverage_partitions.py when COVERAGE_FILE is present (optional
+# CI / nightly). Do not suddenly raise the global floor in a way that breaks
+# the tree.
+
+[partitions.semantic_core]
+description = "Canonicalization, budgets, lifecycle transitions, digest rules"
+target_branch_percent = 90
+modules = [
+  "verifierlab.artifacts.canonical",
+  "verifierlab.artifacts.cas",
+  "verifierlab.artifacts.schema_registry",
+  "verifierlab.budgets",
+  "verifierlab.campaigns.lifecycle",
+]
+
+[partitions.claim_critical]
+description = "Decision, vault, execution boundary, evidence resolver, repair provenance"
+target_branch_percent = 100
+# 100% of *reachable policy branches*; measured as line+branch floor of 95
+# until nightly mutation confirms residual gaps are unreachable.
+target_branch_percent_practical = 95
+modules = [
+  "verifierlab.api.decision",
+  "verifierlab.labels.vault",
+  "verifierlab.labels.freeze",
+  "verifierlab.labels.release",
+  "verifierlab.execution.boundary",
+  "verifierlab.assurance.resolver",
+  "verifierlab.repairs.canonical_evidence",
+  "verifierlab.verifiers.profile",
+  "verifierlab.statistics.plan",
+  "verifierlab.statistics.metamorphic",
+  "verifierlab.statistics.calibration",
+]
+
+[partitions.methods]
+description = "Response surface, H/F/S, planted calibration, EnvAssure, deployment"
+target_branch_percent = 85
+modules = [
+  "verifierlab.statistics.response_surface",
+  "verifierlab.campaigns.hacker_fixer_solver",
+  "verifierlab.assurance.envassure",
+  "verifierlab.assurance.deployment",
+  "verifierlab.assurance.reproduce",
+  "verifierlab.targets.contract",
+]
+
+[ci]
+global_fail_under = 40
+note = "Raise global floor only after partition reports are green on 3.11–3.13."

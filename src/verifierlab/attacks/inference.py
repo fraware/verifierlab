@@ -156,12 +156,15 @@ class BeamSearch:
     """Keep a beam of high-scoring actions; expand via broker candidate queries."""
 
     COHORT = "optimized"
+    CHECKPOINT_SCHEMA_VERSION = "2"
 
     def __init__(self) -> None:
         self._rng = random.Random(0)
         self._schema = dict(DEFAULT_SCHEMA)
         self._beam_width = 4
         self._seed = 0
+        # Min-heap keyed by the real score. When the beam exceeds its width,
+        # heappop removes the *lowest* score and therefore retains top-k candidates.
         self._beam: list[tuple[float, int, dict[str, Any]]] = []
         self._counter = 0
         self._queries = 0
@@ -231,7 +234,7 @@ class BeamSearch:
             )
             self._queries += 1
             if self._learning:
-                heapq.heappush(self._beam, (-score, self._counter, dict(cand)))
+                heapq.heappush(self._beam, (score, self._counter, dict(cand)))
                 self._counter += 1
             if score > best_score:
                 best_score = score
@@ -252,14 +255,14 @@ class BeamSearch:
         if feedback.get("verifier_accepted"):
             score += 1.0 + float(feedback.get("reward", 0.0)) * 0.01
         action = dict(getattr(self, "_last", {"op": "noop"}))
-        heapq.heappush(self._beam, (-score, self._counter, action))
+        heapq.heappush(self._beam, (score, self._counter, action))
         self._counter += 1
         while len(self._beam) > self._beam_width:
             heapq.heappop(self._beam)
 
     def checkpoint(self) -> dict[str, Any]:
         return {
-            "schema_version": "1",
+            "schema_version": self.CHECKPOINT_SCHEMA_VERSION,
             "strategy": "beam",
             "cohort": self.COHORT,
             "seed": self._seed,
@@ -273,6 +276,10 @@ class BeamSearch:
         }
 
     def restore(self, state: dict[str, Any]) -> None:
+        version = str(state.get("schema_version", "1"))
+        if version not in {"1", self.CHECKPOINT_SCHEMA_VERSION}:
+            raise ValueError(f"unsupported BeamSearch checkpoint schema_version: {version!r}")
+
         self._seed = int(state.get("seed", self._seed))
         self._beam_width = int(state.get("beam_width", self._beam_width))
         self._queries = int(state.get("queries", 0))
@@ -280,8 +287,12 @@ class BeamSearch:
         self._counter = int(state.get("counter", 0))
         self._beam = []
         for item in state.get("beam") or []:
-            score, counter, action = item
-            heapq.heappush(self._beam, (float(score), int(counter), dict(action)))
+            stored_score, counter, action = item
+            # v1 was written by the buggy implementation and therefore persisted
+            # negated scores. Convert once at the schema boundary; v2 stores the
+            # real score and can be restored directly.
+            score = -float(stored_score) if version == "1" else float(stored_score)
+            heapq.heappush(self._beam, (score, int(counter), dict(action)))
         if "schema" in state:
             self._schema = dict(state["schema"])
         if state.get("rng_state") is not None:

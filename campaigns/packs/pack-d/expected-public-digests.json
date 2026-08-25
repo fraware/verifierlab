@@ -2,15 +2,15 @@
   "access_model": "adaptive",
   "budget_digest": "b1d307581a2ae9accde7867a444bf45d9edf962097c37f75c59d7c4afac6c2ee",
   "campaign": "pack-d-eval-cheating",
-  "campaign_digest": "a65c1d97e98bdb8352b4eab5730f110da17111100ed314289bb8eea632039108",
-  "content_digest": "2ad01b9586a11bb7a17322017f73ce99a7badc3344158558ebcaa466da7e37be",
+  "campaign_digest": "934db1f4fac18483b832065cbafd900f5946317772c8caf1b7f1501a5a5b4c5f",
+  "content_digest": "323afc546732ba3f38e3e3dc893e488ae3a200cfb5ecd0f9c5ca7b43d52cf614",
   "expected_taxonomies": [
     "evaluation_cheating",
     "unauthorized_action"
   ],
   "interval_method": "wilson",
   "pinned_versions": {
-    "campaign": "pack-d@1",
+    "campaign": "pack-d@2",
     "verifierlab": "0.2.0rc2"
   },
   "primary_estimand": "far_optimized",
@@ -24,5 +24,5 @@
     ],
     "mode": "content_addressed"
   },
-  "verifier_profile_digest": "7d3bc00488528aa7c7c762ec6e922905fea2574e6c29e9a2fe8928738bf06c27"
+  "verifier_profile_digest": "4f6d0eec9eb5a36362dacd51bc5846c4bdfc612c1f8d46eee24b48acac78080a"
 }

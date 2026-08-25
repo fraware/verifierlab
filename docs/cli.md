@@ -19,6 +19,11 @@ Entry point: `valab` (`verifierlab.cli:app`). Package: `verifierlab`.
 | `valab plugins list [--format text\|json]` | Discover `verifierlab.plugins` entry points |
 | `valab verifier inspect\|test\|package\|conformance` | Verifier tooling (inspect shares code with `valab inspect`) |
 | `valab pack lint\|verify\|run\|reproduce\|inspect` | Benchmark pack sidecars + campaign ops |
+| `valab assurance qualify RUN_DIR` | Artifact-derived maturity (EvidenceResolver; no caller-boolean promotion) |
+| `valab bundle verify\|migrate` | Schema-registry verify / dry-run migrate |
+| `valab reproduce BUNDLE` | Reconstruction report (+ optional attestation) |
+| `valab stats surface-compile` | Exact-coordinate response surface from released refs |
+| `valab deployment register-prediction\|ingest-outcome\|calibration-report` | Prospective deployment calibration APIs |
 
 ## Required lifecycle
 
@@ -63,7 +68,23 @@ Operate on pack YAML under `campaigns/packs/` or sidecar dirs `pack-a/` … `pac
 Campaign signing on this line = content-addressed digest + pins + sealed run
 (see [release-process](contributing/release-process.md)).
 
-## Deferred (intentionally not in alpha CLI)
+### Assurance / reproduce / deployment
+
+| Command | Purpose |
+| ------- | ------- |
+| `valab assurance qualify RUN_DIR` | Derive maturity from sealed artifacts + optional attestation |
+| `valab bundle verify PATH` | Fail-closed schema/digest checks |
+| `valab bundle migrate PATH --to VERSION` | Dry-run migration by default; never upgrades maturity |
+| `valab reproduce BUNDLE [--clean-room] [--attestation …]` | Mechanical reconstruction; clean-room ≠ independent |
+| `valab stats surface-compile …` | Compile exact response-surface cells only |
+| `valab deployment register-prediction …` | Register predictions **before** outcomes |
+| `valab deployment ingest-outcome …` | Ingest later outcomes |
+| `valab deployment calibration-report …` | Calibration report (synthetic fixtures stay non-deployment) |
+
+Maturity and claim rules: [claim-language.md](claim-language.md),
+[final-acceptance.md](final-acceptance.md).
+
+## Deferred (intentionally not in RC CLI)
 
 | Deferred command | Reason |
 | ---------------- | ------ |

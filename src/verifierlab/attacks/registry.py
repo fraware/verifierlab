@@ -26,9 +26,27 @@ def register(name: str) -> Callable[[T], T]:
 def get_strategy_class(name: str) -> type:
     if name not in _REGISTRY:
         # Import built-ins lazily so registration side-effects run.
-        from verifierlab.attacks import coverage, evolutionary, fuzzing, inference, ordinary, rl
+        from verifierlab.attacks import (
+            coverage,
+            evolutionary,
+            exploit_transfer,
+            fuzzing,
+            inference,
+            metamorphic_search,
+            ordinary,
+            rl,
+        )
 
-        _ = (coverage, evolutionary, fuzzing, inference, ordinary, rl)
+        _ = (
+            coverage,
+            evolutionary,
+            exploit_transfer,
+            fuzzing,
+            inference,
+            metamorphic_search,
+            ordinary,
+            rl,
+        )
     if name not in _REGISTRY:
         known = ", ".join(sorted(_REGISTRY)) or "(none)"
         raise KeyError(f"unknown attack strategy {name!r}; known: {known}")

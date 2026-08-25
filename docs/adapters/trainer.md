@@ -25,7 +25,7 @@ channel for trainers. GT isolation is mandatory.
 ## Unsupported semantics
 
 - Full RLlib/Ray capability results (see RLlib page; post-qualification)
-- Claiming SOTA RL agent performance
+- Claiming leaderboard-style RL agent performance
 
 ## Conformance command
 

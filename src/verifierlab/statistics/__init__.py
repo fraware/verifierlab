@@ -2,6 +2,15 @@
 
 from __future__ import annotations
 
+from verifierlab.statistics.calibration import (
+    CalibrationAnalysisPlan,
+    CalibrationAnalysisRegistration,
+    CalibrationMetric,
+    CalibrationStratum,
+    PlantedCalibrationReport,
+    compile_planted_calibration_report,
+    register_calibration_analysis_plan,
+)
 from verifierlab.statistics.intervals import (
     Interval,
     cluster_bootstrap,
@@ -27,9 +36,15 @@ from verifierlab.statistics.plan import (
 )
 
 __all__ = [
+    "CalibrationAnalysisPlan",
+    "CalibrationAnalysisRegistration",
+    "CalibrationMetric",
+    "CalibrationStratum",
     "Interval",
+    "PlantedCalibrationReport",
     "assert_gt_invariance",
     "cluster_bootstrap",
+    "compile_planted_calibration_report",
     "compile_stats_plan",
     "enrich_cohort_stats",
     "exact_clopper_pearson",
@@ -38,6 +53,7 @@ __all__ = [
     "optimization_gap",
     "paired_bootstrap",
     "power_binomial",
+    "register_calibration_analysis_plan",
     "robustness_curve",
     "sample_size_for_power",
     "time_to_exploit",

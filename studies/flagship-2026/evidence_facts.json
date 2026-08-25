@@ -1,0 +1,224 @@
+{
+  "facts": [
+    {
+      "fact_id": "implementation_present",
+      "outcome": "true",
+      "reasons": [],
+      "schema_version": "1",
+      "source_artifact_digest": "7e4482ad926fe67c8b2b98ca09dfd21a684a142c34f4dcff2f5b4db4f52c4b97",
+      "timestamp": 1787677389.7773955,
+      "validator": "lifecycle.sealed_or_manifest",
+      "validator_version": "1"
+    },
+    {
+      "fact_id": "evidence_artifacts_bound",
+      "outcome": "true",
+      "reasons": [],
+      "schema_version": "1",
+      "source_artifact_digest": "7e4482ad926fe67c8b2b98ca09dfd21a684a142c34f4dcff2f5b4db4f52c4b97",
+      "timestamp": 1787677389.7774167,
+      "validator": "lifecycle.artifact_presence",
+      "validator_version": "1"
+    },
+    {
+      "fact_id": "immutable_artifacts_bound",
+      "outcome": "true",
+      "reasons": [],
+      "schema_version": "1",
+      "source_artifact_digest": "7e4482ad926fe67c8b2b98ca09dfd21a684a142c34f4dcff2f5b4db4f52c4b97",
+      "timestamp": 1787677389.7774239,
+      "validator": "lifecycle.sealed_run_digest",
+      "validator_version": "1"
+    },
+    {
+      "fact_id": "exact_budget_evidence",
+      "outcome": "true",
+      "reasons": [],
+      "schema_version": "1",
+      "source_artifact_digest": "53bb2ec7378757edcef61938a989ce6d36fe16de4e94e5bc9a1c37727b377ec0",
+      "timestamp": 1787677389.77743,
+      "validator": "lifecycle.budget_digest",
+      "validator_version": "1"
+    },
+    {
+      "fact_id": "lifecycle_freeze_adjudicate_release",
+      "outcome": "true",
+      "reasons": [],
+      "schema_version": "1",
+      "source_artifact_digest": "83020eff680f32b46246746d08ed360a0bab3ccb52d8e902608bcc65a13e6d30",
+      "timestamp": 1787677389.7774355,
+      "validator": "lifecycle.freeze_adjudicate_release",
+      "validator_version": "1"
+    },
+    {
+      "fact_id": "security_grade_execution",
+      "outcome": "false",
+      "reasons": [
+        "rootful_or_local_execution_caps_security_grade",
+        "execution_boundary_missing"
+      ],
+      "schema_version": "1",
+      "source_artifact_digest": "7e4482ad926fe67c8b2b98ca09dfd21a684a142c34f4dcff2f5b4db4f52c4b97",
+      "timestamp": 1787677389.7777345,
+      "validator": "execution.boundary_and_mode",
+      "validator_version": "1"
+    },
+    {
+      "fact_id": "hidden_labels_outside_attack_plane",
+      "outcome": "true",
+      "reasons": [],
+      "schema_version": "1",
+      "source_artifact_digest": "942f3b9bdbb53e74cf77f82593f74e29a911d69b2f82c56cba025f82e9235030",
+      "timestamp": 1787677389.7784476,
+      "validator": "custody.hidden_labels",
+      "validator_version": "1"
+    },
+    {
+      "fact_id": "hidden_holdout_sealed",
+      "outcome": "true",
+      "reasons": [],
+      "schema_version": "1",
+      "source_artifact_digest": "942f3b9bdbb53e74cf77f82593f74e29a911d69b2f82c56cba025f82e9235030",
+      "timestamp": 1787677389.7784646,
+      "validator": "custody.hidden_split",
+      "validator_version": "1"
+    },
+    {
+      "fact_id": "preregistered_study",
+      "outcome": "true",
+      "reasons": [],
+      "schema_version": "1",
+      "source_artifact_digest": "760978868585a59f46c2f051b5c1418944e671b9f9a0d0fc0f18d1269f063779",
+      "timestamp": 1787677389.779178,
+      "validator": "stats.preregistration",
+      "validator_version": "1"
+    },
+    {
+      "fact_id": "strong_attacker_budgeted",
+      "outcome": "true",
+      "reasons": [],
+      "schema_version": "1",
+      "source_artifact_digest": "53bb2ec7378757edcef61938a989ce6d36fe16de4e94e5bc9a1c37727b377ec0",
+      "timestamp": 1787677389.7791944,
+      "validator": "stats.budget",
+      "validator_version": "1"
+    },
+    {
+      "fact_id": "qualification_estimands_complete",
+      "outcome": "true",
+      "reasons": [],
+      "schema_version": "1",
+      "source_artifact_digest": "760978868585a59f46c2f051b5c1418944e671b9f9a0d0fc0f18d1269f063779",
+      "timestamp": 1787677389.7792008,
+      "validator": "stats.estimands",
+      "validator_version": "1"
+    },
+    {
+      "fact_id": "negative_results_preserved",
+      "outcome": "true",
+      "reasons": [],
+      "schema_version": "1",
+      "source_artifact_digest": "760978868585a59f46c2f051b5c1418944e671b9f9a0d0fc0f18d1269f063779",
+      "timestamp": 1787677389.7792056,
+      "validator": "stats.negatives",
+      "validator_version": "1"
+    },
+    {
+      "fact_id": "environment_assurance_determinate",
+      "outcome": "true",
+      "reasons": [],
+      "schema_version": "1",
+      "source_artifact_digest": "f2848705b2cae616dcbb6e051d1cfb5e094c9908314213ece45f383f089e61c0",
+      "timestamp": 1787677389.7799466,
+      "validator": "envassure.status_propagation",
+      "validator_version": "1"
+    },
+    {
+      "fact_id": "independent_review",
+      "outcome": "false",
+      "reasons": [
+        "no_external_attestation"
+      ],
+      "schema_version": "1",
+      "source_artifact_digest": "720a4ac59939f2d3c1d79072651653c1eabea7f65b931474654ea642cf09cc30",
+      "timestamp": 1787677389.7800262,
+      "validator": "attestation.external_trust_root",
+      "validator_version": "1"
+    },
+    {
+      "fact_id": "independent_reconstruction",
+      "outcome": "false",
+      "reasons": [
+        "no_external_attestation"
+      ],
+      "schema_version": "1",
+      "source_artifact_digest": "720a4ac59939f2d3c1d79072651653c1eabea7f65b931474654ea642cf09cc30",
+      "timestamp": 1787677389.7800357,
+      "validator": "attestation.reconstruction",
+      "validator_version": "1"
+    },
+    {
+      "fact_id": "prospective_predictions_registered",
+      "outcome": "false",
+      "reasons": [],
+      "schema_version": "1",
+      "source_artifact_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+      "timestamp": 1787677389.7804852,
+      "validator": "deployment.prediction_registration",
+      "validator_version": "1"
+    },
+    {
+      "fact_id": "deployment_outcomes_collected",
+      "outcome": "false",
+      "reasons": [],
+      "schema_version": "1",
+      "source_artifact_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+      "timestamp": 1787677389.780499,
+      "validator": "deployment.outcomes",
+      "validator_version": "1"
+    },
+    {
+      "fact_id": "calibration_analysis_complete",
+      "outcome": "false",
+      "reasons": [],
+      "schema_version": "1",
+      "source_artifact_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+      "timestamp": 1787677389.7805045,
+      "validator": "deployment.calibration",
+      "validator_version": "1"
+    },
+    {
+      "fact_id": "applicability_regime_declared",
+      "outcome": "false",
+      "reasons": [],
+      "schema_version": "1",
+      "source_artifact_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+      "timestamp": 1787677389.7805095,
+      "validator": "deployment.applicability",
+      "validator_version": "1"
+    },
+    {
+      "fact_id": "deployment_chronology_anchored",
+      "outcome": "false",
+      "reasons": [
+        "chronology_hash_chain_missing"
+      ],
+      "schema_version": "1",
+      "source_artifact_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+      "timestamp": 1787677389.7805145,
+      "validator": "deployment.chronology_hash_chain",
+      "validator_version": "1"
+    },
+    {
+      "fact_id": "deployment_not_synthetic",
+      "outcome": "false",
+      "reasons": [],
+      "schema_version": "1",
+      "source_artifact_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+      "timestamp": 1787677389.7805207,
+      "validator": "deployment.synthetic_guard",
+      "validator_version": "1"
+    }
+  ],
+  "facts_digest": "10dbf77f139880760eaeaa0ee63c874f599bb02160c92b7f6669fd6102ebf9f9"
+}

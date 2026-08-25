@@ -40,9 +40,12 @@ jobs:
       - name: Pytest (core + CI packs A/B/F)
         # Phase D `[sandbox]` Docker tests skip or degrade when Docker is absent;
         # declarative sandbox + plugin-hook unit tests always run in core pytest.
+        # --cov-branch is explicit so pytest-cov subprocess data uses the same
+        # branch-coverage mode declared under [tool.coverage.run].
         run: >
           uv run pytest
           --cov=verifierlab
+          --cov-branch
           --cov-report=term-missing
           --cov-fail-under=40
           -m "not pack_heavy"

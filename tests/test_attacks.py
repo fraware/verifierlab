@@ -16,6 +16,8 @@ def test_strategies_registered() -> None:
         "best_of_n",
         "beam",
         "rl_tabular",
+        "metamorphic_search",
+        "exploit_transfer",
     ):
         assert required in names
 

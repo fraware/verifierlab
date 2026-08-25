@@ -1,0 +1,14 @@
+{
+  "beam": [
+    [
+      -2.0,
+      0,
+      {
+        "op": "noop"
+      }
+    ]
+  ],
+  "schema_version": "1",
+  "seed": 7,
+  "strategy": "beam"
+}

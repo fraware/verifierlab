@@ -21,7 +21,8 @@
     ]
   },
   "config_digest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
-  "content_digest": "ac18189910f608662582d56d30e9938e7a16a605364cce1462a00b540c7afeb6",
+  "content_digest": "0f79cb2710d731e2a6cb9b174d1c35857349f4e4bd6d1d1a3c4dc89f44be3097",
+  "decision_mapping": null,
   "decision_semantics": {
     "fail_closed": true,
     "status_set": [
@@ -38,12 +39,12 @@
   "metadata": {
     "pack": "C",
     "pinned_versions": {
-      "campaign": "pack-c@1",
+      "campaign": "pack-c@2",
       "verifierlab": "0.2.0rc2"
     },
     "theme": "isomorphic-relabel"
   },
   "name": "examples.refunds.verifier:grade",
   "rubric_digest": null,
-  "schema_version": "1"
+  "schema_version": "2"
 }

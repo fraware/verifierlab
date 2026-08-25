@@ -1,0 +1,19 @@
+{
+  "access_regimes": [
+    "black-box",
+    "gray-box"
+  ],
+  "budgets": [
+    "B_low",
+    "B_high"
+  ],
+  "content_digest": "8bc90d7eea33ec01e60a609f8c3c03290e354c7bbee00f97f60ce66be9981a54",
+  "families": [
+    "model_capable_fixture",
+    "search_fuzz",
+    "metamorphic_search",
+    "exploit_transfer"
+  ],
+  "hfs_on": "discovery",
+  "repair_binding_before_fresh_reattack": true
+}

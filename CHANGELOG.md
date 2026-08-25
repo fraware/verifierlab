@@ -9,11 +9,39 @@ with pre-release tags (`a` = alpha, `b` = beta, `rc` = release candidate).
 
 ## [Unreleased]
 
-### Planned
+### Added (integration/final-assurance — G7 / WP-00…WP-22)
 
+- Final-assurance programme on `integration/final-assurance`: EvidenceResolver
+  maturity, container execution boundary, H/F/S / response surface / metamorphic /
+  planted calibration, EnvAssure refs, clean-room reproduce path, flagship study
+- Shared `AdapterContractVersion` and honest matrix statuses
+  (`live-tested` / `protocol-reference-tested` / `fixture-only` / `unsupported`)
+- Central artifact schema registry + `valab bundle verify|migrate` (dry-run default);
+  migrations cannot upgrade maturity
+- Coverage partitions config, Hypothesis property suite, mutation/fuzz corpus hooks,
+  worker secret scan, pip-audit hard-fail posture on main/release
+- Repository protection policy + support matrix (Windows not release-qualified)
+- Claim-language policy + lint; public docs refresh (architecture, methodology,
+  threat model, limitations, tutorials); MkDocs nav for new pages
+- Final acceptance gates A–J (`docs/final-acceptance.md`,
+  `tests/test_final_acceptance_gates.py`) and no-go regressions NG-01…NG-15
+
+### Status note
+
+Package version remains **`0.2.0rc2`** (no `0.2.0rc3` / `1.0` bump on this line).
+In-repo Gate G7 software/acceptance hooks are ready for maintainer review; this
+is not a stable release and does not earn scientific or security maturity labels.
+Flagship study maturity stays `internally_verified` with honest blockers — not
+`scientifically_qualified` / `security_grade` / `deployment_calibrated`.
+
+### Planned (external / post-G7)
+
+- Admin enablement of protected `main` required checks
+- Rootless / separate-domain runners for live security-grade probes
+- External attestation trust roots + independent reconstruction
+- Real prospective deployment field outcomes
 - Optional `[stats]` extra with SciPy-backed exact intervals
 - Stronger OS/sandbox enforcement for untrusted plugins (default remains process-local)
-- CLI surfaces for disclosure and adapter routing (today: Python APIs)
 
 ## [0.2.0rc2] — 2026-07-26
 

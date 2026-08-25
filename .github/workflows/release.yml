@@ -1,6 +1,6 @@
 name: Release
 
-# Signed-tag oriented release pipeline. Builds wheel/sdist once, checksums,
+# Fail-closed signed-tag release pipeline. Builds wheel/sdist once, checksums,
 # CycloneDX SBOM, release-manifest.json, and attaches artifacts to a GitHub
 # Release. Trusted PyPI publish runs only when OIDC / environment is configured.
 
@@ -70,31 +70,44 @@ jobs:
           echo "is_tag=${IS_TAG}" >> "$GITHUB_OUTPUT"
           echo "Resolved version=${VERSION} tag=${TAG:-<none>} is_tag=${IS_TAG}"
 
-      - name: Annotated tag sanity (informational)
+      - name: Enforce signed annotated release tag
         if: steps.meta.outputs.is_tag == 'true'
         shell: bash
         run: |
           set -euo pipefail
           TAG="${{ steps.meta.outputs.tag }}"
-          # Prefer annotated tags for releases; warn (do not hard-fail dispatch)
-          # if lightweight so workflow_dispatch remains usable during RC dry-runs.
-          if git cat-file -t "refs/tags/${TAG}" 2>/dev/null | grep -q tag; then
-            echo "OK: annotated tag ${TAG}"
-            git tag -l --format='%(taggername) %(taggeremail) %(contents:subject)' "$TAG" || true
-          else
-            echo "::warning::Tag ${TAG} is not annotated. Prefer signed annotated tags for production releases."
-          fi
           EXPECTED="v${{ steps.meta.outputs.version }}"
-          if [[ "$TAG" != "$EXPECTED" ]]; then
-            echo "::warning::Tag ${TAG} does not match pyproject version ${EXPECTED}."
+
+          if [[ "$(git cat-file -t "refs/tags/${TAG}")" != "tag" ]]; then
+            echo "::error::Release tag ${TAG} must be an annotated tag."
+            exit 1
           fi
+
+          if [[ "$TAG" != "$EXPECTED" ]]; then
+            echo "::error::Release tag ${TAG} does not match package version ${EXPECTED}."
+            exit 1
+          fi
+
+          # Cryptographic authenticity is a release invariant, not advisory metadata.
+          git verify-tag "$TAG"
+
+          # Release tags must point to history reachable from the protected main line.
+          git fetch origin main --no-tags
+          TAG_COMMIT=$(git rev-parse "${TAG}^{}")
+          if ! git merge-base --is-ancestor "$TAG_COMMIT" origin/main; then
+            echo "::error::Release tag ${TAG} (${TAG_COMMIT}) is not reachable from origin/main."
+            exit 1
+          fi
+
+          echo "OK: signed annotated tag ${TAG} matches ${EXPECTED} and is reachable from origin/main."
 
   smoke:
     name: Smoke (${{ matrix.os }} / py${{ matrix.python-version }})
     needs: gate-tag
     runs-on: ${{ matrix.os }}
-    # Windows path smoke prefers hard-fail; soft-fail documented in docs/limitations.md
-    # until process-worker path is fully qualified on Windows runners.
+    # Windows path smoke remains soft-fail; Windows is not release-qualified
+    # (see docs/support-matrix.md). Do not treat a green Windows soft-fail as
+    # stable support.
     continue-on-error: ${{ matrix.os == 'windows-latest' }}
     strategy:
       fail-fast: false
@@ -169,10 +182,17 @@ jobs:
         run: uv sync --extra dev
 
       - name: Build wheel and sdist
+        env:
+          SOURCE_DATE_EPOCH: "1700000000"
         run: |
+          set -euo pipefail
           rm -rf dist
+          # Reproducible-ish builds: fixed SOURCE_DATE_EPOCH for release artifacts.
           uv build --out-dir dist
           ls -la dist
+          # Content-hash compare helper: record digests immediately after build.
+          cd dist
+          sha256sum verifierlab-* | tee BUILD_SHA256.txt
 
       - name: Fresh wheel install smoke
         run: |
@@ -204,12 +224,13 @@ jobs:
           uv run cyclonedx-py environment -o dist/sbom.cdx.json
           test -s dist/sbom.cdx.json
 
-      - name: Adapter matrix + release manifest
+      - name: Adapter matrix + schema registry + release manifest
         env:
           GITHUB_SHA: ${{ github.sha }}
           RELEASE_TAG: ${{ needs.gate-tag.outputs.tag }}
         run: |
           uv run python scripts/generate_adapter_matrix.py
+          test -f registry/schema-registry-v1.json
           uv run python scripts/build_release_manifest.py \
             --dist-dir dist \
             --output dist/release-manifest.json \
@@ -217,6 +238,21 @@ jobs:
             --commit "${GITHUB_SHA}"
           python -c "import json; json.load(open('dist/release-manifest.json', encoding='utf-8'))"
           python -c "import json; m=json.load(open('dist/adapter-matrix.json', encoding='utf-8')); assert m['adapters']"
+          python -c "import json; r=json.load(open('registry/schema-registry-v1.json', encoding='utf-8')); assert r['artifacts']"
+          cp registry/schema-registry-v1.json dist/schema-registry-v1.json
+          # Worker SBOM note (image digest filled when GHCR publish is enabled).
+          echo '{"note":"generate worker SBOM via syft after image publish","status":"hook"}' > dist/worker-sbom-hook.json
+
+      - name: Attest build provenance
+        if: needs.gate-tag.outputs.is_tag == 'true'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/verifierlab-*.whl
+            dist/verifierlab-*.tar.gz
+            dist/SHA256SUMS.txt
+            dist/sbom.cdx.json
+            dist/release-manifest.json
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
@@ -226,9 +262,12 @@ jobs:
             dist/verifierlab-*.whl
             dist/verifierlab-*.tar.gz
             dist/SHA256SUMS.txt
+            dist/BUILD_SHA256.txt
             dist/sbom.cdx.json
             dist/release-manifest.json
             dist/adapter-matrix.json
+            dist/schema-registry-v1.json
+            dist/worker-sbom-hook.json
 
   publish-pypi:
     name: Trusted publish (PyPI)
@@ -283,14 +322,13 @@ jobs:
           TAG: ${{ needs.gate-tag.outputs.tag }}
         run: |
           set -euo pipefail
+          # Defense in depth: never create/update a release if tag verification fails.
+          git verify-tag "$TAG"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber
           else
             gh release create "$TAG" dist/* \
               --title "$TAG" \
               --notes "Automated release artifacts for ${TAG}. See CHANGELOG.md and release-manifest.json." \
-              --verify-tag || \
-            gh release create "$TAG" dist/* \
-              --title "$TAG" \
-              --notes "Automated release artifacts for ${TAG}. See CHANGELOG.md and release-manifest.json."
+              --verify-tag
           fi

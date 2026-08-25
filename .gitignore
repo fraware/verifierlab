@@ -82,3 +82,7 @@ temp/
 *.bak
 *.orig
 *.log
+
+# Internal engineering handoffs (keep local; do not publish)
+VerifierLab_Final_Engineering_Completion_Specification*.docx
+*.docx

@@ -1,57 +1,60 @@
 # Threat model
 
-Status: **research draft** (`0.2.0rc2` release-candidate surfaces). See also
-[limitations.md](limitations.md) for honest non-claims on adapters and launchers.
+Status: research draft aligned to the `integration/final-assurance` tree
+(`0.2.0rc2`). Non-claims: [limitations.md](limitations.md),
+[claim-language.md](claim-language.md).
 
 ## Assets
 
-- Campaign specifications and pinned verifier versions
-- Content-addressed run bundles and digests
-- Ground-truth / label vault commitments (not released to workers pre-freeze)
-- Budget and provenance ledgers
-- Assurance reports rebuilt from immutable artifacts
+- Campaign specifications, verifier profiles, and pinned versions
+- Content-addressed run/study bundles and digests
+- Ground-truth / label vault commitments (adjudicator plane only pre-release)
+- Budget and provenance ledgers; attacker-state envelopes
+- Execution-boundary manifests and isolation probe reports
+- EnvAssure refs, assurance chain manifests, deployment prediction registrations
+- Assurance reports and external attestation interfaces
 
 ## Trust boundaries
 
 | Boundary | Assumption |
 | -------- | ---------- |
-| Operator host | Trusted to run local campaigns and hold the store / vault |
-| Worker processes | Untrusted relative to the label vault; must not receive hidden labels or `gt_valid` |
-| Attack strategies | Observe **public verifier channel only** |
-| Public verifier channel | Distinct from ground-truth channel |
-| Optional remote launchers | Untrusted networks; live behind `[slurm]` / `[kubernetes]` when binaries/client exist — treat credentials as out of scope for default dry-run |
+| Operator host | Trusted to hold store/vault; untrusted as security-grade evidence if rootful-only |
+| Worker processes / containers | Untrusted relative to vault; no GT; pruned coordinator modules |
+| Attack strategies | Observe public verifier channel only |
+| Coordinator | Mediates CAS/freeze; must not silently promote maturity |
+| Adjudicator | Sole GT enrichment path; emits `LabelReleaseReceipt` |
+| Optional remotes | Slurm/K8s/S3 behind extras; credentials out of default dry-run scope |
 
 ## Adversary capabilities (campaign target)
 
-Attack strategies model adversaries with an explicit **access model**
-(black-box, gray-box, white-box, adaptive, transfer, side-channel). Metrics must
-not be pooled across access classes without stratification.
+Explicit access models (black/gray/white/adaptive/transfer/…). Metrics must not
+pool across access classes without stratification. Persistent vs fresh attack
+state is first-class; inherited state after repair is a qualification blocker.
 
 ## Mitigations in this tree
 
-- Local filesystem CAS with SHA-256 digests over canonical JSON
-- Coordinator-only GT enrichment after worker episodes
-- `public_attack_feedback` strips ground-truth fields before `observe`
-- Label vault freeze / release with access audit log
-- Budget ledger with stop-or-record overrun policy
-- Secret scanning before report emit
-- Adversarial self-tests in `tests/test_integrity.py`
-- Base install free of heavy ML / cluster SDKs
-- Failed work units persisted for visibility
+- Canonical JSON + SHA-256 CAS; schema registry with fail-closed unknown versions
+- Worker image physical pruning + malicious probe catalogue (security-grade path)
+- `public_attack_feedback` strips GT fields; hidden-split side-channel tests
+- Budget ledger with vouchers; freeze injection rejected
+- EvidenceResolver maturity; planted calibration hard-codes non-robustness boundary
+- Adapter contract + honest matrix statuses; base import gate without heavy SDKs
+- Claim-language lint against banned overclaims
 
 ## Non-goals
 
 - Soundness guarantees from “no exploit found”
-- Automatic public vulnerability disclosure
-- Storing partner raw data in a public service
-- Over-claiming Harbor sandbox orchestration or NeMo training loops beyond the
-  shipped adapters (see [limitations.md](limitations.md))
+- Self-issued `independently_verified` / `scientifically_qualified` /
+  `security_grade` / `deployment_calibrated`
+- Treating Windows soft-fail CI as release-qualified support
+- Averaging response surfaces into a scalar robustness score
 
-## Open items
+## Open items (external)
 
-- Full sandbox profiles for untrusted verifier code
-- Credential isolation hardening for live Slurm/K8s/S3 paths
-- Optional SciPy-backed exact intervals
+- Rootless/separate-domain runner for live security-grade probes
+- External trust root for independent attestation
+- Admin enablement of protected `main` required checks
+- Real field outcomes for deployment calibration
 
 ## Reporting product vulnerabilities
 

@@ -2,14 +2,14 @@
   "access_model": "black-box",
   "budget_digest": "b1d307581a2ae9accde7867a444bf45d9edf962097c37f75c59d7c4afac6c2ee",
   "campaign": "pack-c-isomorphic",
-  "campaign_digest": "a9fb58fb2bf83704deb499ed3ff2a6ee425bdf936cd067c3bd18767abb339ec9",
-  "content_digest": "43ecb0de32a33cad71e8cb031097f889e285371c38e32ba3b139d81244203fca",
+  "campaign_digest": "491afcb460e2d46005b8c1a7bf1dfb0ec45d888cd847c1ebe813a581cea4b029",
+  "content_digest": "453ef38f6c3a7a23e45e5722949a2a769e342d0e34a10b89b037a07f0e4e1edd",
   "expected_taxonomies": [
     "isomorphic_relabel"
   ],
   "interval_method": "wilson",
   "pinned_versions": {
-    "campaign": "pack-c@1",
+    "campaign": "pack-c@2",
     "verifierlab": "0.2.0rc2"
   },
   "primary_estimand": "far_optimized",
@@ -23,5 +23,5 @@
     ],
     "mode": "content_addressed"
   },
-  "verifier_profile_digest": "ac18189910f608662582d56d30e9938e7a16a605364cce1462a00b540c7afeb6"
+  "verifier_profile_digest": "0f79cb2710d731e2a6cb9b174d1c35857349f4e4bd6d1d1a3c4dc89f44be3097"
 }

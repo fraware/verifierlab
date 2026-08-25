@@ -45,12 +45,27 @@ pack_app = typer.Typer(
     help="Benchmark pack lint / verify / run / reproduce / inspect.",
     no_args_is_help=True,
 )
+assurance_app = typer.Typer(
+    help="Artifact-derived assurance qualification (WP-05).",
+    no_args_is_help=True,
+)
+deployment_app = typer.Typer(
+    help="Prospective deployment calibration (WP-15).",
+    no_args_is_help=True,
+)
+bundle_app = typer.Typer(
+    help="Artifact bundle verify / migrate (WP-17).",
+    no_args_is_help=True,
+)
 app.add_typer(campaign_app, name="campaign")
 app.add_typer(report_app, name="report")
 app.add_typer(stats_app, name="stats")
 app.add_typer(plugins_app, name="plugins")
 app.add_typer(verifier_app, name="verifier")
 app.add_typer(pack_app, name="pack")
+app.add_typer(assurance_app, name="assurance")
+app.add_typer(deployment_app, name="deployment")
+app.add_typer(bundle_app, name="bundle")
 
 
 def _print_json(payload: object) -> None:
@@ -156,8 +171,10 @@ def _print_verifier_spec_text(payload: dict[str, object]) -> None:
     source = payload.get("source") or {}
     if isinstance(source, dict):
         console.print(f"source: {source.get('module')}:{source.get('qualname')}")
-    for lim in payload.get("limitations") or []:
-        console.print(f"limitation: {lim}")
+    limitations = payload.get("limitations")
+    if isinstance(limitations, list | tuple):
+        for lim in limitations:
+            console.print(f"limitation: {lim}")
 
 
 @verifier_app.command("inspect")
@@ -701,6 +718,305 @@ def stats_power(
         _print_json(payload)
     else:
         typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    raise typer.Exit(0)
+
+
+@stats_app.command("surface-compile")
+def stats_surface_compile(
+    plan: Path = typer.Argument(
+        ..., help="RobustnessResponseSurfacePlan or TransferSurfacePlan JSON"
+    ),
+    refs: Path = typer.Option(..., "--refs", help="JSON array of ReleasedBundleRef"),
+    format: str = typer.Option("json", "--format", help="Output format: json|text"),
+) -> None:
+    """Expand/compile an exact-coordinate response surface from released bundle refs."""
+    from verifierlab.statistics.response_surface import (
+        RobustnessResponseSurfacePlan,
+        TransferSurfacePlan,
+        compile_surface_study,
+    )
+
+    body = json.loads(Path(plan).read_text(encoding="utf-8"))
+    try:
+        if "discovery_coordinates" in body:
+            frozen = TransferSurfacePlan.model_validate(body)
+        else:
+            frozen = RobustnessResponseSurfacePlan.model_validate(body)
+        artifact = compile_surface_study(frozen, refs)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    payload = artifact.model_dump(mode="json")
+    payload["content_digest"] = artifact.content_digest
+    if format == "json":
+        _print_json(payload)
+    else:
+        typer.echo(f"cells: {len(artifact.cells)}")
+        typer.echo(f"complete: {artifact.complete_coordinate_count}")
+        typer.echo(f"missing: {artifact.missing_coordinate_count}")
+        typer.echo(f"indeterminate: {artifact.indeterminate_coordinate_count}")
+        typer.echo(f"digest: {artifact.content_digest}")
+    raise typer.Exit(0)
+
+
+@assurance_app.command("qualify")
+def assurance_qualify(
+    run_or_study: Path = typer.Argument(..., help="Sealed run or study directory"),
+    claim: Path = typer.Option(..., "--claim", help="Path to AssuranceClaim JSON"),
+    trust_root: list[str] = typer.Option(
+        [],
+        "--trust-root",
+        help="External trust root as id=secret (repeatable)",
+    ),
+    attestation: list[Path] = typer.Option(
+        [],
+        "--attestation",
+        help="Path to ExternalAssuranceAttestation JSON (repeatable)",
+    ),
+    format: str = typer.Option("json", "--format", help="Output format: json|text"),
+) -> None:
+    """Qualify assurance maturity from sealed artifacts (not caller booleans)."""
+    from verifierlab.assurance import ExternalAssuranceAttestation, qualify_run
+
+    roots: dict[str, str] = {}
+    for item in trust_root:
+        if "=" not in item:
+            console.print(f"[red]invalid --trust-root {item!r}; expected id=secret[/red]")
+            raise typer.Exit(2)
+        rid, secret = item.split("=", 1)
+        roots[rid] = secret
+    atts: list[ExternalAssuranceAttestation] = []
+    for path in attestation:
+        atts.append(
+            ExternalAssuranceAttestation.model_validate(
+                json.loads(Path(path).read_text(encoding="utf-8"))
+            )
+        )
+    try:
+        result = qualify_run(
+            run_or_study,
+            claim=claim,
+            trust_roots=roots or None,
+            attestations=atts or None,
+        )
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    payload = result.model_dump(mode="json")
+    payload["content_digest"] = result.digest
+    if format == "json":
+        _print_json(payload)
+    else:
+        typer.echo(f"level: {result.level}")
+        typer.echo(f"ordinal: {result.ordinal}")
+        typer.echo(f"security_grade_execution: {result.security_grade_execution}")
+        typer.echo(f"blockers: {', '.join(result.blockers) or '(none)'}")
+        typer.echo(f"claim_digest: {result.claim_digest}")
+        typer.echo(f"resolver_version: {result.resolver_version}")
+    raise typer.Exit(0)
+
+
+@deployment_app.command("register-prediction")
+def deployment_register_prediction(
+    prediction: Path = typer.Argument(..., help="DeploymentPredictionRegistration JSON"),
+    out: Path = typer.Option(..., "--out", help="Deployment root directory"),
+    format: str = typer.Option("json", "--format"),
+) -> None:
+    """Register a prospective deployment prediction (before outcomes)."""
+    from verifierlab.assurance.deployment import register_prediction
+
+    body = json.loads(Path(prediction).read_text(encoding="utf-8"))
+    try:
+        rec = register_prediction(out, prediction=body)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    payload = rec.model_dump(mode="json")
+    payload["content_digest"] = rec.digest
+    if format == "json":
+        _print_json(payload)
+    else:
+        typer.echo(f"prediction_id: {rec.prediction_id}")
+        typer.echo(f"chronology_event_digest: {rec.chronology_event_digest}")
+        typer.echo(f"synthetic: {rec.synthetic_non_deployment_evidence}")
+    raise typer.Exit(0)
+
+
+@deployment_app.command("ingest-outcome")
+def deployment_ingest_outcome(
+    outcome: Path = typer.Argument(..., help="DeploymentOutcomeRecord JSON"),
+    out: Path = typer.Option(..., "--out", help="Deployment root directory"),
+    format: str = typer.Option("json", "--format"),
+) -> None:
+    """Ingest a deployment outcome after prediction chronology is anchored."""
+    from verifierlab.assurance.deployment import ingest_outcome
+
+    body = json.loads(Path(outcome).read_text(encoding="utf-8"))
+    try:
+        rec = ingest_outcome(out, outcome=body)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    payload = rec.model_dump(mode="json")
+    payload["content_digest"] = rec.digest
+    if format == "json":
+        _print_json(payload)
+    else:
+        typer.echo(f"outcome_id: {rec.outcome_id}")
+        typer.echo(f"prediction_id: {rec.prediction_id}")
+    raise typer.Exit(0)
+
+
+@deployment_app.command("calibration-report")
+def deployment_calibration_report(
+    plan: Path = typer.Argument(..., help="DeploymentCalibrationPlan JSON"),
+    out: Path = typer.Option(..., "--out", help="Deployment root directory"),
+    format: str = typer.Option("json", "--format"),
+) -> None:
+    """Build a deployment calibration report from prospective predictions+outcomes."""
+    from verifierlab.assurance.deployment import (
+        DeploymentCalibrationPlan,
+        build_calibration_report,
+    )
+
+    body = json.loads(Path(plan).read_text(encoding="utf-8"))
+    try:
+        report = build_calibration_report(out, plan=DeploymentCalibrationPlan.model_validate(body))
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    payload = report.model_dump(mode="json")
+    payload["content_digest"] = report.digest
+    if format == "json":
+        _print_json(payload)
+    else:
+        typer.echo(
+            f"supports_deployment_calibrated_claim: {report.supports_deployment_calibrated_claim}"
+        )
+        typer.echo(f"synthetic: {report.synthetic_non_deployment_evidence}")
+        typer.echo(f"blockers: {', '.join(report.blockers) or '(none)'}")
+        typer.echo(f"n_matched: {report.n_matched}")
+    raise typer.Exit(0)
+
+
+@app.command("reproduce")
+def reproduce_cmd(
+    bundle: Path = typer.Argument(..., help="Reproduction bundle file or directory"),
+    claim: Path | None = typer.Option(None, "--claim", help="AssuranceClaim JSON"),
+    trust_root: list[str] = typer.Option(
+        [],
+        "--trust-root",
+        help="External trust root as id=secret (repeatable)",
+    ),
+    attestation: Path | None = typer.Option(
+        None, "--attestation", help="ExternalAssuranceAttestation JSON"
+    ),
+    clean_room: bool = typer.Option(
+        False,
+        "--clean-room",
+        help="Internal clean-room dry-run (NOT independent)",
+    ),
+    format: str = typer.Option("json", "--format"),
+) -> None:
+    """Reconstruct from a self-contained reproduction bundle (WP-21)."""
+    from verifierlab.assurance.reproduce import reproduce_bundle
+
+    roots: dict[str, str] = {}
+    for item in trust_root:
+        if "=" not in item:
+            console.print(f"[red]invalid --trust-root {item!r}; expected id=secret[/red]")
+            raise typer.Exit(2)
+        rid, secret = item.split("=", 1)
+        roots[rid] = secret
+    try:
+        report = reproduce_bundle(
+            bundle,
+            claim=claim,
+            trust_roots=roots or None,
+            attestation=attestation,
+            clean_room_dry_run=clean_room,
+        )
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    payload = report.model_dump(mode="json")
+    payload["content_digest"] = report.digest
+    if format == "json":
+        _print_json(payload)
+    else:
+        typer.echo(f"reconstructed: {report.reconstructed}")
+        typer.echo(f"independent: {report.independent}")
+        typer.echo(f"clean_room_dry_run: {report.clean_room_dry_run}")
+        typer.echo(f"blockers: {', '.join(report.blockers) or '(none)'}")
+    code = 0 if report.reconstructed else 1
+    if clean_room and report.mechanics_ok:
+        code = 0
+    raise typer.Exit(code)
+
+
+@bundle_app.command("verify")
+def bundle_verify(
+    path: Path = typer.Argument(..., exists=True, help="Run/study/reproduction bundle path"),
+    format: str = typer.Option("json", "--format", help="Output format: text|json"),
+) -> None:
+    """Verify schema support and digests for a bundle directory (WP-17)."""
+    from verifierlab.artifacts.schema_registry import SchemaRegistryError, verify_bundle_dir
+
+    try:
+        report = verify_bundle_dir(path)
+    except SchemaRegistryError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    if format == "json":
+        _print_json(report)
+    else:
+        typer.echo(f"ok: {report['ok']}")
+        typer.echo(f"path: {report['path']}")
+        if report.get("reasons"):
+            typer.echo(f"reasons: {', '.join(report['reasons'])}")
+    raise typer.Exit(0 if report["ok"] else 1)
+
+
+@bundle_app.command("migrate")
+def bundle_migrate(
+    path: Path = typer.Argument(..., exists=True, help="JSON artifact file to migrate"),
+    artifact_type: str = typer.Option(..., "--type", help="Artifact type from schema registry"),
+    to_version: str = typer.Option(..., "--to", help="Target schema version"),
+    dry_run: bool = typer.Option(True, "--dry-run/--write", help="Dry-run (default) or write"),
+    output: Path | None = typer.Option(None, "--output", help="Output path when --write"),
+    format: str = typer.Option("json", "--format"),
+) -> None:
+    """One-way artifact migration; never upgrades maturity (WP-17)."""
+    from verifierlab.artifacts.schema_registry import SchemaRegistryError, migrate_artifact
+
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        console.print("[red]artifact must be a JSON object[/red]")
+        raise typer.Exit(2)
+    try:
+        migrated = migrate_artifact(artifact_type, payload, to_version=to_version)
+    except SchemaRegistryError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    result = {
+        "dry_run": dry_run,
+        "artifact_type": artifact_type,
+        "from_version": payload.get("schema_version"),
+        "to_version": migrated.get("schema_version"),
+        "maturity_unchanged": True,
+        "artifact": migrated,
+    }
+    if not dry_run:
+        dest = output or path
+        dest.write_text(json.dumps(migrated, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        result["wrote"] = str(dest)
+    if format == "json":
+        _print_json(result)
+    else:
+        typer.echo(
+            f"{'dry-run' if dry_run else 'wrote'}: "
+            f"{result['from_version']} -> {result['to_version']}"
+        )
     raise typer.Exit(0)
 
 

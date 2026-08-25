@@ -97,15 +97,16 @@ class LifecycleTipIndex(ArtifactBase):
 
 
 class SealedRunManifest(ArtifactBase):
-    """Immutable seal over a frozen run bundle (VALAB-05).
+    """Immutable seal over a frozen run bundle (VALAB-05 / WP-04).
 
     Digests campaign definition, verifier/attack digests, environment
-    fingerprint, seeds, budget, I/O, vault tip (not plaintext labels), and
-    report configuration. Mutation of sealed CAS objects or freeze records
-    after seal must raise.
+    fingerprint, seeds, budget, I/O, vault tip (not plaintext labels),
+    report configuration, split/custody, execution boundaries, attacker-state
+    heads, public commitments, and preregistration. Mutation of sealed CAS
+    objects or freeze records after seal must raise.
     """
 
-    schema_version: str = "1"
+    schema_version: str = "2"
     kind: str = "sealed_run"
     seal_id: str
     run_id: str
@@ -120,6 +121,19 @@ class SealedRunManifest(ArtifactBase):
     outputs_digest: str | None = None
     vault_tip_digest: str | None = None
     report_config_digest: str | None = None
+    split_manifest_digest: str | None = None
+    public_split_view_digest: str | None = None
+    custody_digest: str | None = None
+    attacker_identity_digests: list[str] = Field(default_factory=list)
+    execution_boundary_digests: list[str] = Field(default_factory=list)
+    attack_state_head_digests: list[str] = Field(default_factory=list)
+    public_commitment_digests: list[str] = Field(default_factory=list)
+    preregistration_digest: str | None = None
+    research_registration_digests: list[str] = Field(default_factory=list)
+    chronology_digest: str | None = None
+    freeze_seal_bundle_digest: str | None = None
+    environment_assurance_digest: str | None = None
+    assurance_chain_digest: str | None = None
     sealed_at: float
     metadata: dict[str, Any] = Field(default_factory=dict)
 

@@ -1,8 +1,9 @@
 # syntax=docker/dockerfile:1.7
-# VerifierLab worker image — environments, attacks, broker client.
-# Must not contain GT providers, vault material, or adjudicator credentials.
+# VerifierLab attack-worker image.
+# Coordinator, adjudication, label, reporting, and repair surfaces are removed
+# from the installed runtime instead of relying on an import denylist.
 
-ARG PYTHON_BASE=python:3.12-slim-bookworm@sha256:60b63e1aa22af2bd734a72e4acc572c1dde035250cc9da5d16a0bdcff2fba82f
+ARG PYTHON_BASE=python:3.12-slim-bookworm@sha256:a116514e19457bcb7af7efe9c3dd0b9b71e85b317694e7882a1c52aa15a78134
 
 FROM ${PYTHON_BASE} AS build
 WORKDIR /src
@@ -13,12 +14,13 @@ COPY pyproject.toml README.md LICENSE CHANGELOG.md ./
 COPY src ./src
 COPY campaigns ./campaigns
 COPY scripts ./scripts
+COPY docs/templates ./docs/templates
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir .
 
 FROM ${PYTHON_BASE}
 LABEL org.opencontainers.image.title="verifierlab-worker" \
-      org.opencontainers.image.description="VerifierLab attack worker (no vault / GT)" \
+      org.opencontainers.image.description="VerifierLab isolated attack worker" \
       org.opencontainers.image.source="https://github.com/fraware/verifierlab" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.vendor="fraware" \
@@ -36,10 +38,54 @@ RUN groupadd --system --gid 10001 valab \
     && chown -R valab:valab /var/lib/verifierlab
 
 COPY --from=build /usr/local /usr/local
+
+# A worker image must not merely promise that sensitive modules are unused:
+# those modules are removed from the installed package. The entrypoint repeats
+# this check at startup and refuses an unpruned image.
+RUN python - <<'PY'
+from pathlib import Path
+import shutil
+import verifierlab
+
+root = Path(verifierlab.__file__).resolve().parent
+for rel in (
+    "labels",
+    "repairs",
+    "disclosure",
+    "reports",
+):
+    target = root / rel
+    if target.exists():
+        shutil.rmtree(target)
+for rel in (
+    "cli.py",
+    "campaigns/engine.py",
+    "campaigns/lifecycle.py",
+):
+    target = root / rel
+    if target.exists():
+        target.unlink()
+# pip may have precompiled bytecode before pruning. Remove every package cache
+# so deleted coordinator modules cannot survive as residual code artifacts.
+for cache in list(root.rglob("__pycache__")):
+    if cache.exists():
+        shutil.rmtree(cache)
+for rel in (
+    "labels",
+    "repairs",
+    "disclosure",
+    "reports",
+    "cli.py",
+    "campaigns/engine.py",
+    "campaigns/lifecycle.py",
+):
+    if (root / rel).exists():
+        raise SystemExit(f"worker image pruning failed: {rel}")
+PY
+
 COPY docker/worker/entrypoint.py /usr/local/bin/valab-role-entrypoint
 RUN chmod 755 /usr/local/bin/valab-role-entrypoint
 
 USER 10001:10001
 WORKDIR /work
 ENTRYPOINT ["valab-role-entrypoint"]
-CMD ["campaign", "run", "--help"]

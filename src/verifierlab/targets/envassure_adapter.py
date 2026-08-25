@@ -44,12 +44,16 @@ _GT_DENY = frozenset(
 
 
 def envassure_available() -> bool:
-    """Return True when the ``envassure`` package is importable."""
+    """Return True when a live-capable ``envassure`` package is importable.
+
+    A package that imports but lacks ``EnvAssureTarget`` / ``make_target`` is
+    treated as not installable for live claims (fixture-only remains valid).
+    """
     try:
-        import envassure  # noqa: F401
+        import envassure
     except ImportError:
         return False
-    return True
+    return hasattr(envassure, "EnvAssureTarget") or hasattr(envassure, "make_target")
 
 
 def require_envassure() -> Any:
@@ -63,6 +67,11 @@ def require_envassure() -> Any:
             "Until the package is published, use fixture/protocol mode "
             "(EnvAssureAdapter(fixture=True)) which is explicitly not-live."
         ) from exc
+    if not (hasattr(envassure, "EnvAssureTarget") or hasattr(envassure, "make_target")):
+        raise ImportError(
+            "envassure is installed but exposes neither EnvAssureTarget nor make_target; "
+            "use EnvAssureAdapter(fixture=True) (fixture-only / not live-tested)."
+        )
     return envassure
 
 

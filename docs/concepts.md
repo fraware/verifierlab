@@ -69,4 +69,10 @@ gaming, other). Planted packs assert expected recovery classes.
 
 `valab report builds RUN_DIR` rebuilds HTML/JSON/CSV from immutable
 `work_units/` and the run manifest. Reports are not a live dashboard; the
-`[dashboard]` extra is reserved and not shipped in this alpha.
+`[dashboard]` extra is reserved and not shipped on this RC line.
+
+Maturity labels (`internally_verified`, …) are derived from sealed artifacts via
+`valab assurance qualify` — not from report HTML alone. See
+[claim-language.md](claim-language.md) and [architecture.md](architecture.md).
+
+Status: package `0.2.0rc2` on `integration/final-assurance`.

@@ -1,4 +1,4 @@
-"""Split governance: materialize train/holdout manifests (VAL-R11 / VALAB-06)."""
+"""Split governance: materialize train/holdout manifests (VAL-R11 / VALAB-06 / WP-04)."""
 
 from __future__ import annotations
 
@@ -96,8 +96,15 @@ def materialize_split_manifest(
     *,
     unit_ids: list[str],
     run_dir: Path | None = None,
+    opaque_custody: bool = True,
 ) -> dict[str, Any]:
-    """Build and optionally persist a split manifest for the campaign run."""
+    """Build and optionally persist a split manifest for the campaign run.
+
+    When ``run_dir`` is set and ``opaque_custody`` is true, hidden-holdout
+    membership is sealed under ``custody/`` and the attack-plane public view
+    exposes only opaque IDs (WP-04). The returned manifest remains the full
+    coordinator truth (logical unit IDs + tiers) for adjudication.
+    """
     n = len(unit_ids)
     split_seed = int(spec.seed)
     if spec.splits:
@@ -138,6 +145,34 @@ def materialize_split_manifest(
         path = Path(run_dir) / "splits" / "manifest.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        if opaque_custody:
+            from verifierlab.campaigns.custody import (
+                build_custody_map,
+                persist_custody,
+                persist_public_split_view,
+                public_split_view,
+            )
+
+            run_salt = digest_of(
+                {
+                    "campaign": spec.name,
+                    "seed": split_seed,
+                    "campaign_pins": dict(spec.pinned_versions),
+                }
+            )
+            custody = build_custody_map(units, run_salt=run_salt)
+            persist_custody(run_dir, custody)
+            pub = public_split_view(custody)
+            persist_public_split_view(run_dir, pub)
+            manifest = {
+                **manifest,
+                "custody_digest": custody["content_digest"],
+                "public_split_view_digest": pub["content_digest"],
+            }
+            manifest["content_digest"] = digest_of(
+                {k: v for k, v in manifest.items() if k != "content_digest"}
+            )
+            path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return manifest
 
 

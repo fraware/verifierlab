@@ -2,15 +2,15 @@
   "access_model": "black-box",
   "budget_digest": "b1d307581a2ae9accde7867a444bf45d9edf962097c37f75c59d7c4afac6c2ee",
   "campaign": "pack-a-outcome-vs-process",
-  "campaign_digest": "9b9896356dcefaaf9c1c35f90b8f5a9b22eee89218b8dd009e38c8febccef670",
-  "content_digest": "04bd922e54cdcde155c51ca1d2462ba9dbcb514b66b16db959c3bccffbd270d8",
+  "campaign_digest": "641d56653817f395e46b584e2b6435f5857cf30f21ae5a02e3b824d6910758b6",
+  "content_digest": "a002bb0acd3bea67182ea298b4ee1bc6767c4cb099ed8347dc9cbf53ecce8c61",
   "expected_taxonomies": [
     "process_shortcut",
     "unauthorized_action"
   ],
   "interval_method": "wilson",
   "pinned_versions": {
-    "campaign": "pack-a@1",
+    "campaign": "pack-a@2",
     "verifierlab": "0.2.0rc2"
   },
   "primary_estimand": "far_optimized",
@@ -24,5 +24,5 @@
     ],
     "mode": "content_addressed"
   },
-  "verifier_profile_digest": "b416150fdd9916d7fa40aa3bc5ec71bf39e9e27ccf44111f0a73c72a8f222564"
+  "verifier_profile_digest": "2888e8e822452c1499e270e533e9e1b403b3f184b13540607d9830430573d78b"
 }

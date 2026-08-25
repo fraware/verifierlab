@@ -14,7 +14,7 @@ clients, or model SDKs. Optional extras are documented in [adapters.md](adapters
 
 ## Ten-minute path (offline refund campaign)
 
-Lifecycle after Phase B: **run → freeze → adjudicate → release-labels → report**.
+Lifecycle: **run → freeze → adjudicate → release-labels → report**.
 
 ```bash
 uv run valab init
@@ -65,14 +65,26 @@ uv run pytest tests/test_packs.py -m pack_heavy           # C, D, E
 | E | Co-evolution (optional in default CI) |
 | F | Integrity tamper / timeout bypass / approval laundering |
 
+## Prerequisites and honesty
+
+- Local/process campaigns are **development-grade**. They do not mint
+  `security_grade` evidence. See [tutorials/security-grade.md](tutorials/security-grade.md).
+- “No exploit found” is failure to find under the declared budget — not
+  soundness. See [limitations.md](limitations.md) and
+  [claim-language.md](claim-language.md).
+- Flagship study maturity is `internally_verified` with blockers
+  (`studies/flagship-2026/`).
+
 ## Next reading
 
 - [Concepts](concepts.md) — vocabulary
 - [CLI reference](cli.md) — full command table
+- [Tutorials: method surfaces](tutorials/method-surfaces.md) — H/F/S, metamorphic, surfaces
 - [Attacks](attacks.md) — strategies and plugins
 - [Labels and statistics](labels-and-stats.md) — freeze / StatsPlan
 - [Methodology](methodology.md) — how to interpret results
 - [Limitations](limitations.md) — what not to claim
+- [Final acceptance](final-acceptance.md) — gates A–J and external blockers
 - [Reproduction checklist](reproduction-checklist.md) — third-party reproduce path
 - [Disclosure templates](templates/disclosure.md) — community disclosure
 - [Incident template](templates/incident.md) — integrity incident notes

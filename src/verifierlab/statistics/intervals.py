@@ -7,6 +7,10 @@ Limitations (documented honestly):
   skewed (a,b) near machine limits may lose a few ulps vs SciPy; golden tests
   lock common (successes, n, alpha) vectors.
 - Bootstrap helpers use Python's ``random.Random`` (not cryptographic).
+- Optional ``[stats]`` SciPy extra is reserved for golden cross-checks; this
+  release keeps pure-Python intervals as the executable path (WP-06). Install
+  SciPy separately for offline cross-validation if desired — results are not
+  silently substituted.
 """
 
 from __future__ import annotations

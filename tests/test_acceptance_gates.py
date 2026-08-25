@@ -30,11 +30,12 @@ from verifierlab.campaigns.episode import public_attack_feedback
 from verifierlab.campaigns.lifecycle import LifecycleState, lifecycle_of
 from verifierlab.campaigns.worker import execute_work_unit
 from verifierlab.config.campaign import StatsPlan
+from verifierlab.labels.planted_fake import PlantedOracleGroundTruth
 from verifierlab.labels.vault import LabelVault, fresh_ephemeral_vault
 from verifierlab.repairs import run_repair_campaign
 from verifierlab.reports.html import build_report
 from verifierlab.statistics.plan import compile_stats_plan
-from verifierlab.targets.fake import FakeEnvironment, PlantedOracleGroundTruth, fake_refund_verifier
+from verifierlab.targets.fake import FakeEnvironment, fake_refund_verifier
 from verifierlab.verifiers.broker import VerifierBroker
 from verifierlab.verifiers.capabilities import AccessDenied, capabilities_for
 from verifierlab.verifiers.profile import VerifierProfile
@@ -49,7 +50,7 @@ REPRO_SCRIPT = REPO / "scripts" / "repro_bundle_check.py"
 
 
 # ---------------------------------------------------------------------------
-# Gate 1 — Isolation
+# Gate 1 - Isolation
 # ---------------------------------------------------------------------------
 
 
@@ -72,7 +73,7 @@ class TestGate1Isolation:
                     "seed": 1,
                     "max_steps": 1,
                     "environment_kind": "python",
-                    "environment_ref": "verifierlab.targets.fake:PlantedOracleGroundTruth",
+                    "environment_ref": "verifierlab.labels.planted_fake:PlantedOracleGroundTruth",
                     "verifier_ref": "verifierlab.targets.fake:fake_refund_verifier",
                     "strategy": "ordinary",
                     "strategy_config": {"actions": [{"op": "noop"}]},
@@ -163,7 +164,7 @@ class TestGate1Isolation:
 
 
 # ---------------------------------------------------------------------------
-# Gate 2 — Optimization
+# Gate 2 - Optimization
 # ---------------------------------------------------------------------------
 
 
@@ -296,7 +297,7 @@ class TestGate2Optimization:
 
 
 # ---------------------------------------------------------------------------
-# Gate 3 — Measurement
+# Gate 3 - Measurement
 # ---------------------------------------------------------------------------
 
 
@@ -305,36 +306,15 @@ class TestGate3Measurement:
         d = normalize_decision("reject")
         assert d.accepted is False
         assert d.status == "reject"
-        # Truthiness bug must never count as accept.
         assert bool("reject") is True
         assert normalize_decision("reject").accepted is not True
 
     def test_stats_plan_cis_and_no_pooling(self) -> None:
         rows = [
-            {
-                "unit_id": "a",
-                "cohort": "ordinary",
-                "verifier_accepted": True,
-                "gt_valid": False,
-            },
-            {
-                "unit_id": "b",
-                "cohort": "ordinary",
-                "verifier_accepted": False,
-                "gt_valid": False,
-            },
-            {
-                "unit_id": "c",
-                "cohort": "optimized",
-                "verifier_accepted": True,
-                "gt_valid": False,
-            },
-            {
-                "unit_id": "d",
-                "cohort": "optimized",
-                "verifier_accepted": True,
-                "gt_valid": False,
-            },
+            {"unit_id": "a", "cohort": "ordinary", "verifier_accepted": True, "gt_valid": False},
+            {"unit_id": "b", "cohort": "ordinary", "verifier_accepted": False, "gt_valid": False},
+            {"unit_id": "c", "cohort": "optimized", "verifier_accepted": True, "gt_valid": False},
+            {"unit_id": "d", "cohort": "optimized", "verifier_accepted": True, "gt_valid": False},
         ]
         plan = StatsPlan(methods=["wilson", "exact"], bootstrap_samples=200, alpha=0.05)
         stats = compile_stats_plan(rows, plan=plan, pool_overall=False)
@@ -382,7 +362,7 @@ class TestGate3Measurement:
 
 
 # ---------------------------------------------------------------------------
-# Gate 4 — Repair
+# Gate 4 - Repair
 # ---------------------------------------------------------------------------
 
 
@@ -398,7 +378,7 @@ class TestGate4Repair:
         ]
 
         def old_v(traj: dict) -> bool:
-            return True  # always accept → exploits on invalids
+            return True
 
         def new_v(traj: dict) -> bool:
             for step in traj.get("steps", []):
@@ -421,14 +401,18 @@ class TestGate4Repair:
             fresh_episodes=3,
             budget_queries=3,
         )
-        assert artifact.schema_version == "3"
+        assert artifact.schema_version == "5"
         assert artifact.regression
         assert artifact.fresh_attack
         assert artifact.holdout is not None
         assert artifact.mandatory_fresh_attacker is True
         assert artifact.old_profile and artifact.new_profile
-        assert artifact.status == "pass"
+        assert artifact.qualification_grade is False
+        assert artifact.status == "fail"
         assert artifact.trivial_reject_detected is False
+        assert artifact.fresh_attack["ledger"]["qualification_grade"] is False
+        assert "fresh_attack_not_canonical_campaign" in artifact.metadata["gate_failures"]
+        assert "synthetic_holdout_not_qualification_grade" in artifact.metadata["gate_failures"]
 
     def test_trivial_reject_repair_fails(self) -> None:
         known = [
@@ -461,7 +445,7 @@ class TestGate4Repair:
 
 
 # ---------------------------------------------------------------------------
-# Gate 5 — Reproduction
+# Gate 5 - Reproduction
 # ---------------------------------------------------------------------------
 
 
@@ -481,14 +465,14 @@ class TestGate5Reproduction:
 
 
 # ---------------------------------------------------------------------------
-# Gate 6 — Developer ten-minute tutorial lifecycle
+# Gate 6 - Developer ten-minute tutorial lifecycle
 # ---------------------------------------------------------------------------
 
 
 class TestGate6Developer:
     @pytest.mark.integration
     def test_ten_minute_lifecycle(self, tmp_path: Path) -> None:
-        """run → freeze → adjudicate → release → report."""
+        """run -> freeze -> adjudicate -> release -> report."""
         campaign = REFUND_CI if REFUND_CI.is_file() else FAKE_SMOKE
         workspace = init_workspace(tmp_path / ".valab")
         result = run_campaign(campaign, workspace=workspace, max_workers=2, use_processes=False)

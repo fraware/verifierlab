@@ -3,7 +3,7 @@
 # Not a capability / SOTA claim. Do not publish as fully release-qualified
 # until Milestone C/D release gate completes end-to-end image smoke.
 
-ARG PYTHON_BASE=python:3.12-slim-bookworm@sha256:60b63e1aa22af2bd734a72e4acc572c1dde035250cc9da5d16a0bdcff2fba82f
+ARG PYTHON_BASE=python:3.12-slim-bookworm@sha256:a116514e19457bcb7af7efe9c3dd0b9b71e85b317694e7882a1c52aa15a78134
 
 FROM ${PYTHON_BASE}
 LABEL org.opencontainers.image.title="verifierlab-rllib" \
@@ -33,6 +33,8 @@ RUN groupadd --system --gid 10001 valab \
 # Pin matches pyproject [rllib] extra. Image remains partial-qualification.
 COPY pyproject.toml README.md LICENSE /src/
 COPY src /src/src
+COPY campaigns /src/campaigns
+COPY docs/templates /src/docs/templates
 RUN pip install --no-cache-dir "/src[rllib]" \
     && printf '%s\n' \
       '#!/bin/sh' \

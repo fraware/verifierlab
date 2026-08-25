@@ -25,9 +25,9 @@
 
 ## Pitch
 
-**VerifierLab** is a local-first lab for running reproducible campaigns that ask a hard question: *when something is optimized against your verifier, does the verifier still do its job?*
+**VerifierLab** is a local-first lab for reproducible campaigns that ask: *when something is optimized against your verifier, does the verifier still do its job?*
 
-You wrap a grader or reward function, run ordinary baselines alongside optimized-*tagged* attack cohorts under declared budgets and access models, then rebuild reports from content-addressed artifacts after **freeze → adjudicate → release-labels**. Finding no exploit is evidence under those conditions — not a proof of correctness. This release candidate (`0.2.0rc2`) meets executable RC gates 1–6 in `tests/test_acceptance_gates.py`; do not claim soundness or SOTA verifier assurance. Honest gaps (default process-local trust boundary, research-grade attack depth) are listed in [docs/limitations.md](docs/limitations.md).
+You wrap a grader or reward function, run ordinary baselines alongside optimized-*tagged* attack cohorts under declared budgets and access models, then rebuild reports from content-addressed artifacts after **freeze → adjudicate → release-labels**. Finding no exploit is evidence under those conditions — not a proof of correctness.
 
 ## Why it exists
 
@@ -42,7 +42,25 @@ VerifierLab exists so you can:
 
 ## Status
 
-**Release candidate** (`0.2.0rc2`). Gates 1–6 are encoded and passing in `tests/test_acceptance_gates.py` (isolation, optimization, measurement, repair, reproduction, developer lifecycle). Core loop — workspace, process workers, typed decisions, broker metering with worker budget vouchers, vault v2, freeze→adjudicate→release, StatsPlan reports, packs A–F, and the offline tutorial — is implemented and tested. See [docs/limitations.md](docs/limitations.md) and [SECURITY.md](SECURITY.md). Optional adapters and launchers ship behind extras or explicit dry-run modes. APIs and CLI may still shift before 0.2.0.
+**Release candidate** `0.2.0rc2` on branch `integration/final-assurance` — G7-ready
+*in-repo* (executable RC gates 1–6 plus final-acceptance gates A–J). It is **not**
+stable `main` until maintainers fast-forward protected `main` after G7 review.
+
+Honest maturity: the flagship study at `studies/flagship-2026/` is
+**`internally_verified`** with machine-derived blockers. This tree does **not**
+claim `scientifically_qualified`, `security_grade`, or `deployment_calibrated`.
+Local/process execution is development-grade; security-grade evidence requires
+rootless (or stronger) separate-domain runners.
+
+| Read next | Purpose |
+| --------- | ------- |
+| [docs/claim-language.md](docs/claim-language.md) | Approved / banned phrasing |
+| [docs/limitations.md](docs/limitations.md) | Honest non-claims |
+| [docs/final-acceptance.md](docs/final-acceptance.md) | Gates A–J + external blockers |
+| [SECURITY.md](SECURITY.md) | Vulnerability reporting |
+
+APIs and CLI may still shift before a post-G7 stable tag. Do not bump to `1.0`
+without the release gate and an explicit maintainer request.
 
 ## Install
 
@@ -96,6 +114,7 @@ uv run valab campaign run campaigns/fake-smoke.yaml --processes
 | **Rebuild a report** | `valab report builds RUN_DIR` → HTML / JSON / CSV (post-release) |
 | **Compare a repair** | Call `compare_repair` in Python: regression corpus plus a mandatory fresh attacker |
 | **Plan sample size** | `valab stats power` for binomial power / *n* planning |
+| **Qualify assurance** | `valab assurance qualify` from artifacts (EvidenceResolver; no caller-boolean promotion) |
 
 Full CLI table: [docs/cli.md](docs/cli.md).
 
@@ -110,16 +129,18 @@ Keep the base install light. Pull only what you need:
 | `harbor` | Harbor adapter (Python ≥3.12) |
 | `openenv` | OpenEnv adapter |
 | `nemo` | NeMo Gym HTTP client surface |
+| `envassure` | EnvAssure binding (fixture-only until package installable) |
+| `rllib` | RLlib trainer conformance (heavy; not a capability claim) |
 | `objectstore` | S3-compatible object store |
 | `kubernetes` | Kubernetes launcher client |
-| `adapters` | Bundle of the adapter extras above |
+| `adapters` | Bundle of the common adapter extras |
 
 ```bash
 uv sync --extra gym
 # or: pip install -e ".[gym]"
 ```
 
-Details: [docs/adapters.md](docs/adapters.md).
+Details: [docs/adapters.md](docs/adapters.md) and [docs/adapters/matrix.md](docs/adapters/matrix.md).
 
 ## Documentation
 
@@ -127,12 +148,14 @@ Details: [docs/adapters.md](docs/adapters.md).
 | --- | ----- |
 | [Getting started](docs/getting-started.md) | Install and tutorial |
 | [Concepts](docs/concepts.md) | Verifiers, cohorts, store, access models |
-| [Architecture](docs/architecture.md) | Engine, store, run bundles |
+| [Architecture](docs/architecture.md) | Trust planes, evidence, run bundles |
 | [Methodology](docs/methodology.md) | How to interpret campaign results |
+| [Claim language](docs/claim-language.md) | Approved / banned phrasing |
 | [Attacks](docs/attacks.md) | Built-in strategies |
 | [Labels and statistics](docs/labels-and-stats.md) | Vault, freeze, error rates |
 | [Threat model](docs/threat-model.md) | Assets, boundaries, non-goals |
 | [Limitations](docs/limitations.md) | What not to claim |
+| [Final acceptance](docs/final-acceptance.md) | Gates A–J and external blockers |
 | [Security policy](SECURITY.md) | Vulnerability reporting |
 
 ## Contributing
@@ -143,6 +166,7 @@ Contributions are welcome — new attack strategies, adapters, campaigns, docs, 
 - Browse [open issues](https://github.com/fraware/verifierlab/issues), especially ones labeled for newcomers
 - Keep the **base** dependency graph light; heavy stacks belong behind extras
 - Follow the [Code of Conduct](CODE_OF_CONDUCT.md)
+- Run claim-language lint before docs PRs: `uv run python scripts/check_claim_language.py`
 
 ```bash
 uv sync --extra dev
@@ -165,3 +189,4 @@ Do not open public issues for security-sensitive reports. Prefer a private [GitH
 - Repository: https://github.com/fraware/verifierlab
 - Issues: https://github.com/fraware/verifierlab/issues
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
+- Roadmap: [ROADMAP.md](ROADMAP.md)

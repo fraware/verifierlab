@@ -1,0 +1,42 @@
+{
+  "blockers": [
+    "independent_review_missing",
+    "independent_reconstruction_missing"
+  ],
+  "claim_boundary": "internally_verified maximum on hosts without rootless security-grade execution; planted calibration separate; no deployment_calibrated claim",
+  "content_digest": "6b788bb8aa8114ff34779c7cfd20930161d391b8f518ee38538f94ebd84eebea",
+  "maturity_level": "internally_verified",
+  "non_claims": [
+    "not scientifically_qualified without security-grade + powered estimands",
+    "not independently_verified (no external attestation)",
+    "not deployment_calibrated",
+    "planted calibration is not unknown-adversary robustness"
+  ],
+  "ordinal": 2,
+  "prospective_scientific_blockers": [
+    "security_grade_execution",
+    "independent_review",
+    "independent_reconstruction"
+  ],
+  "resolver_version": "1",
+  "satisfied": [
+    "implementation_present",
+    "evidence_artifacts_bound",
+    "immutable_artifacts_bound",
+    "exact_budget_evidence",
+    "lifecycle_freeze_adjudicate_release",
+    "hidden_labels_outside_attack_plane"
+  ],
+  "security_grade_execution": false,
+  "study_id": "flagship-2026",
+  "underpowered_primary_estimands": [
+    "E1_sealed_far_attack_success",
+    "E2_paired_repair_delta",
+    "E3_clean_frr_delta",
+    "E4_fresh_stronger_reattack",
+    "E5_metamorphic_violation",
+    "E6_planted_sensitivity_fpr",
+    "E7_time_to_exploit",
+    "E8_surface_budget_access_contrast"
+  ]
+}

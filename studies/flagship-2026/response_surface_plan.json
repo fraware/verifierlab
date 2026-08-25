@@ -1,0 +1,21 @@
+{
+  "content_digest": "8e976f1d3a4854e322ac4a3a178b9297d5b156e652c4d3aa934e00870b8e2037",
+  "coordinates": [
+    "V",
+    "P",
+    "B",
+    "A",
+    "X"
+  ],
+  "no_scalar_robustness": true,
+  "sparse_cells": [
+    {
+      "A": "black-box",
+      "B": "B_low"
+    },
+    {
+      "A": "gray-box",
+      "B": "B_high"
+    }
+  ]
+}

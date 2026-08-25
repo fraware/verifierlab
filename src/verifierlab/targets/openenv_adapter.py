@@ -306,9 +306,7 @@ class OpenEnvHttpClient:
         self.retries = retries
         self.retry_backoff_s = retry_backoff_s
 
-    def _call(
-        self, method: str, path: str, body: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
+    def _call(self, method: str, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
         return _http_json(
             method,
             f"{self.base_url}{path}",

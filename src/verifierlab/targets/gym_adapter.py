@@ -218,9 +218,7 @@ class GymnasiumEnvironment:
                 self._flag = 0
                 return {"pos": self._pos, "flag": self._flag}, {"options": options or {}}
 
-            def step(
-                self, action: int
-            ) -> tuple[dict[str, int], float, bool, bool, dict[str, Any]]:
+            def step(self, action: int) -> tuple[dict[str, int], float, bool, bool, dict[str, Any]]:
                 self._pos = (self._pos + int(action)) % 5
                 self._flag = int(self._pos == 4)
                 terminated = self._pos == 4
@@ -243,8 +241,7 @@ class GymnasiumEnvironment:
             from gymnasium import spaces
         except ImportError as exc:
             raise ImportError(
-                "non_json_obs_env requires gymnasium; "
-                "install with: pip install 'verifierlab[gym]'"
+                "non_json_obs_env requires gymnasium; install with: pip install 'verifierlab[gym]'"
             ) from exc
 
         class Blob:
