@@ -1,0 +1,57 @@
+name: One-shot preregistration wiring
+
+on:
+  push:
+    branches: [assurance/p0-preregistered-estimands]
+    paths:
+      - ".github/workflows/add-preregistered-estimands-once.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: assurance/p0-preregistered-estimands
+      - name: Apply asserted wiring transforms
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one match, found {count}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          replace_once(
+              "src/verifierlab/config/campaign.py",
+              "from verifierlab.diagnostics.codes import Diagnostic, DiagnosticSeverity\n",
+              "from verifierlab.diagnostics.codes import Diagnostic, DiagnosticSeverity\nfrom verifierlab.statistics.preregistration import AnalysisPreregistration\n",
+          )
+          replace_once(
+              "src/verifierlab/config/campaign.py",
+              '''    multiple_comparison_policy: str = Field(\n        default="none",\n        description="none | bonferroni | pre_registered_primary",\n    )\n''',
+              '''    multiple_comparison_policy: str = Field(\n        default="none",\n        description="none | bonferroni | pre_registered_primary",\n    )\n    preregistration: AnalysisPreregistration | None = None\n''',
+          )
+          replace_once(
+              "src/verifierlab/statistics/plan.py",
+              '''    plan = plan or StatsPlan()\n    rows = results if isinstance(results, list) else list(results)\n''',
+              '''    plan = plan or StatsPlan()\n    if plan.multiple_comparison_policy == "pre_registered_primary":\n        from verifierlab.statistics.preregistered import compile_preregistered_stats_plan\n\n        return compile_preregistered_stats_plan(\n            results,\n            plan=plan,\n            access_model=access_model,\n            pool_overall=pool_overall,\n        )\n    rows = results if isinstance(results, list) else list(results)\n''',
+          )
+          PY
+      - name: Commit wiring
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name "repo-maintenance"
+          git config user.email "repo-maintenance@users.noreply.github.com"
+          git add src/verifierlab/config/campaign.py src/verifierlab/statistics/plan.py
+          git diff --cached --quiet && exit 1
+          git commit -m "feat(stats): wire preregistered estimand compiler"
+          git push origin HEAD:assurance/p0-preregistered-estimands
