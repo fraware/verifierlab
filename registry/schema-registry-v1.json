@@ -1,0 +1,95 @@
+{
+  "schema_version": "1",
+  "title": "VerifierLab artifact schema registry",
+  "canonical_serialization": {
+    "format": "JCS-style canonical JSON",
+    "module": "verifierlab.artifacts.canonical",
+    "rules": [
+      "dict keys must be strings; sorted lexicographically on serialize",
+      "lists preserve order",
+      "bool/None preserved; ints preserved; floats must be finite",
+      "UTF-8 compact JSON (separators ',', ':'; sort_keys=True; allow_nan=False)",
+      "digest = lowercase hex SHA-256 of canonical UTF-8 bytes"
+    ]
+  },
+  "deprecation_policy": "Unknown schema versions fail closed. Migrations are one-way and only when semantics are recoverable. Migrations must never upgrade maturity labels.",
+  "artifacts": [
+    {
+      "artifact_type": "verifier_profile",
+      "current_version": "2",
+      "supported_versions": ["1", "2"],
+      "migrations": [{"from": "1", "to": "2", "id": "verifier_profile_v1_to_v2"}],
+      "module": "verifierlab.verifiers.profile",
+      "notes": "v1 lacked ScoreDecisionMapping; v2 binds mapping into profile digest"
+    },
+    {
+      "artifact_type": "beam_checkpoint",
+      "current_version": "2",
+      "supported_versions": ["1", "2"],
+      "migrations": [{"from": "1", "to": "2", "id": "beam_checkpoint_v1_to_v2"}],
+      "module": "verifierlab.attacks.inference",
+      "notes": "v1 stored negated beam scores; v2 stores real scores"
+    },
+    {
+      "artifact_type": "stats_plan",
+      "current_version": "3",
+      "supported_versions": ["3"],
+      "migrations": [],
+      "module": "verifierlab.statistics.plan",
+      "notes": "Unknown versions fail closed; no downgrade"
+    },
+    {
+      "artifact_type": "label_vault_sealed",
+      "current_version": "2",
+      "supported_versions": ["1", "2"],
+      "migrations": [{"from": "1", "to": "2", "id": "label_vault_v1_to_v2"}],
+      "module": "verifierlab.labels.vault",
+      "notes": "v2 adds salted encryption envelope"
+    },
+    {
+      "artifact_type": "assurance_qualification",
+      "current_version": "1",
+      "supported_versions": ["1"],
+      "migrations": [],
+      "module": "verifierlab.assurance.resolver",
+      "notes": "Maturity is evidence-derived; migrations cannot promote levels"
+    },
+    {
+      "artifact_type": "reproduction_bundle",
+      "current_version": "1",
+      "supported_versions": ["1"],
+      "migrations": [],
+      "module": "verifierlab.assurance.reproduce",
+      "notes": "Self-contained reconstruction package"
+    },
+    {
+      "artifact_type": "environment_assurance_ref",
+      "current_version": "1",
+      "supported_versions": ["1"],
+      "migrations": [],
+      "module": "verifierlab.assurance.envassure"
+    },
+    {
+      "artifact_type": "deployment_prediction",
+      "current_version": "1",
+      "supported_versions": ["1"],
+      "migrations": [],
+      "module": "verifierlab.assurance.deployment"
+    },
+    {
+      "artifact_type": "adapter_contract",
+      "current_version": "1",
+      "supported_versions": ["1"],
+      "migrations": [],
+      "module": "verifierlab.targets.contract"
+    },
+    {
+      "artifact_type": "run_bundle",
+      "current_version": "1",
+      "supported_versions": ["1"],
+      "migrations": [],
+      "module": "verifierlab.campaigns.lifecycle",
+      "notes": "Directory layout with manifest.json tip index"
+    }
+  ]
+}

@@ -53,6 +53,10 @@ deployment_app = typer.Typer(
     help="Prospective deployment calibration (WP-15).",
     no_args_is_help=True,
 )
+bundle_app = typer.Typer(
+    help="Artifact bundle verify / migrate (WP-17).",
+    no_args_is_help=True,
+)
 app.add_typer(campaign_app, name="campaign")
 app.add_typer(report_app, name="report")
 app.add_typer(stats_app, name="stats")
@@ -61,6 +65,7 @@ app.add_typer(verifier_app, name="verifier")
 app.add_typer(pack_app, name="pack")
 app.add_typer(assurance_app, name="assurance")
 app.add_typer(deployment_app, name="deployment")
+app.add_typer(bundle_app, name="bundle")
 
 
 def _print_json(payload: object) -> None:
@@ -947,6 +952,72 @@ def reproduce_cmd(
     if clean_room and report.mechanics_ok:
         code = 0
     raise typer.Exit(code)
+
+
+@bundle_app.command("verify")
+def bundle_verify(
+    path: Path = typer.Argument(..., exists=True, help="Run/study/reproduction bundle path"),
+    format: str = typer.Option("json", "--format", help="Output format: text|json"),
+) -> None:
+    """Verify schema support and digests for a bundle directory (WP-17)."""
+    from verifierlab.artifacts.schema_registry import SchemaRegistryError, verify_bundle_dir
+
+    try:
+        report = verify_bundle_dir(path)
+    except SchemaRegistryError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    if format == "json":
+        _print_json(report)
+    else:
+        typer.echo(f"ok: {report['ok']}")
+        typer.echo(f"path: {report['path']}")
+        if report.get("reasons"):
+            typer.echo(f"reasons: {', '.join(report['reasons'])}")
+    raise typer.Exit(0 if report["ok"] else 1)
+
+
+@bundle_app.command("migrate")
+def bundle_migrate(
+    path: Path = typer.Argument(..., exists=True, help="JSON artifact file to migrate"),
+    artifact_type: str = typer.Option(..., "--type", help="Artifact type from schema registry"),
+    to_version: str = typer.Option(..., "--to", help="Target schema version"),
+    dry_run: bool = typer.Option(True, "--dry-run/--write", help="Dry-run (default) or write"),
+    output: Path | None = typer.Option(None, "--output", help="Output path when --write"),
+    format: str = typer.Option("json", "--format"),
+) -> None:
+    """One-way artifact migration; never upgrades maturity (WP-17)."""
+    from verifierlab.artifacts.schema_registry import SchemaRegistryError, migrate_artifact
+
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        console.print("[red]artifact must be a JSON object[/red]")
+        raise typer.Exit(2)
+    try:
+        migrated = migrate_artifact(artifact_type, payload, to_version=to_version)
+    except SchemaRegistryError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    result = {
+        "dry_run": dry_run,
+        "artifact_type": artifact_type,
+        "from_version": payload.get("schema_version"),
+        "to_version": migrated.get("schema_version"),
+        "maturity_unchanged": True,
+        "artifact": migrated,
+    }
+    if not dry_run:
+        dest = output or path
+        dest.write_text(json.dumps(migrated, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        result["wrote"] = str(dest)
+    if format == "json":
+        _print_json(result)
+    else:
+        typer.echo(
+            f"{'dry-run' if dry_run else 'wrote'}: "
+            f"{result['from_version']} -> {result['to_version']}"
+        )
+    raise typer.Exit(0)
 
 
 __all__ = ["app"]
