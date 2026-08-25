@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from verifierlab.config.campaign import StatsPlan
 from verifierlab.reports import MetricsIngestError, build_report, compute_metrics
 
 
@@ -71,3 +72,64 @@ def test_build_report(tmp_path: Path) -> None:
     assert (run_dir / "report" / "report.html").is_file()
     assert (run_dir / "report" / "report.json").is_file()
     assert (run_dir / "report" / "metrics.csv").is_file()
+
+
+def test_build_report_preregistered_rate_shape(tmp_path: Path) -> None:
+    run_dir = tmp_path / "registered"
+    rows = [
+        {
+            "unit_id": "u0",
+            "cohort": "optimized",
+            "access_model": "black-box",
+            "verifier_accepted": True,
+            "gt_valid": False,
+        },
+        {
+            "unit_id": "u1",
+            "cohort": "optimized",
+            "access_model": "black-box",
+            "verifier_accepted": False,
+            "gt_valid": False,
+        },
+    ]
+    plan = StatsPlan.model_validate(
+        {
+            "methods": ["wilson"],
+            "alpha": 0.05,
+            "stopping_rule": "fixed_n",
+            "multiple_comparison_policy": "pre_registered_primary",
+            "preregistration": {
+                "schema_version": "1",
+                "registration_id": "report-rate-shape",
+                "estimands": [
+                    {
+                        "estimand_id": "far_optimized",
+                        "metric": "cohort_far",
+                        "role": "primary",
+                        "inference": "interval",
+                        "cohort": "optimized",
+                        "interval_method": "wilson",
+                        "alpha": 0.05,
+                        "direction": "higher_is_worse",
+                    }
+                ],
+                "assumptions": ["test fixture only"],
+            },
+        }
+    )
+    payload = build_report(
+        run_dir,
+        results=rows,
+        access_model="black-box",
+        require_labels_released=False,
+        stats_plan=plan,
+    )
+    registered = payload["metrics"]["registered_estimands"]["far_optimized"]["result"]
+    assert registered["estimate"] == 0.5
+    assert registered["interval"]["method"] == "wilson"
+    html = (run_dir / "report" / "report.html").read_text(encoding="utf-8")
+    assert "0.5000" in html
+    assert "(wilson)" in html
+    csv_text = (run_dir / "report" / "metrics.csv").read_text(encoding="utf-8")
+    assert "optimized,2,0.5" in csv_text
+    assert "{'estimate'" not in csv_text
