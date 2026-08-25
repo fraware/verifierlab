@@ -1,4 +1,4 @@
-name: One-shot repair schema assertion refresh
+name: One-shot repair v5 boundary refresh
 
 on:
   push:
@@ -19,31 +19,48 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv python install 3.12
       - run: uv sync --extra dev
-      - name: Refresh exact artifact-version assertions
+      - name: Refresh legacy qualification expectations
         run: |
           python - <<'PY'
           from pathlib import Path
 
-          paths = [
-              Path("tests/test_acceptance_gates.py"),
-              Path("tests/test_phase_d_exploits_repair.py"),
-              Path("tests/test_valab_hardening.py"),
-          ]
-          needle = 'assert artifact.schema_version == "3"'
-          replacement = 'assert artifact.schema_version == "5"'
-          for path in paths:
-              text = path.read_text(encoding="utf-8")
-              count = text.count(needle)
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              count = text.count(old)
               if count != 1:
-                  raise SystemExit(f"{path}: expected one stale schema assertion, found {count}")
-              path.write_text(text.replace(needle, replacement, 1), encoding="utf-8")
+                  raise SystemExit(f"{path}: expected one target block, found {count}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          replace_once(
+              "tests/test_acceptance_gates.py",
+              '''        assert artifact.schema_version == "3"\n        assert artifact.regression\n        assert artifact.fresh_attack\n        assert artifact.holdout is not None\n        assert artifact.mandatory_fresh_attacker is True\n        assert artifact.old_profile and artifact.new_profile\n        assert artifact.status == "pass"\n        assert artifact.trivial_reject_detected is False\n''',
+              '''        assert artifact.schema_version == "5"\n        assert artifact.regression\n        assert artifact.fresh_attack\n        assert artifact.holdout is not None\n        assert artifact.mandatory_fresh_attacker is True\n        assert artifact.old_profile and artifact.new_profile\n        assert artifact.qualification_grade is False\n        assert artifact.status == "fail"\n        assert artifact.trivial_reject_detected is False\n        assert artifact.fresh_attack["ledger"]["qualification_grade"] is False\n        assert "fresh_attack_not_canonical_campaign" in artifact.metadata["gate_failures"]\n        assert "synthetic_holdout_not_qualification_grade" in artifact.metadata["gate_failures"]\n''',
+          )
+
+          replace_once(
+              "tests/test_phase_d_exploits_repair.py",
+              '''    assert artifact.schema_version == "3"\n    assert artifact.old_profile["name"]\n    assert artifact.new_profile["name"]\n    assert artifact.metadata["old_profile_digest"] != artifact.metadata["new_profile_digest"]\n    assert artifact.budget["equalized_queries"] >= 4\n    assert artifact.budget["fresh"]["equalized"] is True\n    assert artifact.budget["fresh"]["holdout_isolated"] is True\n    assert artifact.holdout["source"] == "caller_holdout"\n    assert "far_delta_bootstrap" in artifact.paired_stats\n    assert artifact.mandatory_fresh_attacker is True\n''',
+              '''    assert artifact.schema_version == "5"\n    assert artifact.old_profile["name"]\n    assert artifact.new_profile["name"]\n    assert artifact.metadata["old_profile_digest"] != artifact.metadata["new_profile_digest"]\n    assert artifact.budget["equalized_queries"] >= 4\n    assert artifact.budget["fresh"]["qualification_grade"] is False\n    assert artifact.budget["fresh"]["persistent_strategy"] is True\n    assert artifact.budget["fresh"]["holdout_isolated_by_digest_only"] is True\n    assert artifact.budget["fresh"]["budget_queries"] == 4\n    assert artifact.budget["fresh"]["queries_used"] <= 4\n    assert artifact.qualification_grade is False\n    assert artifact.status == "fail"\n    assert "fresh_attack_not_canonical_campaign" in artifact.metadata["gate_failures"]\n    assert artifact.holdout["source"] == "caller_holdout"\n    assert "far_delta_bootstrap" in artifact.paired_stats\n    assert artifact.mandatory_fresh_attacker is True\n''',
+          )
+
+          replace_once(
+              "tests/test_valab_hardening.py",
+              '''def test_repair_good_pass_gates() -> None:\n''',
+              '''def test_repair_development_helper_does_not_pass_qualification_gate() -> None:\n''',
+          )
+          replace_once(
+              "tests/test_valab_hardening.py",
+              '''    assert artifact.schema_version == "3"\n    assert artifact.trivial_reject_detected is False\n    assert artifact.status == "pass"\n    assert artifact.failure_taxonomy\n    assert artifact.paired_stats.get("far_delta_bootstrap")\n''',
+              '''    assert artifact.schema_version == "5"\n    assert artifact.trivial_reject_detected is False\n    assert artifact.qualification_grade is False\n    assert artifact.status == "fail"\n    assert artifact.fresh_attack["ledger"]["qualification_grade"] is False\n    assert "fresh_attack_not_canonical_campaign" in artifact.metadata["gate_failures"]\n    assert "synthetic_holdout_not_qualification_grade" in artifact.metadata["gate_failures"]\n    assert artifact.failure_taxonomy\n    assert artifact.paired_stats.get("far_delta_bootstrap")\n''',
+          )
           PY
-      - name: Validate refreshed assertions
+      - name: Validate v5 boundary assertions
         run: |
           uv run ruff check tests/test_acceptance_gates.py tests/test_phase_d_exploits_repair.py tests/test_valab_hardening.py
           uv run ruff format --check tests/test_acceptance_gates.py tests/test_phase_d_exploits_repair.py tests/test_valab_hardening.py
-          uv run pytest tests/test_acceptance_gates.py::TestGate4Repair::test_repair_artifact_has_regression_fresh_holdout tests/test_phase_d_exploits_repair.py::test_repair_campaign_artifact_profiles_holdout_paired tests/test_valab_hardening.py::test_repair_good_pass_gates -q
-      - name: Commit assertion refresh
+          uv run pytest tests/test_acceptance_gates.py::TestGate4Repair::test_repair_artifact_has_regression_fresh_holdout tests/test_phase_d_exploits_repair.py::test_repair_campaign_artifact_profiles_holdout_paired tests/test_valab_hardening.py::test_repair_development_helper_does_not_pass_qualification_gate tests/test_repair_qualification_boundary.py tests/test_canonical_fresh_run_evidence.py -q
+      - name: Commit v5 boundary tests
         run: |
           set -euo pipefail
           git diff --check
@@ -51,5 +68,5 @@ jobs:
           git config user.email "repo-maintenance@users.noreply.github.com"
           git add tests/test_acceptance_gates.py tests/test_phase_d_exploits_repair.py tests/test_valab_hardening.py
           git diff --cached --quiet && exit 1
-          git commit -m "test(repair): expect canonical artifact schema v5"
+          git commit -m "test(repair): enforce canonical qualification boundary"
           git push origin HEAD:assurance/p0-repair-reattack
