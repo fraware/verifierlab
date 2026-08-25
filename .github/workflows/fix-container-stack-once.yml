@@ -1,0 +1,77 @@
+name: One-shot container maintenance
+
+on:
+  push:
+    branches: [assurance/p0-container-execution]
+    paths:
+      - ".github/workflows/fix-container-stack-once.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: assurance/p0-container-execution
+      - name: Apply asserted maintenance transforms
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one match, found {count}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          replace_once(
+              "src/verifierlab/execution/container.py",
+              "from __future__ import annotations\n\nimport json",
+              "from __future__ import annotations\n\nfrom contextlib import suppress\nimport json",
+          )
+          replace_once(
+              "src/verifierlab/execution/container.py",
+              '''            if container_id:\n                try:\n                    self._run(\n                        [self.docker_binary, "container", "rm", "--force", container_id],\n                        timeout=15.0,\n                        check=False,\n                    )\n                except Exception:\n                    # Cleanup failure must not overwrite the primary execution error.\n                    pass\n''',
+              '''            if container_id:\n                # Cleanup failure must not overwrite the primary execution error.\n                with suppress(Exception):\n                    self._run(\n                        [self.docker_binary, "container", "rm", "--force", container_id],\n                        timeout=15.0,\n                        check=False,\n                    )\n''',
+          )
+          replace_once(
+              "src/verifierlab/targets/isolation_probe.py",
+              "from __future__ import annotations\n\nimport importlib.util",
+              "from __future__ import annotations\n\nfrom contextlib import suppress\nimport importlib.util",
+          )
+          replace_once(
+              "src/verifierlab/targets/isolation_probe.py",
+              '''    try:\n        path.unlink()\n    except OSError:\n        pass\n    return True\n''',
+              '''    with suppress(OSError):\n        path.unlink()\n    return True\n''',
+          )
+          for path in (
+              "docker/worker/Dockerfile",
+              "docker/adjudicator/Dockerfile",
+              "docker/cli/Dockerfile",
+          ):
+              replace_once(
+                  path,
+                  "COPY scripts ./scripts\nRUN pip install",
+                  "COPY scripts ./scripts\nCOPY docs/templates ./docs/templates\nRUN pip install",
+              )
+          replace_once(
+              "docker/rllib/Dockerfile",
+              "COPY src /src/src\nRUN pip install",
+              "COPY src /src/src\nCOPY campaigns /src/campaigns\nCOPY docs/templates /src/docs/templates\nRUN pip install",
+          )
+          PY
+      - name: Commit maintenance changes
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name "repo-maintenance"
+          git config user.email "repo-maintenance@users.noreply.github.com"
+          git add src/verifierlab/execution/container.py src/verifierlab/targets/isolation_probe.py docker
+          git diff --cached --quiet && exit 1
+          git commit -m "fix(container): align build inputs and cleanup"
+          git push origin HEAD:assurance/p0-container-execution
