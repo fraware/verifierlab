@@ -21,7 +21,7 @@
     ]
   },
   "config_digest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
-  "content_digest": "91ab9bc520679c4b45a795d029bb7bc637cd375a71c6fa19b7f4749509f5efc8",
+  "content_digest": "2888e8e822452c1499e270e533e9e1b403b3f184b13540607d9830430573d78b",
   "decision_mapping": null,
   "decision_semantics": {
     "fail_closed": true,
@@ -39,7 +39,7 @@
   "metadata": {
     "pack": "A",
     "pinned_versions": {
-      "campaign": "pack-a@1",
+      "campaign": "pack-a@2",
       "verifierlab": "0.2.0rc2"
     },
     "theme": "outcome-vs-process"

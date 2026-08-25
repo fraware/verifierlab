@@ -21,7 +21,7 @@
     ]
   },
   "config_digest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
-  "content_digest": "113b37816be93e6fde48c26e1072d1e59266b0fb1bdc3b6799b89b25d36c5c7b",
+  "content_digest": "0f79cb2710d731e2a6cb9b174d1c35857349f4e4bd6d1d1a3c4dc89f44be3097",
   "decision_mapping": null,
   "decision_semantics": {
     "fail_closed": true,
@@ -39,7 +39,7 @@
   "metadata": {
     "pack": "C",
     "pinned_versions": {
-      "campaign": "pack-c@1",
+      "campaign": "pack-c@2",
       "verifierlab": "0.2.0rc2"
     },
     "theme": "isomorphic-relabel"

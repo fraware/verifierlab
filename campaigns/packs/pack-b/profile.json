@@ -21,7 +21,7 @@
     ]
   },
   "config_digest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
-  "content_digest": "e444463d805e035dd13393ab455ab8200c4dd3c9229f4f9753d2967440e5e3cc",
+  "content_digest": "4310c158aa0d5ed5052ceabdbd5cbc5397169ec6f18aafdeb6360de211a8b622",
   "decision_mapping": null,
   "decision_semantics": {
     "fail_closed": true,
@@ -39,7 +39,7 @@
   "metadata": {
     "pack": "B",
     "pinned_versions": {
-      "campaign": "pack-b@1",
+      "campaign": "pack-b@2",
       "verifierlab": "0.2.0rc2"
     },
     "theme": "rubric-gaming"
