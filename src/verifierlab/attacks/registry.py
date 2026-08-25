@@ -29,6 +29,7 @@ def get_strategy_class(name: str) -> type:
         from verifierlab.attacks import (
             coverage,
             evolutionary,
+            exploit_transfer,
             fuzzing,
             inference,
             metamorphic_search,
@@ -36,7 +37,16 @@ def get_strategy_class(name: str) -> type:
             rl,
         )
 
-        _ = (coverage, evolutionary, fuzzing, inference, metamorphic_search, ordinary, rl)
+        _ = (
+            coverage,
+            evolutionary,
+            exploit_transfer,
+            fuzzing,
+            inference,
+            metamorphic_search,
+            ordinary,
+            rl,
+        )
     if name not in _REGISTRY:
         known = ", ".join(sorted(_REGISTRY)) or "(none)"
         raise KeyError(f"unknown attack strategy {name!r}; known: {known}")

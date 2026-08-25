@@ -13,7 +13,16 @@ from verifierlab.attacks.registry import create_strategy, get_strategy_class
 
 # Strategies that persist state across episodes and may issue candidate queries.
 LEARNING_STRATEGIES = frozenset({"best_of_n", "beam", "evolutionary", "rl_tabular"})
-BASELINE_STRATEGIES = frozenset({"ordinary", "random_fuzz", "structured_fuzz", "coverage_fuzz"})
+BASELINE_STRATEGIES = frozenset(
+    {
+        "ordinary",
+        "random_fuzz",
+        "structured_fuzz",
+        "coverage_fuzz",
+        "metamorphic_search",
+        "exploit_transfer",
+    }
+)
 
 
 def is_learning_strategy(name: str) -> bool:
