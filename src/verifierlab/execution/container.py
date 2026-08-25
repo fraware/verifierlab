@@ -127,7 +127,9 @@ def build_create_command(
 ) -> list[str]:
     """Build the shell-free container-create command for one work unit."""
     cpus = policy.nano_cpus / 1_000_000_000
-    tmpfs_spec = f"rw,noexec,nosuid,size={policy.tmpfs_bytes}"
+    tmpfs_common = f"rw,noexec,nosuid,size={policy.tmpfs_bytes}"
+    tmpfs_tmp = f"{tmpfs_common},mode=1777"
+    tmpfs_worker = f"{tmpfs_common},uid=10001,gid=10001,mode=0700"
     return [
         docker_binary,
         "container",
@@ -146,8 +148,8 @@ def build_create_command(
         f"--pids-limit={policy.pids_limit}",
         f"--memory={policy.memory_bytes}",
         f"--cpus={cpus:g}",
-        f"--tmpfs={_TMP}:{tmpfs_spec}",
-        f"--tmpfs={_WORKER_DATA}:{tmpfs_spec}",
+        f"--tmpfs={_TMP}:{tmpfs_tmp}",
+        f"--tmpfs={_WORKER_DATA}:{tmpfs_worker}",
         policy.image,
     ]
 
@@ -170,9 +172,13 @@ def _tmpfs_is_restricted(value: Any, *, policy: ContainerIsolationPolicy) -> boo
         return False
     if set(value) != {_TMP, _WORKER_DATA}:
         return False
-    required = {"rw", "noexec", "nosuid", f"size={policy.tmpfs_bytes}"}
-    for spec in value.values():
-        tokens = {token.strip().lower() for token in str(spec).split(",")}
+    common = {"rw", "noexec", "nosuid", f"size={policy.tmpfs_bytes}"}
+    required_by_path = {
+        _TMP: common | {"mode=1777"},
+        _WORKER_DATA: common | {"uid=10001", "gid=10001", "mode=0700"},
+    }
+    for path, required in required_by_path.items():
+        tokens = {token.strip().lower() for token in str(value[path]).split(",")}
         if not required.issubset(tokens):
             return False
     return True
@@ -246,7 +252,20 @@ def boundary_manifest_from_inspect(
         inspect_digest=digest_of(inspect_payload),
         policy_satisfied=policy_satisfied,
         security_grade=security_grade,
-        **controls,
+        daemon_rootless=controls["daemon_rootless"],
+        network_none=controls["network_none"],
+        read_only_root=controls["read_only_root"],
+        cap_drop_all=controls["cap_drop_all"],
+        no_new_privileges=controls["no_new_privileges"],
+        seccomp_builtin=controls["seccomp_builtin"],
+        non_root_user=controls["non_root_user"],
+        no_host_mounts=controls["no_host_mounts"],
+        tmpfs_only_writable_paths=controls["tmpfs_only_writable_paths"],
+        private_ipc=controls["private_ipc"],
+        private_cgroupns=controls["private_cgroupns"],
+        host_pid_namespace_disabled=controls["host_pid_namespace_disabled"],
+        privileged_disabled=controls["privileged_disabled"],
+        devices_absent=controls["devices_absent"],
     )
     if not manifest.policy_satisfied:
         failed = [
