@@ -129,9 +129,9 @@ class RobustnessResponseSurfaceArtifact(BaseModel):
     missing_coordinate_count: int = Field(ge=0)
     indeterminate_coordinate_count: int = Field(ge=0)
     qualification_grade: Literal[False] = False
-    claim_boundary: Literal[
+    claim_boundary: Literal["released_adjudication_exact_coordinate_surface_no_extrapolation"] = (
         "released_adjudication_exact_coordinate_surface_no_extrapolation"
-    ] = "released_adjudication_exact_coordinate_surface_no_extrapolation"
+    )
 
     @property
     def content_digest(self) -> str:
@@ -182,8 +182,7 @@ def _compile_cell(
         reasons.extend(f"source_blocker:{item}" for item in blockers)
     if n_trials < plan.minimum_trials_per_coordinate:
         reasons.append(
-            "underpowered_coordinate:"
-            f"n={n_trials}<minimum={plan.minimum_trials_per_coordinate}"
+            f"underpowered_coordinate:n={n_trials}<minimum={plan.minimum_trials_per_coordinate}"
         )
 
     status: CellStatus = "indeterminate" if reasons else "estimated"
