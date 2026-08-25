@@ -63,7 +63,8 @@ def _manifest(
         policy=policy,
         container_id="c" * 64,
         inspect_payload=payload or _inspect(policy),
-        daemon_security_options=security_options or ["name=seccomp,profile=builtin", "name=rootless"],
+        daemon_security_options=security_options
+        or ["name=seccomp,profile=builtin", "name=rootless"],
         create_command=command,
     )
 
