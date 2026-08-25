@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-PROBE = Path(__file__).resolve().parents[1] / "src" / "verifierlab" / "targets" / "isolation_probe.py"
+PROBE = (
+    Path(__file__).resolve().parents[1] / "src" / "verifierlab" / "targets" / "isolation_probe.py"
+)
 
 
 def test_probe_contains_no_reference_answers() -> None:
