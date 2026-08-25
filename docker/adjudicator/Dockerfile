@@ -13,6 +13,7 @@ COPY pyproject.toml README.md LICENSE CHANGELOG.md ./
 COPY src ./src
 COPY campaigns ./campaigns
 COPY scripts ./scripts
+COPY docs/templates ./docs/templates
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir .
 

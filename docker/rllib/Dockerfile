@@ -33,6 +33,8 @@ RUN groupadd --system --gid 10001 valab \
 # Pin matches pyproject [rllib] extra. Image remains partial-qualification.
 COPY pyproject.toml README.md LICENSE /src/
 COPY src /src/src
+COPY campaigns /src/campaigns
+COPY docs/templates /src/docs/templates
 RUN pip install --no-cache-dir "/src[rllib]" \
     && printf '%s\n' \
       '#!/bin/sh' \
