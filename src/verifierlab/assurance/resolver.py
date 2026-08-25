@@ -580,7 +580,7 @@ class EvidenceResolver:
                     probes_ok = False
                     reasons.append(f"isolation_probe_invalid:{probe_digest[:12]}")
                     continue
-                if report.content_digest() != probe_digest:
+                if report.content_digest != probe_digest:
                     probes_ok = False
                     reasons.append(f"isolation_probe_digest_mismatch:{probe_digest[:12]}")
                 if not (
@@ -682,6 +682,7 @@ class EvidenceResolver:
         report_source = digest_of(report) if report else source
         registered = report.get("registered_estimands")
         complete = bool(prereg_ok and primary_ids and isinstance(registered, dict))
+        indeterminate_ids: list[str] = []
         if complete and isinstance(registered, dict):
             for estimand_id in primary_ids:
                 item = registered.get(estimand_id)
@@ -689,12 +690,16 @@ class EvidenceResolver:
                     complete = False
                     break
                 result = item.get("result")
-                if not isinstance(result, dict) or result.get("status") not in {
-                    "estimated",
-                    "indeterminate",
-                }:
+                if not isinstance(result, dict):
                     complete = False
                     break
+                status = result.get("status")
+                if status == "indeterminate":
+                    indeterminate_ids.append(estimand_id)
+                elif status != "estimated":
+                    complete = False
+                    break
+        determinate = bool(complete and not indeterminate_ids)
 
         negative_results = bool(
             report
@@ -726,6 +731,16 @@ class EvidenceResolver:
             if isinstance(candidate, dict) and candidate.get("synthetic_non_deployment_evidence"):
                 synthetic_reasons.append("synthetic_non_deployment_evidence")
 
+        estimand_reasons: tuple[str, ...]
+        if not complete:
+            estimand_reasons = ("primary_estimands_not_executably_compiled",)
+        elif indeterminate_ids:
+            estimand_reasons = (
+                "primary_estimands_indeterminate:" + ",".join(sorted(indeterminate_ids)),
+            )
+        else:
+            estimand_reasons = ()
+
         return [
             _fact(
                 "preregistered_study",
@@ -745,8 +760,8 @@ class EvidenceResolver:
                 "qualification_estimands_complete",
                 source=report_source,
                 validator="stats.registered_estimand_compilation",
-                outcome="true" if complete else "false",
-                reasons=() if complete else ("primary_estimands_not_executably_compiled",),
+                outcome="true" if determinate else "false",
+                reasons=estimand_reasons,
             ),
             _fact(
                 "negative_results_preserved",
@@ -1141,11 +1156,14 @@ def qualify_run(
     root = Path(run_or_study)
     if isinstance(claim, str | Path):
         claim_path = Path(claim)
-        claim_obj = AssuranceClaim.model_validate(
-            json.loads(claim_path.read_text(encoding="utf-8"))
-        )
+        claim_payload = json.loads(claim_path.read_text(encoding="utf-8"))
+        if isinstance(claim_payload, dict):
+            claim_payload.pop("content_digest", None)
+        claim_obj = AssuranceClaim.model_validate(claim_payload)
     elif isinstance(claim, dict):
-        claim_obj = AssuranceClaim.model_validate(claim)
+        claim_payload = dict(claim)
+        claim_payload.pop("content_digest", None)
+        claim_obj = AssuranceClaim.model_validate(claim_payload)
     else:
         claim_obj = claim
 
