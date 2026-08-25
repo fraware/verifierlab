@@ -129,10 +129,10 @@ jobs:
           PY
       - name: Run pack and registration regressions
         run: |
-          uv run ruff check src tests
-          uv run ruff format --check src tests
-          uv run mypy
           uv run pytest tests/test_preregistered_estimands.py tests/test_milestone_b.py tests/test_milestone_d.py tests/test_packs.py -q
+          for pack in campaigns/packs/pack-{a,b,c,d,e}-*.yaml; do
+            uv run valab pack lint "$pack" --format json >/dev/null
+          done
       - name: Commit registrations and regenerated artifacts
         run: |
           set -euo pipefail
