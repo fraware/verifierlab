@@ -14,7 +14,11 @@ from verifierlab.exploits.calibration import (
     CalibrationReleaseReceipt,
     CalibrationTruthItem,
     PlantedCalibrationDesign,
+    assert_no_public_calibration_leakage,
+    assert_truth_join_allowed,
     make_calibration_public_commitment,
+    scan_public_artifact_for_calibration_leakage,
+    seal_calibration_instrument,
     verify_calibration_public_commitment,
 )
 from verifierlab.exploits.layers import FailureLayer
@@ -22,6 +26,7 @@ from verifierlab.exploits.taxonomy import ExploitClass
 from verifierlab.statistics.calibration import (
     CalibrationAnalysisPlan,
     compile_planted_calibration_report,
+    register_calibration_analysis_plan,
 )
 
 NONCE = "post-run-opening-nonce"
@@ -105,15 +110,19 @@ def _observation(
     *,
     flagged: bool | None,
     run: str | None = None,
+    work_unit: str | None = None,
     profile: str = PROFILE,
 ) -> CalibrationObservation:
-    run_name = run or item.item_id
+    run_name = run or "shared-run"
+    unit_name = work_unit or item.item_id
     return CalibrationObservation(
         item_id=item.item_id,
         payload_digest=item.payload_digest,
         detector_profile_digest=profile,
+        work_unit_digest=digest_of(f"work:{unit_name}"),
         run_digest=digest_of(f"run:{run_name}"),
-        detector_output_digest=digest_of(f"output:{run_name}:{flagged}"),
+        execution_boundary_digest=digest_of(f"boundary:{unit_name}"),
+        detector_output_digest=digest_of(f"output:{unit_name}:{flagged}"),
         flagged=flagged,
     )
 
@@ -135,6 +144,19 @@ def _plan(
             "alpha": 0.05,
             "interval_method": method,
         }
+    )
+
+
+def _registration(
+    design: PlantedCalibrationDesign,
+    commitment: CalibrationPublicCommitment,
+    plan: CalibrationAnalysisPlan,
+):
+    return register_calibration_analysis_plan(
+        plan,
+        calibration_id=design.calibration_id,
+        public_commitment_digest=commitment.content_digest,
+        sealed_design_digest=design.content_digest,
     )
 
 
@@ -204,6 +226,7 @@ def test_attack_plane_commitment_does_not_disclose_truth_fields() -> None:
     assert "specification" not in serialized
     assert "implementation" not in serialized
     assert "Fixture difficulty" not in serialized
+    assert_no_public_calibration_leakage(payload, design=design, commitment_nonce=NONCE)
 
 
 def test_salted_commitment_changes_with_nonce_and_opens_exactly() -> None:
@@ -239,6 +262,7 @@ def test_observation_schema_cannot_embed_hidden_truth() -> None:
         "item_id": item.item_id,
         "payload_digest": item.payload_digest,
         "detector_profile_digest": PROFILE,
+        "work_unit_digest": digest_of("work"),
         "run_digest": digest_of("run"),
         "detector_output_digest": digest_of("output"),
         "flagged": True,
@@ -259,12 +283,15 @@ def test_released_report_computes_detection_and_false_alarm_metrics() -> None:
         _observation(by_id["clean-a"], flagged=True),
         _observation(by_id["clean-b"], flagged=False),
     ]
+    plan = _plan()
+    registration = _registration(design, commitment, plan)
     report = compile_planted_calibration_report(
         design,
         commitment,
         release,
         observations,
-        plan=_plan(),
+        plan=plan,
+        analysis_registration=registration,
     )
     assert report.status == "estimated"
     assert report.true_positive == 1
@@ -283,6 +310,9 @@ def test_released_report_computes_detection_and_false_alarm_metrics() -> None:
     assert report.claim_boundary == (
         "known_plant_instrument_calibration_not_unknown_verifier_robustness"
     )
+    assert report.analysis_registration_digest == registration.content_digest
+    assert len(report.source_work_unit_digests) == 4
+    assert len({obs.run_digest for obs in observations}) == 1
 
 
 def test_strata_preserve_known_mechanism_layer_and_difficulty() -> None:
@@ -453,8 +483,8 @@ def test_out_of_design_duplicates_and_mixed_profiles_are_rejected() -> None:
     commitment = _commitment(design)
     release = _release(design, commitment)
     by_id = {item.item_id: item for item in design.items}
-    a = _observation(by_id["plant-a"], flagged=True, run="a")
-    duplicate_item = _observation(by_id["plant-a"], flagged=False, run="b")
+    a = _observation(by_id["plant-a"], flagged=True, work_unit="a")
+    duplicate_item = _observation(by_id["plant-a"], flagged=False, work_unit="b")
     with pytest.raises(ValueError, match="duplicate observation"):
         compile_planted_calibration_report(
             design, commitment, release, [a, duplicate_item], plan=_plan()
@@ -464,6 +494,7 @@ def test_out_of_design_duplicates_and_mixed_profiles_are_rejected() -> None:
         item_id="outside",
         payload_digest=digest_of("outside-payload"),
         detector_profile_digest=PROFILE,
+        work_unit_digest=digest_of("outside-work"),
         run_digest=digest_of("outside-run"),
         detector_output_digest=digest_of("outside-output"),
         flagged=True,
@@ -474,15 +505,131 @@ def test_out_of_design_duplicates_and_mixed_profiles_are_rejected() -> None:
     b = _observation(
         by_id["plant-b"],
         flagged=True,
-        run="mixed-profile",
+        work_unit="mixed-profile",
         profile=digest_of("other-profile"),
     )
     with pytest.raises(ValueError, match="one detector profile"):
         compile_planted_calibration_report(design, commitment, release, [a, b], plan=_plan())
 
-    same_run = _observation(by_id["plant-b"], flagged=True, run="a")
-    with pytest.raises(ValueError, match="duplicate calibration run_digest"):
-        compile_planted_calibration_report(design, commitment, release, [a, same_run], plan=_plan())
+    same_work = _observation(by_id["plant-b"], flagged=True, work_unit="a")
+    with pytest.raises(ValueError, match="duplicate calibration work_unit_digest"):
+        compile_planted_calibration_report(design, commitment, release, [a, same_work], plan=_plan())
+
+
+def test_shared_run_digest_across_items_is_allowed() -> None:
+    design = _design()
+    commitment = _commitment(design)
+    release = _release(design, commitment)
+    observations = [
+        _observation(item, flagged=True, run="one-campaign-run") for item in design.items
+    ]
+    report = compile_planted_calibration_report(
+        design,
+        commitment,
+        release,
+        observations,
+        plan=_plan(),
+    )
+    assert len(report.source_run_digests) == 1
+    assert len(report.source_work_unit_digests) == len(design.items)
+
+
+def test_instrument_seal_before_attack_exposes_commitment_only() -> None:
+    design = _design()
+    plan = _plan()
+    commitment = _commitment(design)
+    registration = _registration(design, commitment, plan)
+    seal, public = seal_calibration_instrument(
+        design,
+        commitment_nonce=NONCE,
+        analysis_plan_registration_digest=registration.content_digest,
+    )
+    assert public == commitment
+    attack_plane = seal.attack_plane_artifact()
+    assert "sealed_design_digest" not in attack_plane
+    assert attack_plane["truth_on_attack_plane"] is False
+    assert attack_plane["truth_join_allowed"] is False
+    assert_no_public_calibration_leakage(attack_plane, design=design, commitment_nonce=NONCE)
+
+    with pytest.raises(ValueError, match="labels not released"):
+        assert_truth_join_allowed(seal=seal, release=None, labels_released=False)
+
+    release = _release(design, commitment)
+    with pytest.raises(ValueError, match="labels not released"):
+        assert_truth_join_allowed(seal=seal, release=release, labels_released=False)
+
+    assert_truth_join_allowed(seal=seal, release=release, labels_released=True)
+    report = compile_planted_calibration_report(
+        design,
+        commitment,
+        release,
+        [_observation(item, flagged=True) for item in design.items],
+        plan=plan,
+        analysis_registration=registration,
+        instrument_seal=seal,
+        labels_released=True,
+    )
+    assert report.instrument_seal_digest == seal.content_digest
+    assert report.supports_unknown_robustness_claim is False
+
+
+def test_analysis_plan_registration_must_precede_observations() -> None:
+    design = _design()
+    commitment = _commitment(design)
+    plan = _plan()
+    registration = _registration(design, commitment, plan)
+    assert registration.observations_available_at_registration is False
+    assert registration.observation_digests_at_registration == ()
+    with pytest.raises(ValueError, match="cannot bind observation digests"):
+        type(registration).model_validate(
+            {
+                **registration.model_dump(mode="json"),
+                "observation_digests_at_registration": [digest_of("obs")],
+            }
+        )
+
+    wrong_plan = plan.model_copy(update={"analysis_id": "other"})
+    release = _release(design, commitment)
+    with pytest.raises(ValueError, match="does not bind the supplied analysis plan"):
+        compile_planted_calibration_report(
+            design,
+            commitment,
+            release,
+            [_observation(design.items[0], flagged=True)],
+            plan=wrong_plan,
+            analysis_registration=registration,
+        )
+
+
+def test_recursive_public_artifact_leakage_harness() -> None:
+    design = _design()
+    commitment = _commitment(design)
+    assert_no_public_calibration_leakage(
+        {"public": commitment.model_dump(mode="json"), "nested": {"ok": True}},
+        design=design,
+        commitment_nonce=NONCE,
+    )
+    leaked = {
+        "wrapper": {
+            "notes": "see rubric-token-plant",
+            "extra": {"failure_layer": "specification"},
+        }
+    }
+    findings = scan_public_artifact_for_calibration_leakage(
+        leaked,
+        design=design,
+        commitment_nonce=NONCE,
+    )
+    assert any("rubric-token-plant" in item for item in findings)
+    assert any("forbidden_truth_key" in item for item in findings)
+    with pytest.raises(ValueError, match="leakage"):
+        assert_no_public_calibration_leakage(leaked, design=design, commitment_nonce=NONCE)
+    with pytest.raises(ValueError, match="leakage"):
+        assert_no_public_calibration_leakage(
+            {"salt": NONCE},
+            design=design,
+            commitment_nonce=NONCE,
+        )
 
 
 def test_report_digest_is_observation_order_invariant() -> None:

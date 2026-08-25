@@ -9,11 +9,13 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from verifierlab.artifacts.canonical import digest_of
 from verifierlab.exploits.calibration import (
+    CalibrationInstrumentSeal,
     CalibrationObservation,
     CalibrationPublicCommitment,
     CalibrationReleaseReceipt,
     CalibrationTruthItem,
     PlantedCalibrationDesign,
+    assert_truth_join_allowed,
     verify_calibration_public_commitment,
 )
 from verifierlab.exploits.layers import FailureLayer
@@ -41,6 +43,60 @@ class CalibrationAnalysisPlan(BaseModel):
     @property
     def content_digest(self) -> str:
         return digest_of(self.model_dump(mode="json"))
+
+
+class CalibrationAnalysisRegistration(BaseModel):
+    """Chronology-bound registration of an analysis plan before observations exist.
+
+    The registration digests the plan body and the pre-attack public commitment.
+    ``observations_available_at_registration`` is hard-coded false so a digest
+    string cannot be backdated after outcomes are known.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["1"] = "1"
+    calibration_id: str = Field(min_length=1)
+    plan: CalibrationAnalysisPlan
+    public_commitment_digest: str = Field(min_length=1)
+    sealed_design_digest: str = Field(min_length=1)
+    observations_available_at_registration: Literal[False] = False
+    observation_digests_at_registration: tuple[str, ...] = ()
+    registered_before_observations: Literal[True] = True
+
+    @model_validator(mode="after")
+    def _chronology_shape(self) -> CalibrationAnalysisRegistration:
+        if self.observation_digests_at_registration:
+            raise ValueError("analysis registration cannot bind observation digests")
+        if self.observations_available_at_registration is not False:
+            raise ValueError("analysis registration requires observations unavailable")
+        return self
+
+    @property
+    def content_digest(self) -> str:
+        return digest_of(self.model_dump(mode="json"))
+
+
+def register_calibration_analysis_plan(
+    plan: CalibrationAnalysisPlan,
+    *,
+    calibration_id: str,
+    public_commitment_digest: str,
+    sealed_design_digest: str,
+) -> CalibrationAnalysisRegistration:
+    """Bind an analysis plan before any calibration observations exist."""
+    if not calibration_id:
+        raise ValueError("calibration_id must be non-empty")
+    if not public_commitment_digest:
+        raise ValueError("public_commitment_digest must be non-empty")
+    if not sealed_design_digest:
+        raise ValueError("sealed_design_digest must be non-empty")
+    return CalibrationAnalysisRegistration(
+        calibration_id=calibration_id,
+        plan=plan,
+        public_commitment_digest=public_commitment_digest,
+        sealed_design_digest=sealed_design_digest,
+    )
 
 
 class CalibrationMetric(BaseModel):
@@ -99,8 +155,11 @@ class PlantedCalibrationReport(BaseModel):
     public_commitment_digest: str
     release_receipt_digest: str
     analysis_plan: CalibrationAnalysisPlan
+    analysis_registration_digest: str | None = None
+    instrument_seal_digest: str | None = None
     detector_profile_digest: str | None
     source_run_digests: tuple[str, ...]
+    source_work_unit_digests: tuple[str, ...] = ()
     total_planted: int = Field(ge=0)
     total_clean: int = Field(ge=0)
     observed_planted: int = Field(ge=0)
@@ -198,8 +257,17 @@ def compile_planted_calibration_report(
     observations: list[CalibrationObservation] | tuple[CalibrationObservation, ...],
     *,
     plan: CalibrationAnalysisPlan,
+    analysis_registration: CalibrationAnalysisRegistration | None = None,
+    instrument_seal: CalibrationInstrumentSeal | None = None,
+    labels_released: bool = True,
 ) -> PlantedCalibrationReport:
-    """Join detector outputs to sealed truth only after exact commitment release."""
+    """Join detector outputs to sealed truth only after exact commitment release.
+
+    When ``analysis_registration`` is supplied, chronology is verified: the plan
+    must have been bound before observations. When ``instrument_seal`` is
+    supplied, truth join is refused unless labels are released and the seal
+    matches the released design/commitment.
+    """
     if release.calibration_id != design.calibration_id:
         raise ValueError("release calibration_id does not match design")
     if commitment.calibration_id != design.calibration_id:
@@ -214,8 +282,36 @@ def compile_planted_calibration_report(
         commitment_nonce=release.commitment_nonce,
     )
 
+    if instrument_seal is not None:
+        assert_truth_join_allowed(
+            seal=instrument_seal,
+            release=release,
+            labels_released=labels_released,
+        )
+
+    if analysis_registration is not None:
+        if analysis_registration.calibration_id != design.calibration_id:
+            raise ValueError("analysis registration calibration_id does not match design")
+        if analysis_registration.public_commitment_digest != commitment.content_digest:
+            raise ValueError("analysis registration does not bind the public commitment")
+        if analysis_registration.sealed_design_digest != design.content_digest:
+            raise ValueError("analysis registration does not bind the sealed design")
+        if analysis_registration.plan.content_digest != plan.content_digest:
+            raise ValueError("analysis registration does not bind the supplied analysis plan")
+        if analysis_registration.observations_available_at_registration:
+            raise ValueError("analysis registration chronology violated: observations were available")
+        if analysis_registration.observation_digests_at_registration:
+            raise ValueError("analysis registration chronology violated: observation digests bound")
+        observation_digests = tuple(sorted(obs.content_digest for obs in observations))
+        if any(
+            digest in analysis_registration.observation_digests_at_registration
+            for digest in observation_digests
+        ):
+            raise ValueError("analysis registration must precede observation digests")
+
     truth_by_id = {item.item_id: item for item in design.items}
     observation_by_id: dict[str, CalibrationObservation] = {}
+    seen_work_units: set[str] = set()
     seen_runs: set[str] = set()
     detector_profiles: set[str] = set()
     for observation in observations:
@@ -226,9 +322,14 @@ def compile_planted_calibration_report(
             raise ValueError(f"payload digest mismatch for calibration item {observation.item_id}")
         if observation.item_id in observation_by_id:
             raise ValueError(f"duplicate observation for calibration item {observation.item_id}")
-        if observation.run_digest in seen_runs:
-            raise ValueError(f"duplicate calibration run_digest: {observation.run_digest}")
+        # Uniqueness is on work-unit identity (and item_id above). Multiple items
+        # may share one run_digest unless a protocol guarantees one run per item.
+        if observation.work_unit_digest in seen_work_units:
+            raise ValueError(
+                f"duplicate calibration work_unit_digest: {observation.work_unit_digest}"
+            )
         observation_by_id[observation.item_id] = observation
+        seen_work_units.add(observation.work_unit_digest)
         seen_runs.add(observation.run_digest)
         detector_profiles.add(observation.detector_profile_digest)
     if len(detector_profiles) > 1:
@@ -346,8 +447,15 @@ def compile_planted_calibration_report(
         public_commitment_digest=commitment.content_digest,
         release_receipt_digest=release.content_digest,
         analysis_plan=plan,
+        analysis_registration_digest=(
+            analysis_registration.content_digest if analysis_registration is not None else None
+        ),
+        instrument_seal_digest=(
+            instrument_seal.content_digest if instrument_seal is not None else None
+        ),
         detector_profile_digest=detector_profile_digest,
         source_run_digests=tuple(sorted(seen_runs)),
+        source_work_unit_digests=tuple(sorted(seen_work_units)),
         total_planted=total_planted,
         total_clean=total_clean,
         observed_planted=observed_planted,
@@ -398,8 +506,10 @@ def compile_planted_calibration_report(
 
 __all__ = [
     "CalibrationAnalysisPlan",
+    "CalibrationAnalysisRegistration",
     "CalibrationMetric",
     "CalibrationStratum",
     "PlantedCalibrationReport",
     "compile_planted_calibration_report",
+    "register_calibration_analysis_plan",
 ]
