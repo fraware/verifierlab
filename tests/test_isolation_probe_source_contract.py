@@ -11,9 +11,17 @@ PROBE = (
 
 def test_probe_contains_no_reference_answers() -> None:
     text = PROBE.read_text(encoding="utf-8")
-    assert "PlantedOracleGroundTruth" not in text
-    assert "gt_valid" not in text
-    assert "hidden_label" not in text.lower()
+    for forbidden in (
+        "PlantedOracleGroundTruth",
+        "ground_truth_ref",
+        "gt_valid",
+        "label_value",
+        "decrypt_label",
+    ):
+        assert forbidden not in text
+    # The probe must know only the name prefix used to detect accidental
+    # secret-environment inheritance. No hidden-label value is embedded here.
+    assert 'key.startswith("VALAB_HIDDEN_LABEL")' in text
 
 
 def test_probe_exercises_boundary_failures_not_task_semantics() -> None:
