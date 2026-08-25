@@ -1,0 +1,27 @@
+name: Validate robustness response surface v2
+
+on:
+  push:
+    branches: [research/robustness-response-surface-v2]
+    paths:
+      - ".github/workflows/validate-response-surface-v2-once.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: research/robustness-response-surface-v2
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.12
+      - run: uv sync --extra dev
+      - name: Validate exact-coordinate surface
+        run: |
+          uv run ruff check src/verifierlab/statistics/response_surface.py tests/test_robustness_response_surface.py
+          uv run ruff format --check src/verifierlab/statistics/response_surface.py tests/test_robustness_response_surface.py
+          uv run mypy src/verifierlab/statistics/response_surface.py tests/test_robustness_response_surface.py
+          uv run pytest tests/test_robustness_response_surface.py tests/test_preregistered_estimands.py tests/test_stats_plan_controls.py -q
