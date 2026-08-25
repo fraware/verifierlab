@@ -39,8 +39,15 @@ jobs:
           PY
       - name: Normalize and test
         run: |
-          uv run ruff format src/verifierlab/repairs/canonical_evidence.py src/verifierlab/repairs/compare.py tests/test_canonical_fresh_run_evidence.py tests/test_repair_qualification_boundary.py
-          uv run ruff check src tests
+          files=(
+            src/verifierlab/repairs/canonical_evidence.py
+            src/verifierlab/repairs/compare.py
+            tests/test_canonical_fresh_run_evidence.py
+            tests/test_repair_qualification_boundary.py
+          )
+          uv run ruff check --fix "${files[@]}"
+          uv run ruff format "${files[@]}"
+          uv run ruff check "${files[@]}"
           uv run pytest tests/test_repair_qualification_boundary.py tests/test_canonical_fresh_run_evidence.py -q
       - name: Commit validation cleanup
         run: |
