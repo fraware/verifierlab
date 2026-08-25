@@ -1,11 +1,11 @@
 """Adapter conformance harness shared by Inspect/Harbor/Gym/OpenEnv/NeMo.
 
-Checks cover:
-- config capture / version drift markers
-- raw trajectory preservation + resource accounting
-- timeout / error mapping
-- hidden-label isolation (no GT leakage in adapter payloads)
+Checks cover AdapterContractVersion surfaces:
 - decision normalization (accept / reject / abstain / error / timeout)
+- timeout / error taxonomy mapping
+- hidden-label isolation (no GT leakage in adapter payloads)
+- version reporting / config capture / version drift markers
+- raw trajectory preservation + resource accounting
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from verifierlab.api.decision import DecisionKind
 from verifierlab.api.verifier import normalize_decision
+from verifierlab.targets.contract import ADAPTER_CONTRACT_V1
 
 
 @runtime_checkable
@@ -37,6 +38,7 @@ class ConformanceResult:
     adapter: str
     checks: dict[str, bool] = field(default_factory=dict)
     details: dict[str, Any] = field(default_factory=dict)
+    contract: dict[str, Any] = field(default_factory=lambda: ADAPTER_CONTRACT_V1.as_report())
 
     @property
     def ok(self) -> bool:
@@ -46,6 +48,7 @@ class ConformanceResult:
         return {
             "adapter": self.adapter,
             "ok": self.ok,
+            "contract": dict(self.contract),
             "checks": dict(self.checks),
             "details": dict(self.details),
         }
@@ -142,9 +145,11 @@ def run_conformance(adapter: EnvAdapter, *, seed: int = 0) -> ConformanceResult:
     result.checks.update(check_isolation(obs, step, traj))
     result.checks.update({f"norm_{k}": v for k, v in check_decision_normalization().items()})
 
-    # Version drift marker present in config.
+    # Version drift marker present in config (version_reporting surface).
     result.checks["version_drift_field"] = "version" in cfg and "framework" in cfg
+    result.checks["contract_version_reported"] = bool(result.contract.get("digest"))
 
     result.details["config"] = cfg
     result.details["trajectory_keys"] = sorted(traj.keys()) if isinstance(traj, dict) else []
+    result.details["contract_surfaces"] = list(ADAPTER_CONTRACT_V1.surfaces)
     return result

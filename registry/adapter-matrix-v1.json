@@ -2,102 +2,183 @@
   "schema_version": "1",
   "title": "VerifierLab adapter matrix",
   "generated_by": "scripts/generate_adapter_matrix.py",
-  "note": "Fixture-only paths are never labeled live. EnvAssure is not-live until the package is installable. RLlib is integration conformance only.",
+  "adapter_contract": {
+    "contract_id": "verifierlab.adapter.contract",
+    "version": "1.0",
+    "surfaces": [
+      "decision_normalization",
+      "timeout_error_taxonomy",
+      "hidden_label_isolation",
+      "version_reporting"
+    ]
+  },
+  "note": "Statuses are live-tested / protocol-reference-tested / fixture-only / unsupported. Fixture-only paths are never labeled live-tested. EnvAssure remains fixture-only (not installable) until the package is on PyPI.",
   "adapters": [
     {
       "adapter": "native",
       "extra": null,
-      "status": "live",
-      "live_vs_fixture": "live",
+      "status": "live-tested",
+      "live_vs_fixture": "live-tested",
       "versions": {"python": ">=3.11,<3.14"},
       "ci": "required",
       "example": "examples/v1_native_verifier/",
-      "limitations": "No OS sandbox / soundness claim"
+      "limitations": "No OS sandbox / soundness claim",
+      "contract_surfaces": [
+        "decision_normalization",
+        "timeout_error_taxonomy",
+        "hidden_label_isolation",
+        "version_reporting"
+      ]
     },
     {
       "adapter": "gymnasium",
       "extra": "gym",
-      "status": "live",
-      "live_vs_fixture": "live",
+      "status": "live-tested",
+      "live_vs_fixture": "live-tested",
       "versions": {"gymnasium": ">=0.29,<1.3"},
       "ci": "release-qualified",
       "example": "examples/v2_gymnasium/",
-      "note": "Legacy gym is not a beta claim.",
-      "limitations": "Legacy gym; full RL stacks"
+      "note": "Legacy gym is not a release claim.",
+      "limitations": "Legacy gym; full RL stacks",
+      "contract_surfaces": [
+        "decision_normalization",
+        "timeout_error_taxonomy",
+        "hidden_label_isolation",
+        "version_reporting"
+      ]
     },
     {
       "adapter": "inspect",
       "extra": "inspect",
-      "status": "live",
-      "live_vs_fixture": "live_task/scorer_verifier live when SDK present; eval_log_import fixture",
+      "status": "live-tested",
+      "live_vs_fixture": "live_task/scorer_verifier live-tested when SDK present; eval_log_import fixture-only",
       "versions": {"inspect-ai": ">=0.3.200,<0.4"},
       "ci": "release-qualified",
       "modes": ["live_task", "scorer_verifier", "eval_log_import"],
       "example": "examples/v3_inspect/",
-      "note": "eval_log_import is fixture/regression and never labeled live.",
-      "limitations": "Fixture labeled as live"
+      "note": "eval_log_import is fixture/regression and never labeled live-tested.",
+      "limitations": "Do not label fixture eval_log_import as live-tested",
+      "contract_surfaces": [
+        "decision_normalization",
+        "timeout_error_taxonomy",
+        "hidden_label_isolation",
+        "version_reporting"
+      ]
     },
     {
       "adapter": "openenv",
       "extra": "openenv",
-      "status": "live-or-fixture",
-      "live_vs_fixture": "live HTTP reference; prefer official client when present",
+      "status": "protocol-reference-tested",
+      "live_vs_fixture": "protocol-reference-tested (HTTP reference; prefer official client when present)",
       "versions": {"openenv": ">=0.4,<0.5"},
       "ci": "release-qualified",
       "example": "examples/v4_openenv/",
       "note": "HTTP reference path works without the heavy SDK.",
-      "limitations": "Hosted Spaces automation"
+      "limitations": "Hosted Spaces automation",
+      "contract_surfaces": [
+        "decision_normalization",
+        "timeout_error_taxonomy",
+        "hidden_label_isolation",
+        "version_reporting"
+      ]
     },
     {
       "adapter": "harbor",
       "extra": "harbor",
-      "status": "fixture-or-live",
-      "live_vs_fixture": "ATIF fixture always; live SDK on Py>=3.12",
+      "status": "fixture-only",
+      "live_vs_fixture": "fixture-only (ATIF fixture always; optional SDK path on Py>=3.12 is not a matrix live claim)",
       "versions": {"harbor": ">=0.17,<0.21", "python": ">=3.12"},
       "ci": "optional",
-      "limitations": "Full Harbor orchestration"
+      "limitations": "Full Harbor orchestration",
+      "contract_surfaces": [
+        "decision_normalization",
+        "timeout_error_taxonomy",
+        "hidden_label_isolation",
+        "version_reporting"
+      ]
     },
     {
       "adapter": "nemo",
       "extra": "nemo",
-      "status": "live",
-      "live_vs_fixture": "live vs in-repo reference HTTP server",
+      "status": "protocol-reference-tested",
+      "live_vs_fixture": "protocol-reference-tested (in-repo reference HTTP server)",
       "versions": {},
       "ci": "fixture",
-      "note": "Live against in-repo reference HTTP server.",
-      "limitations": "NVIDIA training containers"
+      "note": "Exercised against in-repo reference HTTP server, not NVIDIA training containers.",
+      "limitations": "NVIDIA training containers",
+      "contract_surfaces": [
+        "decision_normalization",
+        "timeout_error_taxonomy",
+        "hidden_label_isolation",
+        "version_reporting"
+      ]
     },
     {
       "adapter": "trainer",
       "extra": "trainer",
-      "status": "live",
-      "live_vs_fixture": "live (broker-metered trainer loop in base)",
+      "status": "live-tested",
+      "live_vs_fixture": "live-tested (broker-metered trainer loop in base)",
       "versions": {},
       "ci": "fixture",
-      "note": "[rl]/[trainer] reserved for heavy SDKs; base loop is live.",
-      "limitations": "Heavy external SDKs"
+      "note": "[rl]/[trainer] reserved for heavy SDKs; base loop is live-tested.",
+      "limitations": "Heavy external SDKs",
+      "contract_surfaces": [
+        "decision_normalization",
+        "timeout_error_taxonomy",
+        "hidden_label_isolation",
+        "version_reporting"
+      ]
     },
     {
       "adapter": "envassure",
       "extra": "envassure",
-      "status": "not-live",
-      "live_vs_fixture": "not-live",
+      "status": "fixture-only",
+      "live_vs_fixture": "fixture-only",
+      "installable": false,
       "versions": {"envassure": ">=0.2.0b1,<0.3"},
       "ci": "hard-fail-when-installable",
       "example": "examples/v5_envassure/",
-      "note": "Package not yet published on PyPI; protocol/fixture tests only. Never claim live from fixtures.",
-      "limitations": "Fixture-as-live"
+      "note": "Package not yet published on PyPI; protocol/fixture tests only. Never claim live-tested from fixtures.",
+      "limitations": "Fixture-as-live",
+      "contract_surfaces": [
+        "decision_normalization",
+        "timeout_error_taxonomy",
+        "hidden_label_isolation",
+        "version_reporting"
+      ]
     },
     {
       "adapter": "rllib",
       "extra": "rllib",
-      "status": "partial",
-      "live_vs_fixture": "live-when-ray-installed (integration conformance)",
+      "status": "protocol-reference-tested",
+      "live_vs_fixture": "protocol-reference-tested when ray installed (integration conformance; skip-if-missing)",
       "versions": {"ray[rllib]": "==2.48.0"},
       "ci": "skip-if-missing",
       "example": "examples/v6_rllib/",
       "note": "Integration conformance only — not a capability claim. Image is partial-qualification.",
-      "limitations": "Capability / SOTA results"
+      "limitations": "Capability / SOTA results",
+      "contract_surfaces": [
+        "decision_normalization",
+        "timeout_error_taxonomy",
+        "hidden_label_isolation",
+        "version_reporting"
+      ]
+    },
+    {
+      "adapter": "objectstore",
+      "extra": "objectstore",
+      "status": "live-tested",
+      "live_vs_fixture": "live-tested with boto3 (scoped prefix CAS); local filesystem stand-in always",
+      "versions": {"boto3": ">=1.34"},
+      "ci": "optional",
+      "note": "Scoped-prefix object-store CAS tests cover security-grade key isolation.",
+      "limitations": "Default remains filesystem CAS",
+      "contract_surfaces": [
+        "decision_normalization",
+        "timeout_error_taxonomy",
+        "hidden_label_isolation",
+        "version_reporting"
+      ]
     }
   ]
 }

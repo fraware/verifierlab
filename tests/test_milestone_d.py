@@ -129,9 +129,16 @@ def test_adapter_matrix_generator(tmp_path: Path) -> None:
     assert out_md.is_file() and out_json.is_file()
     payload = json.loads(out_json.read_text(encoding="utf-8"))
     by_name = {r["adapter"]: r for r in payload["adapters"]}
-    assert by_name["envassure"]["status"] == "not-live"
-    assert by_name["rllib"]["status"] == "partial"
-    assert any(r["status"] == "live" for r in payload["adapters"])
+    assert by_name["envassure"]["status"] == "fixture-only"
+    assert by_name["envassure"].get("installable") is not True
+    assert by_name["envassure"]["live_vs_fixture"] == "fixture-only"
+    assert by_name["rllib"]["status"] == "protocol-reference-tested"
+    assert any(r["status"] == "live-tested" for r in payload["adapters"])
+    # Fixture rows must never use a bare live-tested live_vs_fixture label.
+    for row in payload["adapters"]:
+        if row["status"] in {"fixture-only", "unsupported"}:
+            assert "live-tested" not in str(row.get("live_vs_fixture", "")).split()
+            assert str(row.get("live_vs_fixture", "")).strip() != "live"
     check = subprocess.run(
         [
             sys.executable,

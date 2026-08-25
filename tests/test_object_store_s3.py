@@ -97,3 +97,21 @@ def test_s3_client_requires_explicit_construct() -> None:
     fake = FakeS3()
     client = S3ObjectStoreClient("bucket", client=fake, create_bucket=False)
     _cas_contract(client)
+
+
+def test_object_store_scoped_prefix_isolation(tmp_path: Path) -> None:
+    """Security-grade CAS: distinct prefixes must not share digests/keys."""
+    root = tmp_path / "s3"
+    client = LocalObjectStoreClient(root)
+    cas_a = ObjectStoreCAS(client, prefix="campaign-a/")
+    cas_b = ObjectStoreCAS(client, prefix="campaign-b/")
+    digest = cas_a.put_json({"secret": "campaign-a-only"})
+    assert cas_a.has(digest)
+    # Same content under a different prefix is a different object-store key.
+    key_a = f"campaign-a/{digest[:2]}/{digest}"
+    key_b = f"campaign-b/{digest[:2]}/{digest}"
+    assert client.exists(key_a)
+    assert not client.exists(key_b)
+    # Writing under B does not remove A's scoped object.
+    cas_b.put_json({"secret": "campaign-b-only"})
+    assert cas_a.get_json(digest) == {"secret": "campaign-a-only"}
