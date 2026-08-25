@@ -1,0 +1,57 @@
+name: One-shot container validation fix
+
+on:
+  push:
+    branches: [assurance/p0-container-execution]
+    paths:
+      - ".github/workflows/fix-container-validation-once.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: assurance/p0-container-execution
+      - name: Apply asserted validation fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one match, found {count}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          replace_once(
+              "src/verifierlab/execution/container.py",
+              "from contextlib import suppress\nimport json\nimport re\nimport subprocess\nimport uuid\nfrom typing import Any, Literal\n",
+              "import json\nimport re\nimport subprocess\nimport uuid\nfrom contextlib import suppress\nfrom typing import Any, Literal\n",
+          )
+          replace_once(
+              "src/verifierlab/targets/isolation_probe.py",
+              "from contextlib import suppress\nimport importlib.util\nimport os\nimport socket\nfrom pathlib import Path\nfrom typing import Any\n",
+              "import importlib.util\nimport os\nimport socket\nfrom contextlib import suppress\nfrom pathlib import Path\nfrom typing import Any\n",
+          )
+          replace_once(
+              ".dockerignore",
+              "tests\ndocs\nexamples\n",
+              "tests\ndocs/*\n!docs/templates/\n!docs/templates/**\nexamples\n",
+          )
+          PY
+      - name: Commit validation fixes
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name "repo-maintenance"
+          git config user.email "repo-maintenance@users.noreply.github.com"
+          git add .dockerignore src/verifierlab/execution/container.py src/verifierlab/targets/isolation_probe.py
+          git diff --cached --quiet && exit 1
+          git commit -m "fix(container): include packaged templates in build context"
+          git push origin HEAD:assurance/p0-container-execution
