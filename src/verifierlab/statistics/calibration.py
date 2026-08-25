@@ -241,38 +241,38 @@ def compile_planted_calibration_report(
     indeterminate_planted = indeterminate_clean = 0
     true_positive = false_negative = false_positive = true_negative = 0
 
-    strata_counts: dict[tuple[ExploitClass, FailureLayer, str, str, int], dict[str, int]] = defaultdict(
-        lambda: {"total": 0, "observed": 0, "determinate": 0, "flagged": 0}
+    strata_counts: dict[tuple[ExploitClass, FailureLayer, str, str, int], dict[str, int]] = (
+        defaultdict(lambda: {"total": 0, "observed": 0, "determinate": 0, "flagged": 0})
     )
 
     for item in design.items:
-        observation = observation_by_id.get(item.item_id)
+        matched = observation_by_id.get(item.item_id)
         if item.kind == "planted_exploit":
             key = _planted_key(item)
             stratum = strata_counts[key]
             stratum["total"] += 1
-            if observation is None:
+            if matched is None:
                 missing_planted += 1
                 continue
             observed_planted += 1
             stratum["observed"] += 1
-            if observation.flagged is None:
+            if matched.flagged is None:
                 indeterminate_planted += 1
                 continue
             stratum["determinate"] += 1
-            if observation.flagged:
+            if matched.flagged:
                 true_positive += 1
                 stratum["flagged"] += 1
             else:
                 false_negative += 1
         else:
-            if observation is None:
+            if matched is None:
                 missing_clean += 1
                 continue
             observed_clean += 1
-            if observation.flagged is None:
+            if matched.flagged is None:
                 indeterminate_clean += 1
-            elif observation.flagged:
+            elif matched.flagged:
                 false_positive += 1
             else:
                 true_negative += 1

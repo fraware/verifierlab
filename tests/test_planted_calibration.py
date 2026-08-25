@@ -228,7 +228,7 @@ def test_tampered_design_does_not_open_existing_commitment() -> None:
         mechanism="rubric-token-plant",
         difficulty=2,
     )
-    tampered = design.model_copy(update={"items": (replacement,) + design.items[1:]})
+    tampered = design.model_copy(update={"items": (replacement, *design.items[1:])})
     with pytest.raises(ValueError, match="does not open"):
         verify_calibration_public_commitment(tampered, commitment, commitment_nonce=NONCE)
 
@@ -359,7 +359,9 @@ def test_underpowered_report_keeps_estimates_but_suppresses_intervals() -> None:
     design = _design()
     commitment = _commitment(design)
     release = _release(design, commitment)
-    observations = [_observation(item, flagged=item.kind == "planted_exploit") for item in design.items]
+    observations = [
+        _observation(item, flagged=item.kind == "planted_exploit") for item in design.items
+    ]
     report = compile_planted_calibration_report(
         design,
         commitment,
@@ -382,7 +384,9 @@ def test_exact_interval_uses_existing_canonical_method_label() -> None:
     design = _design()
     commitment = _commitment(design)
     release = _release(design, commitment)
-    observations = [_observation(item, flagged=item.kind == "planted_exploit") for item in design.items]
+    observations = [
+        _observation(item, flagged=item.kind == "planted_exploit") for item in design.items
+    ]
     report = compile_planted_calibration_report(
         design,
         commitment,
@@ -452,7 +456,9 @@ def test_out_of_design_duplicates_and_mixed_profiles_are_rejected() -> None:
     a = _observation(by_id["plant-a"], flagged=True, run="a")
     duplicate_item = _observation(by_id["plant-a"], flagged=False, run="b")
     with pytest.raises(ValueError, match="duplicate observation"):
-        compile_planted_calibration_report(design, commitment, release, [a, duplicate_item], plan=_plan())
+        compile_planted_calibration_report(
+            design, commitment, release, [a, duplicate_item], plan=_plan()
+        )
 
     outside = CalibrationObservation(
         item_id="outside",
@@ -483,7 +489,9 @@ def test_report_digest_is_observation_order_invariant() -> None:
     design = _design()
     commitment = _commitment(design)
     release = _release(design, commitment)
-    observations = [_observation(item, flagged=item.kind == "planted_exploit") for item in design.items]
+    observations = [
+        _observation(item, flagged=item.kind == "planted_exploit") for item in design.items
+    ]
     plan = _plan()
     left = compile_planted_calibration_report(
         design,
