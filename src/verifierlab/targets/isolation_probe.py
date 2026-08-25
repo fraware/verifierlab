@@ -9,6 +9,7 @@ reference answers.
 
 from __future__ import annotations
 
+from contextlib import suppress
 import importlib.util
 import os
 import socket
@@ -45,10 +46,8 @@ def _can_write(path: Path) -> bool:
         path.write_text("probe", encoding="utf-8")
     except OSError:
         return False
-    try:
+    with suppress(OSError):
         path.unlink()
-    except OSError:
-        pass
     return True
 
 

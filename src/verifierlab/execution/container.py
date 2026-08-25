@@ -16,6 +16,7 @@ it has a dedicated protocol that cannot expose coordinator state.
 
 from __future__ import annotations
 
+from contextlib import suppress
 import json
 import re
 import subprocess
@@ -415,15 +416,13 @@ class ContainerWorkerExecutor:
             return result
         finally:
             if container_id:
-                try:
+                # Cleanup failure must not overwrite the primary execution error.
+                with suppress(Exception):
                     self._run(
                         [self.docker_binary, "container", "rm", "--force", container_id],
                         timeout=15.0,
                         check=False,
                     )
-                except Exception:
-                    # Cleanup failure must not overwrite the primary execution error.
-                    pass
 
 
 __all__ = [
