@@ -1,8 +1,8 @@
 name: Security
 
 # CodeQL on PR/push + dependency audit / SBOM.
-# High/critical pip-audit findings hard-fail on main, release branches, and
-# annotated release tags (WP-18). Time-bounded waivers use security/waivers/.
+# Protected release lines fail on any pip-audit finding. The workflow does not
+# silently suppress findings by severity or apply undocumented waivers.
 
 on:
   push:
@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       fail_audit:
-        description: "Hard-fail on high/critical pip-audit findings"
+        description: "Hard-fail on pip-audit findings"
         required: false
         type: boolean
         default: true
@@ -67,7 +67,6 @@ jobs:
   audit-sbom:
     name: Dependency audit + SBOM
     runs-on: ubuntu-latest
-    # Hard-fail path on main/release/tags; advisory elsewhere unless dispatch requests fail.
     if: >
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'release' ||
@@ -116,14 +115,11 @@ jobs:
       - name: Dependency audit (pip-audit)
         id: audit
         continue-on-error: ${{ steps.posture.outputs.hard_fail != 'true' }}
+        shell: bash
         run: |
+          set -euo pipefail
           uv pip install pip-audit
-          # Fail on HIGH/CRITICAL for protected lines; advisory otherwise.
-          if [[ "${{ steps.posture.outputs.hard_fail }}" == "true" ]]; then
-            uv run pip-audit --desc --severity-level=high
-          else
-            uv run pip-audit --desc
-          fi
+          uv run pip-audit --desc
 
       - name: Generate SBOM (CycloneDX)
         run: |
