@@ -1,0 +1,145 @@
+name: One-shot science-pack analysis registration migration
+
+on:
+  push:
+    branches: [assurance/p0-preregistered-estimands]
+    paths:
+      - ".github/workflows/migrate-science-pack-preregistration-once.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: assurance/p0-preregistered-estimands
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.12
+      - run: uv sync --extra dev
+      - name: Bind existing pack estimands explicitly
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          packs = {
+              "a": "pack-a-outcome-vs-process.yaml",
+              "b": "pack-b-rubric.yaml",
+              "c": "pack-c-isomorphic.yaml",
+              "d": "pack-d-eval-cheating.yaml",
+              "e": "pack-e-coevolution.yaml",
+          }
+          root = Path("campaigns/packs")
+          old_stats = '''stats_plan:\n  methods: [wilson]\n  alpha: 0.05\n  stopping_rule: fixed_n\n  multiple_comparison_policy: pre_registered_primary\n'''
+          assumptions = [
+              "FAR interpretation assumes released adjudicated validity labels are the reference-correct labels for this pack.",
+              "Optimized-cohort membership is fixed by campaign configuration and treated as fixed for analysis.",
+              "Inference is scoped to this pack's configured work units, attack generators, verifier version, and access model; it does not establish population-level robustness outside that regime.",
+          ]
+
+          for letter, filename in packs.items():
+              path = root / filename
+              text = path.read_text(encoding="utf-8")
+              old_pin = f'  campaign: "pack-{letter}@1"'
+              new_pin = f'  campaign: "pack-{letter}@2"'
+              if text.count(old_pin) != 1:
+                  raise SystemExit(f"{path}: expected exactly one v1 campaign pin")
+              if text.count(old_stats) != 1:
+                  raise SystemExit(f"{path}: expected exactly one legacy stats_plan block")
+
+              assumption_lines = "\n".join(f"      - {value}" for value in assumptions)
+              new_stats = f'''stats_plan:\n  methods: [wilson]\n  alpha: 0.05\n  stopping_rule: fixed_n\n  multiple_comparison_policy: pre_registered_primary\n  preregistration:\n    schema_version: "1"\n    registration_id: "pack-{letter}@2-far-optimized"\n    estimands:\n      - estimand_id: far_optimized\n        metric: cohort_far\n        role: primary\n        inference: interval\n        cohort: optimized\n        interval_method: wilson\n        alpha: 0.05\n        direction: higher_is_worse\n    assumptions:\n{assumption_lines}\n'''
+              text = text.replace(old_pin, new_pin, 1).replace(old_stats, new_stats, 1)
+              path.write_text(text, encoding="utf-8")
+          PY
+      - name: Regenerate and verify all derived pack artifacts
+        run: |
+          uv run python - <<'PY'
+          from pathlib import Path
+          from verifierlab.campaigns.packs import write_pack_sidecars, verify_pack
+          from verifierlab.config.campaign import load_campaign
+          from verifierlab.statistics.plan import compile_stats_plan
+
+          root = Path("campaigns/packs")
+          for letter in "abcde":
+              matches = sorted(root.glob(f"pack-{letter}-*.yaml"))
+              if len(matches) != 1:
+                  raise SystemExit(f"pack {letter}: expected one YAML, found {len(matches)}")
+              path = matches[0]
+              spec, diagnostics = load_campaign(path)
+              errors = [d for d in diagnostics if getattr(d, "severity", None) == "error"]
+              if errors:
+                  raise SystemExit(f"{path}: campaign errors: {errors!r}")
+              reg = spec.stats_plan.preregistration
+              if reg is None:
+                  raise SystemExit(f"{path}: preregistration missing after migration")
+              if reg.registration_id != f"pack-{letter}@2-far-optimized":
+                  raise SystemExit(f"{path}: unexpected registration id {reg.registration_id!r}")
+              if len(reg.estimands) != 1:
+                  raise SystemExit(f"{path}: expected exactly one declared estimand")
+              est = reg.estimands[0]
+              expected = {
+                  "estimand_id": "far_optimized",
+                  "metric": "cohort_far",
+                  "role": "primary",
+                  "inference": "interval",
+                  "cohort": "optimized",
+                  "interval_method": "wilson",
+                  "alpha": 0.05,
+                  "direction": "higher_is_worse",
+              }
+              actual = est.model_dump(mode="json", exclude_none=True)
+              for key, value in expected.items():
+                  if actual.get(key) != value:
+                      raise SystemExit(f"{path}: {key}={actual.get(key)!r}, expected {value!r}")
+
+              rows = [
+                  {
+                      "unit_id": "invalid-accepted",
+                      "cohort": "optimized",
+                      "access_model": spec.access_model.value,
+                      "gt_valid": False,
+                      "verifier_accepted": True,
+                  },
+                  {
+                      "unit_id": "invalid-rejected",
+                      "cohort": "optimized",
+                      "access_model": spec.access_model.value,
+                      "gt_valid": False,
+                      "verifier_accepted": False,
+                  },
+              ]
+              report = compile_stats_plan(
+                  rows,
+                  plan=spec.stats_plan,
+                  access_model=spec.access_model.value,
+              )
+              if report["primary_estimands"] != ["far_optimized"]:
+                  raise SystemExit(f"{path}: primary estimand drift")
+              result = report["registered_estimands"]["far_optimized"]["result"]
+              if result.get("inferential") is not True or result.get("alpha") != 0.05:
+                  raise SystemExit(f"{path}: registered inference was not applied: {result!r}")
+
+              write_pack_sidecars(path, force=True)
+              ok, pack_diags, _ = verify_pack(path)
+              if not ok:
+                  raise SystemExit(f"{path}: sidecar verification failed: {pack_diags!r}")
+          PY
+      - name: Run pack and registration regressions
+        run: |
+          uv run ruff check src tests
+          uv run ruff format --check src tests
+          uv run mypy
+          uv run pytest tests/test_preregistered_estimands.py tests/test_milestone_b.py tests/test_milestone_d.py tests/test_packs.py -q
+      - name: Commit registrations and regenerated artifacts
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name "repo-maintenance"
+          git config user.email "repo-maintenance@users.noreply.github.com"
+          git add campaigns/packs/pack-a-outcome-vs-process.yaml campaigns/packs/pack-b-rubric.yaml campaigns/packs/pack-c-isomorphic.yaml campaigns/packs/pack-d-eval-cheating.yaml campaigns/packs/pack-e-coevolution.yaml campaigns/packs/pack-a campaigns/packs/pack-b campaigns/packs/pack-c campaigns/packs/pack-d campaigns/packs/pack-e
+          git diff --cached --quiet && exit 1
+          git commit -m "feat(packs): bind declared primary estimands"
+          git push origin HEAD:assurance/p0-preregistered-estimands
