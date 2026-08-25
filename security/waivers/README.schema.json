@@ -1,0 +1,29 @@
+{
+  "schema_version": "1",
+  "title": "pip-audit waiver schema (WP-18)",
+  "description": "Time-bounded waivers for high/critical findings. Absent a valid unexpired waiver, audits fail closed on main/release/tags.",
+  "required_fields": [
+    "id",
+    "package",
+    "advisory",
+    "severity",
+    "expires_on",
+    "rationale",
+    "owner"
+  ],
+  "severity_enum": ["high", "critical"],
+  "notes": [
+    "expires_on is ISO-8601 date (UTC).",
+    "Do not waive without owner + expiry.",
+    "Empty waivers/ directory means zero active waivers."
+  ],
+  "example": {
+    "id": "WAIVE-0000",
+    "package": "example-pkg",
+    "advisory": "GHSA-xxxx",
+    "severity": "high",
+    "expires_on": "2026-12-31",
+    "rationale": "No reachability in VerifierLab base install; tracked upstream.",
+    "owner": "@fraware"
+  }
+}

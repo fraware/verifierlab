@@ -1,0 +1,7 @@
+{
+  "artifact_type": "beam_checkpoint",
+  "beam": [],
+  "expect_ok": false,
+  "schema_version": "99",
+  "strategy": "beam"
+}
