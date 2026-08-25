@@ -83,7 +83,11 @@ class BrokerRewardEnv:
         self._env_steps = 0
         if seed is not None:
             self._seed = int(seed)
-        result = self.env.reset(seed=seed, options=options) if options is not None else self.env.reset(seed=seed)
+        result = (
+            self.env.reset(seed=seed, options=options)
+            if options is not None
+            else self.env.reset(seed=seed)
+        )
         if isinstance(result, tuple) and len(result) == 2:
             obs, info = result
         else:

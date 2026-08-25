@@ -156,8 +156,10 @@ def _print_verifier_spec_text(payload: dict[str, object]) -> None:
     source = payload.get("source") or {}
     if isinstance(source, dict):
         console.print(f"source: {source.get('module')}:{source.get('qualname')}")
-    for lim in payload.get("limitations") or []:
-        console.print(f"limitation: {lim}")
+    limitations = payload.get("limitations")
+    if isinstance(limitations, (list, tuple)):
+        for lim in limitations:
+            console.print(f"limitation: {lim}")
 
 
 @verifier_app.command("inspect")

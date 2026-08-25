@@ -17,7 +17,12 @@ def test_tabular_trainer_implements_full_protocol() -> None:
     action = trainer.act({"step": 0, "balance": 500})
     assert "op" in action
     stats = trainer.train(
-        {"obs": {"step": 0, "balance": 500}, "action": action, "reward": 1.0, "next_obs": {"step": 1}}
+        {
+            "obs": {"step": 0, "balance": 500},
+            "action": action,
+            "reward": 1.0,
+            "next_obs": {"step": 1},
+        }
     )
     assert "td_error" in stats
     # Aliases

@@ -7,6 +7,7 @@ absent.
 
 from __future__ import annotations
 
+import contextlib
 import json
 from typing import Any
 
@@ -29,8 +30,7 @@ def require_ray_rllib() -> Any:
         import ray
     except ImportError as exc:
         raise ImportError(
-            "RLlib adapter requires ray[rllib]; "
-            "install with: pip install 'verifierlab[rllib]'"
+            "RLlib adapter requires ray[rllib]; install with: pip install 'verifierlab[rllib]'"
         ) from exc
     return ray
 
@@ -130,15 +130,14 @@ class RLlibPPOAdapter:
         if self._algo is not None and self._wrapped is not None:
             # Compute action from last observation when algo is live.
             obs = observation.get("observation", observation)
-            try:
+            with contextlib.suppress(Exception):
                 action = self._algo.compute_single_action(obs)
                 return {"action": action}
-            except Exception:
-                pass
         # Deterministic stub action for protocol conformance without full PPO graph.
         space = getattr(self._wrapped, "action_space", None) if self._wrapped else None
         if space is not None and hasattr(space, "sample"):
-            return {"action": int(space.sample()) if hasattr(space.sample(), "__int__") else 0}
+            sample = space.sample()
+            return {"action": int(sample) if hasattr(sample, "__int__") else 0}
         return {"action": 0}
 
     def train(self, transition: dict[str, Any]) -> dict[str, Any]:
@@ -197,10 +196,8 @@ class RLlibPPOAdapter:
         self.max_env_steps = state.get("max_env_steps", self.max_env_steps)
         path = state.get("algo_checkpoint")
         if path and self._algo is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._algo.restore(path)
-            except Exception:
-                pass
         if self._wrapped is not None and self._frozen:
             self._wrapped.freeze()
 
@@ -217,26 +214,20 @@ class RLlibPPOAdapter:
     def evaluate(self, observation: dict[str, Any]) -> dict[str, Any]:
         """Act without learning (holdout / frozen path)."""
         was_frozen = self._frozen
-        self._frozen = True
+        # ``act`` dispatches frozen calls back to ``evaluate``. Temporarily
+        # clear only the dispatch flag so evaluation reuses the ordinary action
+        # path without recursion; no training/update method is invoked here.
+        self._frozen = False
         try:
-            action = self.act(observation) if was_frozen else self.act(observation)
-            # Force non-learning act path.
-            if self._algo is not None:
-                obs = observation.get("observation", observation)
-                try:
-                    action = {"action": self._algo.compute_single_action(obs)}
-                except Exception:
-                    pass
-            return {"action": action.get("action", 0), "mode": "evaluate", "frozen": True}
+            action = self.act(observation)
         finally:
             self._frozen = was_frozen
+        return {"action": action.get("action", 0), "mode": "evaluate", "frozen": True}
 
     def close(self) -> None:
         if self._algo is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._algo.stop()
-            except Exception:
-                pass
             self._algo = None
         if self._wrapped is not None:
             self._wrapped.close()

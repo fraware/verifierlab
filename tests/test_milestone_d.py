@@ -75,7 +75,7 @@ def test_science_pack_completeness(letter: str) -> None:
 
 
 def test_pack_f_integrity_has_no_science_sidecars_required() -> None:
-    # Pack F remains integrity-only; sidecar layout is A–E only.
+    # Pack F remains integrity-only; sidecar layout is A-E only.
     path = PACKS / "pack-f-integrity-auth.yaml"
     assert path.is_file()
     ok, diags, info = lint_pack(path)

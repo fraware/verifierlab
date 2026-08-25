@@ -210,13 +210,9 @@ def build_planted_failure_sidecar(spec: CampaignSpec) -> dict[str, Any]:
             or planted.get("description")
             or "",
             "expected_taxonomies": list(
-                planted.get("expected_taxonomies")
-                or meta.get("expected_taxonomies")
-                or []
+                planted.get("expected_taxonomies") or meta.get("expected_taxonomies") or []
             ),
-            "optimized_attack_names": [
-                a.name for a in spec.attacks if a.cohort == "optimized"
-            ],
+            "optimized_attack_names": [a.name for a in spec.attacks if a.cohort == "optimized"],
         }
     else:
         optimized = [a for a in spec.attacks if a.cohort == "optimized"]
@@ -445,17 +441,16 @@ def lint_pack(path: Path) -> tuple[bool, list[Diagnostic], dict[str, Any]]:
                     path=str(yaml_path),
                 )
             )
-        if not spec.splits:
-            # Sidecar splits are acceptable; warn only if sidecar also missing.
-            if not (side / "splits.json").is_file():
-                diags.append(
-                    Diagnostic(
-                        code="VALAB.PACK.MISSING_SPLITS",
-                        severity=DiagnosticSeverity.ERROR,
-                        message="science pack requires splits in YAML or splits.json sidecar",
-                        path=str(yaml_path),
-                    )
+        # Sidecar splits are acceptable when YAML omits splits.
+        if not spec.splits and not (side / "splits.json").is_file():
+            diags.append(
+                Diagnostic(
+                    code="VALAB.PACK.MISSING_SPLITS",
+                    severity=DiagnosticSeverity.ERROR,
+                    message="science pack requires splits in YAML or splits.json sidecar",
+                    path=str(yaml_path),
                 )
+            )
         if not spec.stats_plan.methods:
             diags.append(
                 Diagnostic(
@@ -467,7 +462,9 @@ def lint_pack(path: Path) -> tuple[bool, list[Diagnostic], dict[str, Any]]:
             )
         diags.extend(assert_no_labels_in_public_pack(side))
         if (side / "expected-public-digests.json").is_file():
-            expected = json.loads((side / "expected-public-digests.json").read_text(encoding="utf-8"))
+            expected = json.loads(
+                (side / "expected-public-digests.json").read_text(encoding="utf-8")
+            )
             live = campaign_public_digest(spec)
             if expected.get("campaign_digest") != live:
                 diags.append(
