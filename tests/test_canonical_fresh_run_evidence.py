@@ -210,7 +210,9 @@ def test_process_local_or_missing_boundary_cannot_establish_freshness(tmp_path: 
 
     assert evidence.fresh_attacker_established is False
     assert evidence.execution_security_grade is False
-    assert any(item.startswith("execution_boundary_missing:") for item in evidence.qualification_blockers)
+    assert any(
+        item.startswith("execution_boundary_missing:") for item in evidence.qualification_blockers
+    )
 
 
 def test_tampered_split_manifest_is_rejected_even_with_new_self_digest(tmp_path: Path) -> None:

@@ -108,7 +108,13 @@ def _holdout_units(split_manifest: dict[str, Any]) -> tuple[str, ...]:
             raise RuntimeError("split manifest unit must be an object")
         learning = row.get("learning")
         split = str(row.get("split") or "").strip().lower()
-        if learning is False or split in {"holdout", "test", "eval", "evaluation", "private_holdout"}:
+        if learning is False or split in {
+            "holdout",
+            "test",
+            "eval",
+            "evaluation",
+            "private_holdout",
+        }:
             if learning is not False:
                 raise RuntimeError("holdout split is not marked non-learning")
             unit_id = str(row.get("unit_id") or "")
@@ -167,7 +173,9 @@ def _qualification_rows(
             k: v for k, v in attack_row.items() if k not in _RELEASE_ONLY_FIELDS
         }
         if analysis_attack_fields != original_attack_fields:
-            raise RuntimeError(f"released analysis row diverges from sealed attack artifact: {unit_id}")
+            raise RuntimeError(
+                f"released analysis row diverges from sealed attack artifact: {unit_id}"
+            )
         rows.append(row)
         work_digests.append(cas_digest)
     return rows, tuple(sorted(work_digests))
@@ -292,7 +300,9 @@ def load_canonical_fresh_run(
         if row.get("attacker_checkpoint") or row.get("persistent") is True
     ]
     if persistent_rows:
-        blockers.extend(f"persistent_attacker_state_present:{unit_id}" for unit_id in persistent_rows)
+        blockers.extend(
+            f"persistent_attacker_state_present:{unit_id}" for unit_id in persistent_rows
+        )
 
     holdout_isolated = all(row.get("learning") is False for row in rows)
     if not holdout_isolated:
