@@ -156,7 +156,7 @@
       "ci": "skip-if-missing",
       "example": "examples/v6_rllib/",
       "note": "Integration conformance only — not a capability claim. Image is partial-qualification.",
-      "limitations": "Capability / SOTA results",
+      "limitations": "Capability / leaderboard-style results",
       "contract_surfaces": [
         "decision_normalization",
         "timeout_error_taxonomy",

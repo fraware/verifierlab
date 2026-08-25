@@ -17,7 +17,7 @@ Adapter contract `verifierlab.adapter.contract` v1.0.
 | nemo | `[nemo]` | protocol-reference-tested | protocol-reference-tested (in-repo reference HTTP server) | — | fixture | NVIDIA training containers |
 | trainer | `[trainer]` | live-tested | live-tested (broker-metered trainer loop in base) | — | fixture | Heavy external SDKs |
 | envassure | `[envassure]` | fixture-only | fixture-only | envassure `>=0.2.0b1,<0.3` | hard-fail-when-installable | Fixture-as-live |
-| rllib | `[rllib]` | protocol-reference-tested | protocol-reference-tested when ray installed (integration conformance; skip-if-missing) | ray[rllib] `==2.48.0` | skip-if-missing | Capability / SOTA results |
+| rllib | `[rllib]` | protocol-reference-tested | protocol-reference-tested when ray installed (integration conformance; skip-if-missing) | ray[rllib] `==2.48.0` | skip-if-missing | Capability / leaderboard-style results |
 | objectstore | `[objectstore]` | live-tested | live-tested with boto3 (scoped prefix CAS); local filesystem stand-in always | boto3 `>=1.34` | optional | Default remains filesystem CAS |
 
 ## Notes

@@ -123,7 +123,7 @@ docs/governance/appeals/            # non-security appeals
 ## 15. Explicit non-goals (this draft)
 
 - Operating independent reproduction **grants** (funding, selection, payment)
-- Claiming SOTA verifier soundness from pack results
+- Claiming verifier soundness or leaderboard-style superiority from pack results
 - Automatic installation or execution of registry plugins
 
 ## Related

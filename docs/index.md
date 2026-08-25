@@ -1,7 +1,7 @@
 # VerifierLab documentation
 
 Package `verifierlab`, CLI `valab`, version aligned with `pyproject.toml`
-(`0.2.0rc2` release candidate).
+(`0.2.0rc2` on `integration/final-assurance` — not yet stable `main`).
 
 | Doc | Audience |
 | --- | -------- |
@@ -10,18 +10,21 @@ Package `verifierlab`, CLI `valab`, version aligned with `pyproject.toml`
 | [CLI reference](cli.md) | Operators |
 | [Architecture](architecture.md) | Contributors |
 | [Methodology](methodology.md) | Researchers |
+| [Claim language](claim-language.md) | Everyone |
 | [Adapters](adapters.md) | Integrators |
 | [Attacks](attacks.md) | Researchers |
 | [Labels and statistics](labels-and-stats.md) | Researchers |
 | [Disclosure](disclosure.md) | Security / maintainers |
-| [Disclosure template](templates/disclosure.md) | Community |
-| [Incident template](templates/incident.md) | Operators |
 | [Threat model](threat-model.md) | Security reviewers |
+| [Support matrix](support-matrix.md) | Operators |
+| [Repository protection policy](repository-protection-policy.md) | Maintainers |
+| [Quality engineering](quality-engineering.md) | Contributors |
+| [Final acceptance](final-acceptance.md) | Maintainers |
+| [Tutorials: security-grade](tutorials/security-grade.md) | Operators |
+| [Tutorials: method surfaces](tutorials/method-surfaces.md) | Researchers |
 | [Reproduction checklist](reproduction-checklist.md) | Independent reproducers |
-| [Beta acceptance](beta-acceptance.md) | Maintainers |
 | [Limitations (honest non-claims)](limitations.md) | Everyone |
 | [Governance charter](governance/charter.md) | Maintainers / council |
-| [Good-first issues](community/good-first-issues.md) | New contributors |
 | [Contributing guides](contributing/verifiers.md) | Contributors |
 
 Project links:

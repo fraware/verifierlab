@@ -84,7 +84,7 @@ Release manifests embed the same rows under `adapter_matrix`.
 | OpenEnv | `[openenv]` | protocol-reference-tested | Hosted Spaces automation |
 | Trainer | `[rl]` / `[trainer]` | live-tested | Heavy external SDKs |
 | EnvAssure | `[envassure]` | **fixture-only** until package installable | Fixture-as-live |
-| RLlib | `[rllib]` | protocol-reference-tested | Capability / SOTA results |
+| RLlib | `[rllib]` | protocol-reference-tested | Capability / leaderboard-style results |
 | S3 CAS | `[objectstore]` | live-tested (scoped prefix) | Default remains filesystem CAS |
 | Slurm / Kubernetes | optional | live when tools/client work | Otherwise explicit dry-run |
 

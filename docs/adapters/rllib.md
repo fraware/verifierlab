@@ -9,7 +9,7 @@
 ## Live vs fixture
 
 **Live when Ray is installed.** PR-tier tiny tests skip if `ray` is missing.
-Presented as **integration conformance**, not a capability / SOTA result.
+Presented as **integration conformance**, not a capability or leaderboard-style result.
 
 Protocol: `initialize` / `train` / `act` / `checkpoint` / `restore` / `freeze` /
 `evaluate` / `close` (aliases: `start` / `learn` / `save` / `load`).
@@ -29,7 +29,7 @@ adjudicator secrets. Rewards only via broker; freeze before holdout.
 
 ## Unsupported semantics
 
-- Capability / SOTA claims from conformance tiers
+- Capability / leaderboard-style claims from conformance tiers
 - Shipping the RLlib image as fully release-qualified before end-to-end smoke
 
 ## Conformance command

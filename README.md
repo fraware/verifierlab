@@ -27,7 +27,10 @@
 
 **VerifierLab** is a local-first lab for running reproducible campaigns that ask a hard question: *when something is optimized against your verifier, does the verifier still do its job?*
 
-You wrap a grader or reward function, run ordinary baselines alongside optimized-*tagged* attack cohorts under declared budgets and access models, then rebuild reports from content-addressed artifacts after **freeze → adjudicate → release-labels**. Finding no exploit is evidence under those conditions — not a proof of correctness. This release candidate (`0.2.0rc2`) meets executable RC gates 1–6 in `tests/test_acceptance_gates.py`; do not claim soundness or SOTA verifier assurance. Honest gaps (default process-local trust boundary, research-grade attack depth) are listed in [docs/limitations.md](docs/limitations.md).
+`verifierlab` is a local-first lab for running reproducible campaigns that ask a hard question: *when something is optimized against your verifier, does the verifier still do its job?*
+
+You wrap a grader or reward function, run ordinary baselines alongside optimized-*tagged* attack cohorts under declared budgets and access models, then rebuild reports from content-addressed artifacts after **freeze → adjudicate → release-labels**. Finding no exploit is evidence under those conditions — not a proof of correctness. This integration candidate (`0.2.0rc2` on `integration/final-assurance`) meets executable RC gates 1–6 and final-acceptance hooks A–J in-repo; do not claim soundness, SOTA verifier assurance, `scientifically_qualified`, or `security_grade` without derived artifacts. Honest gaps are listed in [docs/limitations.md](docs/limitations.md) and [docs/claim-language.md](docs/claim-language.md).
+
 
 ## Why it exists
 
@@ -42,7 +45,23 @@ VerifierLab exists so you can:
 
 ## Status
 
-**Release candidate** (`0.2.0rc2`). Gates 1–6 are encoded and passing in `tests/test_acceptance_gates.py` (isolation, optimization, measurement, repair, reproduction, developer lifecycle). Core loop — workspace, process workers, typed decisions, broker metering with worker budget vouchers, vault v2, freeze→adjudicate→release, StatsPlan reports, packs A–F, and the offline tutorial — is implemented and tested. See [docs/limitations.md](docs/limitations.md) and [SECURITY.md](SECURITY.md). Optional adapters and launchers ship behind extras or explicit dry-run modes. APIs and CLI may still shift before 0.2.0.
+**Integration line** (`integration/final-assurance`, package `0.2.0rc2`). This
+branch closes the final-assurance programme through Gates G0–G6 feature work and
+G7 in-repo acceptance hooks. It is **not** stable `main` until maintainers
+fast-forward protected `main` after G7.
+
+RC gates 1–6 remain encoded in `tests/test_acceptance_gates.py`. Final gates A–J
+live in `tests/test_final_acceptance_gates.py` and [docs/final-acceptance.md](docs/final-acceptance.md).
+
+Honest maturity: the flagship study at `studies/flagship-2026/` is
+**`internally_verified`** with machine-derived blockers. This tree does **not**
+claim `scientifically_qualified`, `security_grade`, or `deployment_calibrated`.
+Approved phrasing: [docs/claim-language.md](docs/claim-language.md). Gaps:
+[docs/limitations.md](docs/limitations.md), [SECURITY.md](SECURITY.md).
+
+APIs and CLI may still shift before a post-G7 stable tag. Do not bump to `1.0`
+without the release gate and an explicit maintainer request.
+
 
 ## Install
 

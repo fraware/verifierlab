@@ -9,11 +9,32 @@ with pre-release tags (`a` = alpha, `b` = beta, `rc` = release candidate).
 
 ## [Unreleased]
 
+### Added (integration/final-assurance — G7 / WP-16…WP-22)
+
+- Shared `AdapterContractVersion` and honest matrix statuses
+  (`live-tested` / `protocol-reference-tested` / `fixture-only` / `unsupported`)
+- Central artifact schema registry + `valab bundle verify|migrate` (dry-run default);
+  migrations cannot upgrade maturity
+- Coverage partitions config, Hypothesis property suite, mutation/fuzz corpus hooks,
+  worker secret scan, pip-audit hard-fail posture on main/release
+- Repository protection policy + support matrix (Windows not release-qualified)
+- Claim-language policy + lint; architecture/methodology/threat-model refresh;
+  security-grade + method-surface tutorials
+- Final acceptance gates A–J (`docs/final-acceptance.md`,
+  `tests/test_final_acceptance_gates.py`)
+
+### Status note
+
+Package version remains **`0.2.0rc2`**. This integration line is ready for Gate G7
+review; it is not a stable `1.0` bump. Flagship study maturity stays
+`internally_verified` with honest blockers — not `scientifically_qualified` /
+`security_grade` / `deployment_calibrated`.
+
 ### Planned
 
 - Optional `[stats]` extra with SciPy-backed exact intervals
 - Stronger OS/sandbox enforcement for untrusted plugins (default remains process-local)
-- CLI surfaces for disclosure and adapter routing (today: Python APIs)
+- Admin enablement of protected `main` required checks (cannot be flipped from agents)
 
 ## [0.2.0rc2] — 2026-07-26
 
