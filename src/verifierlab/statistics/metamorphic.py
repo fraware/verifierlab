@@ -229,10 +229,7 @@ def get_registered_transformation(
 
 def list_registered_transformations() -> dict[str, str]:
     """Return transformation ids mapped to their immutable spec digests."""
-    return {
-        key: spec.content_digest
-        for key, (spec, _) in sorted(_TRANSFORMATION_REGISTRY.items())
-    }
+    return {key: spec.content_digest for key, (spec, _) in sorted(_TRANSFORMATION_REGISTRY.items())}
 
 
 def user_alias_transform(
@@ -305,9 +302,11 @@ class MetamorphicCaseEvidence(BaseModel):
             raise ValueError("verifier_violation requires verifier_invariant=false")
         if self.status == "indeterminate" and self.verifier_invariant is not None:
             raise ValueError("indeterminate status requires verifier_invariant=null")
-        if self.status in {"verifier_violation", "invalid_transform", "indeterminate"}:
-            if self.counterexample is None:
-                raise ValueError(f"{self.status} requires typed counterexample evidence")
+        if (
+            self.status in {"verifier_violation", "invalid_transform", "indeterminate"}
+            and self.counterexample is None
+        ):
+            raise ValueError(f"{self.status} requires typed counterexample evidence")
         if self.status == "consistent" and self.counterexample is not None:
             raise ValueError("consistent evidence cannot carry a counterexample")
         return self
@@ -389,8 +388,6 @@ def evaluate_registered_transformation(
 
     gt_before = bool(is_valid(original))
     gt_after = bool(is_valid(transformed))
-    verifier_before = normalize_decision(verifier(original)).accepted
-    verifier_after = normalize_decision(verifier(transformed)).accepted
 
     if gt_before != gt_after:
         counterexample = _counterexample(
@@ -401,8 +398,8 @@ def evaluate_registered_transformation(
             transformed_digest=transformed_digest,
             gt_before=gt_before,
             gt_after=gt_after,
-            verifier_before=verifier_before,
-            verifier_after=verifier_after,
+            verifier_before=None,
+            verifier_after=None,
         )
         evidence = MetamorphicCaseEvidence(
             transformation=spec,
@@ -413,8 +410,8 @@ def evaluate_registered_transformation(
             gt_before=gt_before,
             gt_after=gt_after,
             gt_invariant=False,
-            verifier_before=verifier_before,
-            verifier_after=verifier_after,
+            verifier_before=None,
+            verifier_after=None,
             verifier_invariant=None,
             status="invalid_transform",
             counterexample=counterexample,
@@ -422,6 +419,9 @@ def evaluate_registered_transformation(
         if fail_on_invalid_transform:
             raise InvalidMetamorphicTransformation(evidence)
         return evidence
+
+    verifier_before = normalize_decision(verifier(original)).accepted
+    verifier_after = normalize_decision(verifier(transformed)).accepted
 
     if verifier_before is None or verifier_after is None:
         counterexample = _counterexample(

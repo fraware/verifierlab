@@ -109,7 +109,9 @@ def test_registry_verifies_implementation_digest_and_rejects_duplicate_id() -> N
     with pytest.raises(ValueError, match="already registered"):
         register_transformation(spec, user_alias_transform)
 
-    tampered = spec.model_copy(update={"transformation_id": "fixture.registry.tampered", "implementation_digest": "0" * 64})
+    tampered = spec.model_copy(
+        update={"transformation_id": "fixture.registry.tampered", "implementation_digest": "0" * 64}
+    )
     with pytest.raises(ValueError, match="implementation digest mismatch"):
         register_transformation(tampered, user_alias_transform)
 
