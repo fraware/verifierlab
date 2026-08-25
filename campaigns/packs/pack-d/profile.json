@@ -21,7 +21,7 @@
     ]
   },
   "config_digest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
-  "content_digest": "7d3bc00488528aa7c7c762ec6e922905fea2574e6c29e9a2fe8928738bf06c27",
+  "content_digest": "483ef4d38750e1465fddaba699012e18a2ddddd2aa4d4c6988ed6ee4a6a439e5",
   "decision_semantics": {
     "fail_closed": true,
     "status_set": [
@@ -38,7 +38,7 @@
   "metadata": {
     "pack": "D",
     "pinned_versions": {
-      "campaign": "pack-d@1",
+      "campaign": "pack-d@2",
       "verifierlab": "0.2.0rc2"
     },
     "theme": "evaluation-cheating"
