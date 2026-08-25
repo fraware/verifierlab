@@ -23,6 +23,8 @@ Thumbs.db
 
 # Tests and docs are not required inside runtime images
 tests
-docs
+docs/*
+!docs/templates/
+!docs/templates/**
 examples
 mkdocs.yml

@@ -3,7 +3,7 @@
 # Coordinator, adjudication, label, reporting, and repair surfaces are removed
 # from the installed runtime instead of relying on an import denylist.
 
-ARG PYTHON_BASE=python:3.12-slim-bookworm@sha256:60b63e1aa22af2bd734a72e4acc572c1dde035250cc9da5d16a0bdcff2fba82f
+ARG PYTHON_BASE=python:3.12-slim-bookworm@sha256:a116514e19457bcb7af7efe9c3dd0b9b71e85b317694e7882a1c52aa15a78134
 
 FROM ${PYTHON_BASE} AS build
 WORKDIR /src
@@ -14,6 +14,7 @@ COPY pyproject.toml README.md LICENSE CHANGELOG.md ./
 COPY src ./src
 COPY campaigns ./campaigns
 COPY scripts ./scripts
+COPY docs/templates ./docs/templates
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir .
 
