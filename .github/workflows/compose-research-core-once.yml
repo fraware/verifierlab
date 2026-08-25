@@ -1,0 +1,114 @@
+name: Compose combined research core
+
+on:
+  push:
+    branches: [validation/research-core-combined]
+    paths:
+      - ".github/workflows/compose-research-core-once.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: validation/research-core-combined
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.12
+      - run: uv sync --extra dev
+      - name: Import validated profile repair and experiment files
+        run: |
+          set -euo pipefail
+          git fetch origin validation/hacker-fixer-solver-clean
+          source_ref=FETCH_HEAD
+          paths=(
+            src/verifierlab/api/decision.py
+            src/verifierlab/campaigns/engine.py
+            src/verifierlab/campaigns/worker.py
+            src/verifierlab/verifiers/__init__.py
+            src/verifierlab/verifiers/broker.py
+            src/verifierlab/verifiers/profile.py
+            tests/test_campaign_e2e.py
+            tests/test_campaign_profile_binding.py
+            tests/test_score_decision_fail_closed.py
+            tests/test_score_decision_mapping.py
+            src/verifierlab/repairs/__init__.py
+            src/verifierlab/repairs/candidate.py
+            src/verifierlab/repairs/canonical_evidence.py
+            src/verifierlab/repairs/compare.py
+            tests/test_acceptance_gates.py
+            tests/test_canonical_fresh_run_evidence.py
+            tests/test_phase_d_exploits_repair.py
+            tests/test_repair_qualification_boundary.py
+            tests/test_valab_hardening.py
+            src/verifierlab/campaigns/hacker_fixer_solver.py
+            tests/test_hacker_fixer_solver_protocol.py
+          )
+          git checkout "$source_ref" -- "${paths[@]}"
+      - name: Regenerate science-pack profile bindings under combined semantics
+        run: |
+          uv run python - <<'PY'
+          from pathlib import Path
+          from verifierlab.campaigns.packs import write_pack_sidecars, verify_pack
+
+          root = Path("campaigns/packs")
+          for letter in "abcde":
+              matches = sorted(root.glob(f"pack-{letter}-*.yaml"))
+              if len(matches) != 1:
+                  raise SystemExit(f"pack {letter}: expected one YAML, found {len(matches)}")
+              path = matches[0]
+              write_pack_sidecars(path, force=True)
+              ok, diagnostics, _ = verify_pack(path)
+              if not ok:
+                  raise SystemExit(f"{path}: regenerated sidecar verification failed: {diagnostics!r}")
+          PY
+      - name: Validate combined semantics
+        run: |
+          uv run ruff check src tests
+          uv run ruff format --check src tests
+          uv run mypy
+          uv run pytest \
+            tests/test_score_decision_fail_closed.py \
+            tests/test_score_decision_mapping.py \
+            tests/test_campaign_profile_binding.py \
+            tests/test_canonical_fresh_run_evidence.py \
+            tests/test_repair_qualification_boundary.py \
+            tests/test_hacker_fixer_solver_protocol.py \
+            tests/test_preregistered_estimands.py \
+            tests/test_stats_plan_controls.py \
+            tests/test_metrics_report.py \
+            tests/test_packs.py -q
+          for pack in campaigns/packs/pack-{a,b,c,d,e}-*.yaml; do
+            uv run valab pack lint "$pack" --format json >/dev/null
+          done
+      - name: Commit combined research core
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name "repo-maintenance"
+          git config user.email "repo-maintenance@users.noreply.github.com"
+          git add \
+            src/verifierlab/api/decision.py \
+            src/verifierlab/campaigns/engine.py \
+            src/verifierlab/campaigns/worker.py \
+            src/verifierlab/verifiers \
+            src/verifierlab/repairs \
+            src/verifierlab/campaigns/hacker_fixer_solver.py \
+            tests/test_campaign_e2e.py \
+            tests/test_campaign_profile_binding.py \
+            tests/test_score_decision_fail_closed.py \
+            tests/test_score_decision_mapping.py \
+            tests/test_acceptance_gates.py \
+            tests/test_canonical_fresh_run_evidence.py \
+            tests/test_phase_d_exploits_repair.py \
+            tests/test_repair_qualification_boundary.py \
+            tests/test_valab_hardening.py \
+            tests/test_hacker_fixer_solver_protocol.py \
+            campaigns/packs/pack-a campaigns/packs/pack-b campaigns/packs/pack-c campaigns/packs/pack-d campaigns/packs/pack-e
+          git diff --cached --quiet && exit 1
+          git commit -m "chore(validation): compose research assurance core"
+          git push origin HEAD:validation/research-core-combined
