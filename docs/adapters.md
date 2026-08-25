@@ -34,7 +34,8 @@ pip install "verifierlab[adapters]"      # gym + inspect + harbor + openenv + ne
 # Opt-in (not in [adapters] composite): envassure (may be unpublished), rllib (heavy)
 ```
 
-Or with uv: `uv sync --extra gym` (and similarly for other extras).
+Adapter matrix: [adapters/matrix.md](adapters/matrix.md). Claim language:
+[claim-language.md](claim-language.md).
 
 ## Per-adapter pages
 

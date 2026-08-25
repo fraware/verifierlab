@@ -9,18 +9,22 @@
 | `0.1.x` (alpha) | Best-effort; prefer upgrading to `0.2.0rc2` |
 
 There is no long-term support channel yet. Prefer reporting against the latest
-`main` / `release/0.2-rc` commit. Package version is **`0.2.0rc2`** with
-executable gates in `tests/test_acceptance_gates.py` — still not a soundness
-or SOTA assurance claim.
+`main` or `integration/final-assurance` commit until protected `main` is
+fast-forwarded. Package version is **`0.2.0rc2`** with executable RC gates
+(`tests/test_acceptance_gates.py`) and final-acceptance gates A–J
+(`tests/test_final_acceptance_gates.py`). That is software readiness — not a
+soundness or security-grade assurance claim. See
+[docs/claim-language.md](docs/claim-language.md).
 
 ## What this project is (and is not)
 
 VerifierLab evaluates verifier robustness. Campaign results showing “no exploit
 found” are **not** soundness proofs. Do not treat the toolkit as a substitute
 for formal verification, production sandboxing, or coordinated vulnerability
-disclosure for third-party systems.
+disclosure for third-party systems. Process-local runs are development-grade;
+`security_grade` evidence requires rootless/separate-domain runners.
 
-## Integrity posture (Phases 0–E)
+## Integrity posture (RC + final-assurance)
 
 | Area | Honest status |
 | ---- | ------------- |
@@ -31,10 +35,13 @@ disclosure for third-party systems.
 | Access models | Capability-gated at `VerifierBroker`. |
 | “Optimized” cohorts | Persistent attacker runtime with candidate-level metering. |
 | Sandbox profiles | Process isolation default. Optional `[sandbox]` Docker runner (no network, RO mounts, limits) when Docker is available; otherwise honest `unavailable` — default local path trusts host Python. |
+| Security-grade path | Digest-pinned rootless worker + probes; rootful/process hosts fail closed. |
+| Maturity labels | Artifact-derived only; caller booleans cannot promote. |
 | Transcript audit | Structural + plugin findings are **not** ground truth. |
 
 Report concrete vault/CAS/bypass bugs via the channels below. See
-[docs/limitations.md](docs/limitations.md) for trust-boundary notes.
+[docs/limitations.md](docs/limitations.md) and
+[docs/threat-model.md](docs/threat-model.md) for trust-boundary notes.
 
 ## Reporting a vulnerability
 

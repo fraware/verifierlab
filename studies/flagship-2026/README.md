@@ -1,22 +1,30 @@
-# Flagship study flagship-2026
+# Flagship study `flagship-2026`
 
 Preregistered scientific demonstration for VerifierLab final assurance (WP-13).
+Package line: `0.2.0rc2` on `integration/final-assurance`.
 
-## Claim boundary (exact)
+## Claim boundary (read this first)
 
-- Derived maturity: **internally_verified** (ordinal 2).
-- `security_grade_execution`: **False**.
-- Ladder blockers at this level: independent_review_missing, independent_reconstruction_missing.
-- Prospective scientific blockers (facts not yet true): security_grade_execution, independent_review, independent_reconstruction.
-- Underpowered primary estimands (task-cluster): E1_sealed_far_attack_success, E2_paired_repair_delta, E3_clean_frr_delta, E4_fresh_stronger_reattack, E5_metamorphic_violation, E6_planted_sensitivity_fpr, E7_time_to_exploit, E8_surface_budget_access_contrast.
-- Planted calibration is reported separately and does **not** support
-  unknown-adversary robustness claims.
-- This host refused security-grade execution (no rootless Docker / separate
-  domain). Fail-closed: never claim `scientifically_qualified` or
-  `security_grade` without evidence.
-- No `deployment_calibrated` claim (capability only; no real prospective field
-  outcomes).
-- Clean-room reproduction under `reproduction_bundle/` is **NOT** independent.
+| Fact | Value |
+| ---- | ----- |
+| Derived maturity | **`internally_verified`** (ordinal 2) |
+| `security_grade_execution` | **False** |
+| Ladder blockers | `independent_review_missing`, `independent_reconstruction_missing` |
+| Prospective scientific blockers | `security_grade_execution`, independent review, independent reconstruction |
+| Underpowered primary estimands | E1–E8 task-cluster cells marked indeterminate where underpowered |
+| Planted calibration | Reported separately; **does not** support unknown-adversary robustness |
+| Clean-room under `reproduction_bundle/` | Mechanical only — **not** independent verification |
+
+**Do not claim** from this bundle alone:
+
+- `scientifically_qualified`
+- `security_grade` / `security_grade_execution=true`
+- `deployment_calibrated`
+- soundness, “proven robust,” or verifier SOTA
+
+This host refused security-grade execution (no rootless Docker / separate
+domain). Fail-closed: maturity stays capped until evidence exists. Policy:
+[`docs/claim-language.md`](../../docs/claim-language.md).
 
 ## Task families
 
@@ -31,8 +39,8 @@ transfer_corpus, planted_calibration (never pooled with unknown robustness).
 
 ## Primary estimands
 
-E1-E8 in `preregistration.json`. Power planned at task-cluster level;
-underpowered cells are marked indeterminate.
+E1–E8 in `preregistration.json`. Power planned at task-cluster level;
+underpowered cells are marked indeterminate and block scientific promotion.
 
 ## Artifacts
 

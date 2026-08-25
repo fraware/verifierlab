@@ -53,6 +53,7 @@ nav:
   - CLI: cli.md
   - Architecture: architecture.md
   - Methodology: methodology.md
+  - Claim language: claim-language.md
   - Assurance maturity (policy seed): assurance-status.md
   - Adapters:
       - Overview: adapters.md
@@ -67,12 +68,23 @@ nav:
       - EnvAssure: adapters/envassure.md
       - RLlib: adapters/rllib.md
   - Attacks: attacks.md
+  - Attack portfolio limitations: attack-portfolio-limitations.md
   - Labels and statistics: labels-and-stats.md
   - Threat model: threat-model.md
   - Disclosure: disclosure.md
   - Reproduction checklist: reproduction-checklist.md
-  - Beta acceptance: beta-acceptance.md
+  - Clean-room protocol: clean-room-protocol.md
+  - Tutorials:
+      - Security-grade execution: tutorials/security-grade.md
+      - Method surfaces: tutorials/method-surfaces.md
+  - Beta / RC acceptance: beta-acceptance.md
+  - Final acceptance: final-acceptance.md
   - Limitations: limitations.md
+  - Support matrix: support-matrix.md
+  - Quality engineering: quality-engineering.md
+  - Repository protection: repository-protection-policy.md
+  - Final integration ledger: final-integration-ledger.md
+  - Claim invalidation ledger: claim-invalidation-ledger.md
   - Contributing:
       - Verifiers: contributing/verifiers.md
       - Attacks: contributing/attacks.md

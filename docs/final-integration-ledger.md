@@ -1,11 +1,12 @@
 # Final integration ledger
 
-Inventory freeze and canonical integration line for VerifierLab final assurance
-completion (Gate G0/G1, WP-00). This ledger maps each intended **feature**
-source to commits on `integration/final-assurance`. Validation-only histories
-are recorded as **not merged**.
+Canonical map of feature sources landed on `integration/final-assurance`
+(Gates G0–G7 / WP-00…WP-22). Validation-only histories are recorded as **not
+merged**. Useful for maintainers auditing provenance; operators usually want
+[final-acceptance.md](final-acceptance.md) and [claim-language.md](claim-language.md)
+instead.
 
-Package version remains `0.2.0rc2` until Gate G7.
+Package version remains `0.2.0rc2` until a maintainer-signed stable cut.
 
 ## Integration line
 
@@ -18,11 +19,9 @@ Package version remains `0.2.0rc2` until Gate G7.
 | Created | 2026-08-25 |
 | Feature-close SHA | `44f3e009c74842e5aca327744dedc52c7851eaed` |
 | Commits vs `main` | (see `git rev-list --count origin/main..HEAD`) |
-| Push | **not pushed** (WP-00 constraint) |
-| Merge to `main` | **not done** (WP-00 constraint) |
+| Push / merge to `main` | Maintainer action — not performed by automation |
 
-Untracked local spec `VerifierLab_Final_Engineering_Completion_Specification_2026-08-25.docx`
-stays out of the repository.
+Internal engineering handoff `.docx` files stay gitignored / untracked.
 
 ## Disposition rules applied
 

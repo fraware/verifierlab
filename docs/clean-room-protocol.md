@@ -29,3 +29,7 @@ independent verification.
 - Passing a clean-room dry-run does not mean the study is scientifically
   qualified or security-grade.
 - Self-issued attestations are always rejected.
+- Internal dry-runs on developer laptops remain development-grade evidence.
+
+See [claim-language.md](claim-language.md) and
+[reproduction-checklist.md](reproduction-checklist.md).

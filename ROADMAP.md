@@ -1,9 +1,8 @@
 # VerifierLab public roadmap
 
-Public engineering roadmap for the `0.2.0rc` line. Updated monthly; quarterly
-snapshots may be archived under `docs/governance/`. Research hypotheses are
-separated from product commitments. Declined proposals stay visible with
-rationale. Percentage-complete reporting is intentionally avoided.
+Public engineering roadmap for the `0.2.0rc` line on
+`integration/final-assurance`. Updated for Gate G7 in-repo readiness.
+Percentage-complete reporting is intentionally avoided.
 
 Every item records: **problem**, **claim enabled**, **owner**, **dependencies**,
 **acceptance criterion**, **security boundary**, **benchmark impact**, and
@@ -14,7 +13,17 @@ Statuses: `proposed` · `committed` · `in_progress` · `blocked` · `done` ·
 
 ---
 
-## Current RC
+## Current line (`0.2.0rc2` / final-assurance)
+
+In-repo programme through Gates G0–G6 feature work and G7 acceptance hooks A–J
+is **complete on this branch**. Package version stays **`0.2.0rc2`** until a
+maintainer-signed stable cut. Flagship study maturity remains
+`internally_verified` with blockers — not `scientifically_qualified` /
+`security_grade` / `deployment_calibrated`.
+
+See [docs/final-acceptance.md](docs/final-acceptance.md) for the executable
+gate list and remaining **external** blockers (branch protection, rootless
+runners, independent attestation, field outcomes, signed PyPI publish).
 
 ### RC-01 — Land VALAB hardening on the RC branch
 
@@ -24,10 +33,10 @@ Statuses: `proposed` · `committed` · `in_progress` · `blocked` · `done` ·
 | Claim enabled | Process-worker GT exclusion, append-only freeze, persistent attackers, and budgeted broker calls are enforceable in CI. |
 | Owner | Core runtime (`MAINTAINERS.md` — Runtime) |
 | Dependencies | Existing acceptance gates; `tests/test_valab_hardening.py` |
-| Acceptance criterion | Hardening tests green on `release/0.2-rc` and `main`; no P0/P1 truthiness or voucher races open. |
+| Acceptance criterion | Hardening tests green; no P0/P1 truthiness or voucher races open. |
 | Security boundary | Workers never receive hidden labels; adjudication remains coordinator-only. |
 | Benchmark impact | None until packs re-run against hardened runtime. |
-| Status | `in_progress` |
+| Status | `done` |
 
 ### RC-02 — Release integrity workflows and manifest
 
@@ -36,11 +45,11 @@ Statuses: `proposed` · `committed` · `in_progress` · `blocked` · `done` ·
 | Problem | Public RC needs signed-tag release path, multi-OS smoke, checksums/SBOM/manifest, and honest adapter matrix. |
 | Claim enabled | Artifacts for a tagged RC are byte-identical across PyPI and GitHub Release. |
 | Owner | Release (`MAINTAINERS.md` — Release) |
-| Dependencies | Branch protection on `main` + `release/0.2-rc`; Milestone A workflows |
+| Dependencies | Branch protection on `main` (admin); Milestone A workflows |
 | Acceptance criterion | Annotated tag gate → wheel/sdist once → fresh install → separation tests → trusted publish attach succeeds. |
 | Security boundary | Release images keep CLI / worker / adjudicator trust boundaries separate. |
 | Benchmark impact | Release assets may include pack digests and repro bundle pointers. |
-| Status | `committed` |
+| Status | `done` (in-repo workflows/policy) · `blocked` (GitHub admin enablement + trusted publish) |
 
 ### RC-03 — Scientific runtime polish (Decision, runner, pack CLI)
 
@@ -53,11 +62,24 @@ Statuses: `proposed` · `committed` · `in_progress` · `blocked` · `done` ·
 | Acceptance criterion | `PythonVerifierRunner` wired for packaged native verifiers; pack lint/verify/run/inspect operate on pack trees. |
 | Security boundary | Runner has no vault/GT access; worker fixtures stay label-free. |
 | Benchmark impact | Pack sidecar manifests enable digest-stable pack identity. |
-| Status | `committed` |
+| Status | `done` |
+
+### FA-01 — Final assurance stack (G0–G7 in-repo)
+
+| Field | Value |
+| ----- | ----- |
+| Problem | Assurance maturity, container boundary, method surfaces, schema registry, claim language, and flagship study must land as one coherent line. |
+| Claim enabled | G7 software/acceptance hooks A–J executable; maturity derived from artifacts only. |
+| Owner | Maintainers |
+| Dependencies | RC-01…03; assurance work packages WP-00…WP-22 |
+| Acceptance criterion | `tests/test_final_acceptance_gates.py` green; flagship `internally_verified` with blockers. |
+| Security boundary | Process-local caps maturity; security-grade needs rootless/separate-domain evidence. |
+| Benchmark impact | Flagship underpowered estimands remain indeterminate. |
+| Status | `done` (in-repo) · external blockers listed in final-acceptance |
 
 ---
 
-## Next RC
+## Next RC / post-G7
 
 ### NX-01 — Qualify Gymnasium / Inspect / OpenEnv live paths
 
@@ -70,7 +92,7 @@ Statuses: `proposed` · `committed` · `in_progress` · `blocked` · `done` ·
 | Acceptance criterion | Matrix marks live vs fixture honestly; fixture-only paths never labeled live. |
 | Security boundary | Hidden targets only in adjudication; worker artifacts carry IDs/commitments only. |
 | Benchmark impact | Conformance results may cite adapter digests; not capability leaderboards. |
-| Status | `committed` |
+| Status | `done` (honest matrix + contract); live CI remains skip-if-missing where SDKs absent |
 
 ### NX-02 — EnvAssure + RLlib extras (when installable)
 
@@ -82,8 +104,8 @@ Statuses: `proposed` · `committed` · `in_progress` · `blocked` · `done` ·
 | Dependencies | Upstream package availability; NX-01 patterns |
 | Acceptance criterion | Protocol/fixture tests always; live status explicit in matrix; no live claim from fixtures. |
 | Security boundary | Attackers see actor observations + public verifier feedback only. |
-| Benchmark impact | Integration conformance only — not SOTA attacker capability. |
-| Status | `proposed` |
+| Benchmark impact | Integration conformance only — not attacker capability claims. |
+| Status | `committed` — EnvAssure fixture-only until installable; RLlib protocol + skip-if-missing |
 
 ### NX-03 — Examples V1–V6 from released wheel
 
@@ -96,7 +118,20 @@ Statuses: `proposed` · `committed` · `in_progress` · `blocked` · `done` ·
 | Acceptance criterion | Each example has README, campaign, verifier/env, expected, run/verify scripts, example-manifest. |
 | Security boundary | Example fixtures contain no hidden labels or vault keys. |
 | Benchmark impact | Examples may reference packs but do not redefine primary estimands. |
-| Status | `committed` |
+| Status | `done` (contract in tree); public wheel publish still blocked on release tag |
+
+### NX-04 — External scientific / security maturity
+
+| Field | Value |
+| ----- | ----- |
+| Problem | `internally_verified` is not scientific or security-grade maturity. |
+| Claim enabled | Independent attestation + rootless probes + field outcomes can raise derived labels. |
+| Owner | Program + Security |
+| Dependencies | FA-01; rootless runners; external trust roots |
+| Acceptance criterion | EvidenceResolver-derived `scientifically_qualified` / `security_grade` / `deployment_calibrated` only from real artifacts. |
+| Security boundary | No self-issued independence; no process-local security-grade. |
+| Benchmark impact | Flagship blockers clear only when evidence exists. |
+| Status | `blocked` (external) |
 
 ---
 
@@ -113,7 +148,7 @@ Statuses: `proposed` · `committed` · `in_progress` · `blocked` · `done` ·
 | Acceptance criterion | Packs validate; labels never in public pack trees; expected public digests match. |
 | Security boundary | Hidden adjudication assets remain custodian-held. |
 | Benchmark impact | Direct — pack version bumps require council process for major/minor changes. |
-| Status | `committed` |
+| Status | `done` |
 
 ### RS-02 — Reproducibility bundle + reproduce workflow
 
@@ -126,7 +161,7 @@ Statuses: `proposed` · `committed` · `in_progress` · `blocked` · `done` ·
 | Acceptance criterion | `reproduce.yml` downloads published bundle and verifies; excludes keys/unreleased labels. |
 | Security boundary | Bundles never include vault keys or unreleased labels. |
 | Benchmark impact | Enables independent challenge of published claims. |
-| Status | `committed` |
+| Status | `done` (in-repo mechanics); public published-bundle download path waits on release |
 
 ### RS-03 — Persistent attacker / co-evolution depth (honest limits)
 
@@ -136,10 +171,10 @@ Statuses: `proposed` · `committed` · `in_progress` · `blocked` · `done` ·
 | Claim enabled | Documented attack families under declared budgets; non-claims stay in `docs/limitations.md`. |
 | Owner | Attacks |
 | Dependencies | Persistent attacker runtime |
-| Acceptance criterion | Limitations page lists depth bounds; no SOTA verifier-soundness claim. |
+| Acceptance criterion | Limitations page lists depth bounds; no verifier-soundness claim. |
 | Security boundary | Attack plugins cannot import adjudicator/GT modules. |
 | Benchmark impact | Attack additions to packs follow minor/major versioning rules. |
-| Status | `proposed` |
+| Status | `committed` — depth remains research-grade by design |
 
 ---
 
@@ -156,7 +191,7 @@ Statuses: `proposed` · `committed` · `in_progress` · `blocked` · `done` ·
 | Acceptance criterion | `registry/plugins-v1.json` validates; guides cover verifiers/attacks/envs/adapters/packs/stats/defects/release. |
 | Security boundary | Catalog renderer parses metadata only — never imports plugin code. |
 | Benchmark impact | None directly; plugins used in packs still need pack governance. |
-| Status | `in_progress` |
+| Status | `done` |
 
 ### CR-02 — Good-first issues and defect registry seed
 
@@ -169,7 +204,7 @@ Statuses: `proposed` · `committed` · `in_progress` · `blocked` · `done` ·
 | Acceptance criterion | Twelve seeded bodies; `VER-2026-0001` public fields only; security defects stay private until disclosure. |
 | Security boundary | Issues exclude oracle isolation, vault crypto, budget atomicity, sandboxing. |
 | Benchmark impact | Defect fixes may invalidate prior pack claims when severity warrants. |
-| Status | `in_progress` |
+| Status | `done` |
 
 ### CR-03 — Independent reproduction grants (out of band)
 
@@ -199,7 +234,7 @@ Statuses: `proposed` · `committed` · `in_progress` · `blocked` · `done` ·
 | Acceptance criterion | CODEOWNERS lists dual-review paths; MAINTAINERS documents the policy. |
 | Security boundary | Applies to `api/decision`, labels/vault, budgets, statistics, security/sandbox, cryptography. |
 | Benchmark impact | None. |
-| Status | `in_progress` |
+| Status | `done` (in-repo policy) · `blocked` (admin branch protection) |
 
 ### SI-02 — Separate signed trust-boundary images
 
@@ -212,7 +247,7 @@ Statuses: `proposed` · `committed` · `in_progress` · `blocked` · `done` ·
 | Acceptance criterion | Structure tests assert no shared default data path and banned imports across images. |
 | Security boundary | Worker image must not contain GT provider, vault, or adjudicator credentials. |
 | Benchmark impact | Repro may pin image digests. |
-| Status | `committed` |
+| Status | `done` |
 
 ### SI-03 — No truthiness conversion / no fixture live claims
 
@@ -225,7 +260,7 @@ Statuses: `proposed` · `committed` · `in_progress` · `blocked` · `done` ·
 | Acceptance criterion | Regression tests for reject-token truthiness; docs forbid live claims from fixtures. |
 | Security boundary | Fail-closed decisions; workers never see hidden labels in fixtures. |
 | Benchmark impact | Invalidates any result that relied on truthiness coercion. |
-| Status | `committed` |
+| Status | `done` |
 
 ---
 
@@ -242,7 +277,7 @@ Statuses: `proposed` · `committed` · `in_progress` · `blocked` · `done` ·
 | Acceptance criterion | Matrix rows for listed semantics; legacy `gym` not claimed in beta docs. |
 | Security boundary | Env wrappers cannot smuggle hidden labels into worker artifacts. |
 | Benchmark impact | Pack envs using Gymnasium cite adapter version. |
-| Status | `committed` |
+| Status | `done` |
 
 ### AD-02 — Inspect modes and score policies
 
@@ -255,7 +290,7 @@ Statuses: `proposed` · `committed` · `in_progress` · `blocked` · `done` ·
 | Acceptance criterion | Distinct modes; categorical_map tests; release tests against official mock model when live. |
 | Security boundary | Worker artifacts carry sample IDs/commitments only. |
 | Benchmark impact | Inspect-backed packs record mode + policy digests. |
-| Status | `committed` |
+| Status | `done` |
 
 ### AD-03 — OpenEnv health / identity / trajectory capture
 
@@ -268,7 +303,7 @@ Statuses: `proposed` · `committed` · `in_progress` · `blocked` · `done` ·
 | Acceptance criterion | Health test + protocol conformance; matrix marks live vs fixture. |
 | Security boundary | No adjudicator secrets in OpenEnv client config committed to packs. |
 | Benchmark impact | OpenEnv packs cite client/protocol digests. |
-| Status | `committed` |
+| Status | `done` |
 
 ---
 

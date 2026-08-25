@@ -23,8 +23,18 @@ This command chain is the **VALAB-01 baseline gate** (also documented in
 uv run python scripts/repro_bundle_check.py campaigns/fake-smoke.yaml
 ```
 
+Docs PRs should also keep claim language clean:
+
+```bash
+uv run python scripts/check_claim_language.py
+```
+
+Final-assurance acceptance (gates A–J): see
+[docs/final-acceptance.md](docs/final-acceptance.md) and
+`tests/test_final_acceptance_gates.py`.
+
 Python `>=3.11,<3.14` is required. Package name is `verifierlab`; CLI entry point
-is `valab`.
+is `valab`. Package version on this line is **`0.2.0rc2`**.
 
 ## Developer Certificate of Origin (DCO)
 

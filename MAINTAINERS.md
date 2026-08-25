@@ -59,3 +59,5 @@ author.
 - [.github/CODEOWNERS](.github/CODEOWNERS)
 - [ROADMAP.md](ROADMAP.md)
 - [docs/governance/charter.md](docs/governance/charter.md)
+- [docs/final-acceptance.md](docs/final-acceptance.md)
+- [docs/repository-protection-policy.md](docs/repository-protection-policy.md)

@@ -24,13 +24,17 @@ type studies\flagship-2026\security_grade_attempt.json   # Windows
 # cat studies/flagship-2026/security_grade_attempt.json  # Unix
 ```
 
-Expected: the attempt documents blockers / refusal rather than
-`security_grade=true`.
+Expected: the attempt documents blockers / refusal rather than a true
+security-grade execution flag.
 
-## Non-claims
+## Prerequisites for a real security-grade path
 
-- Passing process-local tests ≠ security-grade.
-- Rootful Docker with container-local controls still yields `security_grade=false`.
-- Do not patch fixtures to fake a green security-grade label.
+- Digest-pinned immutable worker image
+- Rootless (or stronger) Docker / separate adjudication domain
+- Live malicious probe catalogue evidence on a suitable host
 
-See [threat-model.md](../threat-model.md) and [claim-language.md](../claim-language.md).
+Without those, keep maturity capped. Process-local and rootful paths are
+development / internal-verification only.
+
+See [threat-model.md](../threat-model.md), [claim-language.md](../claim-language.md),
+and [support-matrix.md](../support-matrix.md).

@@ -25,3 +25,6 @@ portfolio. It is not a robustness claim.
 
 See `verifierlab.attacks.portfolio.PORTFOLIO_DEPTH_LIMITATIONS` for the
 machine-readable copy bound into `AttackPortfolioManifest`.
+
+Related: [attacks.md](attacks.md), [limitations.md](limitations.md),
+[claim-language.md](claim-language.md).

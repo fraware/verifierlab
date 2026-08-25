@@ -55,5 +55,11 @@ installable. Upstream indeterminate propagates through
 ## Related
 
 - [architecture.md](../architecture.md)
+- [methodology.md](../methodology.md)
 - [claim-language.md](../claim-language.md)
+- [limitations.md](../limitations.md)
 - [security-grade.md](security-grade.md)
+
+**Prerequisite:** editable install with `uv sync --extra dev` (or equivalent).
+These tutorials point at existing pytest modules — they are not standalone
+campaign walkthroughs and do not raise scientific maturity by themselves.

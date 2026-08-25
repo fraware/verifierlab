@@ -1,10 +1,14 @@
 # Assurance maturity policy seed (not the qualification path)
 
-**WP-00 seed.** This page records the PR #10 decision table only. It is not
-the public qualification API. WP-05 replaces caller-supplied
-`AssuranceEvidence` booleans with `EvidenceResolver` / `EvidenceFact`.
-Do not issue `scientifically_qualified` or `deployment_calibrated` from this
-module.
+**WP-00 seed.** This page records the PR #10 decision *table* only. It is **not**
+the public qualification API and must not be cited as current study maturity.
+
+Public qualification uses `EvidenceResolver` / `EvidenceFact` (WP-05) via
+`valab assurance qualify` and study artifacts. Do not issue
+`scientifically_qualified`, `security_grade`, or `deployment_calibrated` from
+this module or from caller-supplied booleans. Current flagship status:
+`internally_verified` — see `studies/flagship-2026/` and
+[claim-language.md](claim-language.md).
 
 VerifierLab maturity labels are conclusions about one exact proposition. They are not campaign options, release channels, badges, or self-declared metadata.
 
