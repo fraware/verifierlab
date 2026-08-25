@@ -101,9 +101,11 @@ class AttackPortfolioManifest(BaseModel):
         digests = [identity.content_digest for identity in self.identities]
         if len(digests) != len(set(digests)):
             raise ValueError("portfolio AttackIdentity digests must be unique")
-        if self.strength_calibration is not None:
-            if self.strength_calibration.supports_unknown_robustness_claim is not False:
-                raise ValueError("strength calibration cannot support unknown robustness")
+        if (
+            self.strength_calibration is not None
+            and self.strength_calibration.supports_unknown_robustness_claim is not False
+        ):
+            raise ValueError("strength calibration cannot support unknown robustness")
         return self
 
     @property

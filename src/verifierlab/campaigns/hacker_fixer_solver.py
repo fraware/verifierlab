@@ -5,21 +5,32 @@ fresh post-repair attacker instantiation. It deliberately does not adjudicate
 hidden ground truth and therefore cannot, by itself, establish scientific
 qualification. Canonical hidden-label adjudication remains a separate trust
 boundary.
+
+WP-10 qualification extensions:
+- Immutable order: hacker → freeze exploits → fixer V_{t+1} → solver →
+  ``RepairCandidateBinding`` → fresh attacker (no pre-repair state).
+- Fixer never receives sealed repair-holdout digests.
+- Equal-budget contrasts fail closed on unequal budgets; a stronger post-repair
+  attacker is a separate coordinate (escalating mode).
+- Failed patches are preserved; stopping is preregistered.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from verifierlab.artifacts.canonical import digest_of
 from verifierlab.artifacts.records import AccessModel
+from verifierlab.execution.attacker_state import AttackerStateEnvelope
+from verifierlab.repairs.candidate import RepairCandidateBinding
 
 AgentRole = Literal["hacker", "fixer", "solver"]
 AttackPhase = Literal["pre_repair", "post_repair"]
 ComparisonMode = Literal["equal_budget", "escalating"]
+StoppingDecision = Literal["continue", "stop_success", "stop_budget", "stop_failed_patch"]
 
 
 class AgentProgramSpec(BaseModel):
@@ -64,6 +75,54 @@ class VerifierCandidateBinding(BaseModel):
         return digest_of(self.model_dump(mode="json"))
 
 
+class SealedRepairHoldout(BaseModel):
+    """Opaque holdout commitment the fixer must never observe."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    holdout_commitment_digest: str = Field(min_length=1)
+    custody_digest: str = Field(min_length=1)
+    split_role: Literal["repair_holdout"] = "repair_holdout"
+
+    @property
+    def content_digest(self) -> str:
+        return digest_of(self.model_dump(mode="json"))
+
+
+class HackerFixerStoppingRule(BaseModel):
+    """Preregistered stopping rule — never inferred from a quiet attack round."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["1"] = "1"
+    max_rounds: int = Field(default=1, gt=0)
+    stop_on_zero_pre_exploits: Literal[False] = False
+    require_solver_pass: bool = True
+    require_fresh_reattack_complete: bool = True
+    registration_digest: str = Field(min_length=1)
+
+    @property
+    def content_digest(self) -> str:
+        return digest_of(self.model_dump(mode="json"))
+
+
+class FailedPatchRecord(BaseModel):
+    """Preserved failed repair attempt (never silently dropped)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["1"] = "1"
+    round_index: int = Field(ge=0)
+    candidate_digest: str = Field(min_length=1)
+    repair_artifact_digest: str = Field(min_length=1)
+    failure_reasons: tuple[str, ...] = Field(min_length=1)
+    solver_results_digest: str | None = None
+
+    @property
+    def content_digest(self) -> str:
+        return digest_of(self.model_dump(mode="json"))
+
+
 class HackerFixerSolverPlan(BaseModel):
     """Frozen experimental plan for one attack/repair/solve/reattack round."""
 
@@ -86,6 +145,11 @@ class HackerFixerSolverPlan(BaseModel):
     comparison_mode: ComparisonMode = "equal_budget"
     require_fresh_post_repair_hacker: Literal[True] = True
     freshness_policy: Literal["new_instance_no_checkpoint"] = "new_instance_no_checkpoint"
+    sealed_repair_holdout: SealedRepairHoldout | None = None
+    stopping_rule: HackerFixerStoppingRule | None = None
+    # When comparison_mode is escalating with a distinct post hacker, that
+    # attacker is a separate response-surface coordinate — not pooled.
+    stronger_attacker_is_separate_coordinate: Literal[True] = True
 
     @model_validator(mode="after")
     def _validate_roles_and_budgets(self) -> HackerFixerSolverPlan:
@@ -101,6 +165,14 @@ class HackerFixerSolverPlan(BaseModel):
             if self.pre_attack_budget_queries != self.post_attack_budget_queries:
                 raise ValueError(
                     "equal_budget comparison requires identical pre/post query budgets"
+                )
+            if (
+                self.post_repair_hacker is not None
+                and self.post_repair_hacker.content_digest != self.hacker.content_digest
+            ):
+                raise ValueError(
+                    "equal_budget comparison cannot use a stronger distinct post_repair_hacker; "
+                    "use comparison_mode='escalating' (separate coordinate)"
                 )
         elif self.post_attack_budget_queries < self.pre_attack_budget_queries:
             raise ValueError("escalating comparison requires post budget >= pre budget")
@@ -123,6 +195,7 @@ class HackerInstantiationContext(BaseModel):
     phase: AttackPhase
     anchor_digest: str = Field(min_length=1)
     previous_instance_id: str | None = None
+    require_fresh_attack_envelope: bool = False
 
 
 class HackerInvocation(BaseModel):
@@ -160,6 +233,7 @@ class AttackExecution(BaseModel):
     budget_queries: int = Field(gt=0)
     queries_used: int = Field(ge=0)
     result_digests: tuple[str, ...]
+    attacker_state_envelope_digest: str | None = None
 
     @model_validator(mode="after")
     def _within_budget(self) -> AttackExecution:
@@ -181,7 +255,11 @@ class AttackExecution(BaseModel):
 
 
 class FixerInvocation(BaseModel):
-    """Public evidence given to the fixer after the first attack phase."""
+    """Public evidence given to the fixer after the first attack phase.
+
+    Sealed repair-holdout digests are intentionally absent. Passing a holdout
+    commitment into this object is a protocol violation.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -205,6 +283,16 @@ class FixerExecution(BaseModel):
     invocation_digest: str = Field(min_length=1)
     repair_artifact_digest: str = Field(min_length=1)
     candidate: VerifierCandidateBinding
+    patch_succeeded: bool = True
+    failure_reasons: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def _failure_shape(self) -> FixerExecution:
+        if not self.patch_succeeded and not self.failure_reasons:
+            raise ValueError("failed patch must record failure_reasons")
+        if self.patch_succeeded and self.failure_reasons:
+            raise ValueError("successful patch cannot carry failure_reasons")
+        return self
 
     @property
     def content_digest(self) -> str:
@@ -240,6 +328,8 @@ class SolverExecution(BaseModel):
     budget_queries: int = Field(gt=0)
     queries_used: int = Field(ge=0)
     result_digests: tuple[str, ...]
+    clean_pass: bool | None = None
+    frr_collapse_detected: bool = False
 
     @model_validator(mode="after")
     def _within_budget(self) -> SolverExecution:
@@ -283,7 +373,11 @@ class HackerFixerSolverArtifact(BaseModel):
     pre_attack: AttackExecution
     repair: FixerExecution
     solver: SolverExecution
-    post_attack: AttackExecution
+    post_attack: AttackExecution | None = None
+    repair_candidate_binding: RepairCandidateBinding | None = None
+    failed_patches: tuple[FailedPatchRecord, ...] = ()
+    stopping_decision: StoppingDecision = "continue"
+    post_attack_state_envelope_digest: str | None = None
     qualification_grade: Literal[False] = False
     claim_boundary: Literal["protocol_ordering_and_public_execution_receipts_only"] = (
         "protocol_ordering_and_public_execution_receipts_only"
@@ -292,6 +386,60 @@ class HackerFixerSolverArtifact(BaseModel):
     @property
     def content_digest(self) -> str:
         return digest_of(self.model_dump(mode="json"))
+
+
+def assert_fixer_cannot_see_holdout(
+    invocation: FixerInvocation,
+    sealed_holdout: SealedRepairHoldout | None,
+) -> None:
+    """Fail closed if fixer inputs embed sealed repair-holdout digests."""
+    if sealed_holdout is None:
+        return
+    inv = invocation.model_dump(mode="json")
+    forbidden = {
+        sealed_holdout.holdout_commitment_digest,
+        sealed_holdout.custody_digest,
+        sealed_holdout.content_digest,
+    }
+    for value in inv.values():
+        if isinstance(value, str) and value in forbidden:
+            raise ValueError("fixer_saw_sealed_repair_holdout")
+
+
+def assert_fresh_attack_envelope(envelope: AttackerStateEnvelope) -> None:
+    """Require fresh_attack mode with null parent for post-repair reattack."""
+    if envelope.attack_mode != "fresh_attack":
+        raise ValueError("post-repair attacker state must use attack_mode=fresh_attack")
+    if envelope.parent_state_digest is not None:
+        raise ValueError("fresh reattack cannot inherit parent_state_digest")
+    if envelope.lineage_index != 0:
+        raise ValueError("fresh reattack requires lineage_index=0")
+
+
+def evaluate_stopping_rule(
+    rule: HackerFixerStoppingRule | None,
+    *,
+    round_index: int,
+    repair: FixerExecution,
+    solver: SolverExecution,
+    post_attack_complete: bool,
+) -> StoppingDecision:
+    """Apply preregistered stopping — never stop solely because exploits were zero."""
+    if rule is None:
+        if not repair.patch_succeeded:
+            return "stop_failed_patch"
+        return "continue"
+    if not repair.patch_succeeded:
+        return "stop_failed_patch"
+    if rule.require_solver_pass and solver.clean_pass is False:
+        return "stop_failed_patch"
+    if rule.require_fresh_reattack_complete and not post_attack_complete:
+        return "continue"
+    if round_index + 1 >= rule.max_rounds:
+        return "stop_budget"
+    if repair.patch_succeeded and solver.clean_pass is True and post_attack_complete:
+        return "stop_success"
+    return "continue"
 
 
 def _validate_attack_execution(
@@ -322,6 +470,10 @@ def run_hacker_fixer_solver(
     hacker_factory: HackerFactory,
     fixer_runner: FixerRunner,
     solver_runner: SolverRunner,
+    repair_candidate_binding: RepairCandidateBinding | None = None,
+    post_attack_state_envelope: AttackerStateEnvelope | None = None,
+    round_index: int = 0,
+    prior_failed_patches: Sequence[FailedPatchRecord] = (),
 ) -> HackerFixerSolverArtifact:
     """Execute one strictly ordered attack -> repair -> solve -> fresh reattack round.
 
@@ -353,6 +505,7 @@ def run_hacker_fixer_solver(
         pre_attack_results_digest=pre_execution.results_digest,
         fixer_spec_digest=plan.fixer.content_digest,
     )
+    assert_fixer_cannot_see_holdout(fixer_invocation, plan.sealed_repair_holdout)
     repair = fixer_runner(plan.fixer, fixer_invocation)
     if repair.fixer_spec_digest != plan.fixer.content_digest:
         raise ValueError("fixer execution is bound to the wrong fixer spec")
@@ -362,6 +515,44 @@ def run_hacker_fixer_solver(
         raise ValueError("repair candidate parent verifier binding is incorrect")
     if repair.candidate.repair_input_digest != fixer_invocation.content_digest:
         raise ValueError("repair candidate is not bound to the fixer input")
+
+    failed_patches = list(prior_failed_patches)
+    if not repair.patch_succeeded:
+        failed_patches.append(
+            FailedPatchRecord(
+                round_index=round_index,
+                candidate_digest=repair.candidate.content_digest,
+                repair_artifact_digest=repair.repair_artifact_digest,
+                failure_reasons=repair.failure_reasons,
+            )
+        )
+        skipped_solver = SolverExecution(
+            solver_spec_digest=plan.solver.content_digest,
+            invocation_digest=digest_of("skipped-failed-patch"),
+            candidate_digest=repair.candidate.content_digest,
+            suite_digest=plan.solver_suite_digest,
+            budget_queries=plan.solver_budget_queries,
+            queries_used=0,
+            result_digests=(),
+            clean_pass=False,
+        )
+        decision = evaluate_stopping_rule(
+            plan.stopping_rule,
+            round_index=round_index,
+            repair=repair,
+            solver=skipped_solver,
+            post_attack_complete=False,
+        )
+        return HackerFixerSolverArtifact(
+            plan=plan,
+            pre_attack=pre_execution,
+            repair=repair,
+            solver=skipped_solver,
+            post_attack=None,
+            repair_candidate_binding=None,
+            failed_patches=tuple(failed_patches),
+            stopping_decision=decision,
+        )
 
     solver_invocation = SolverInvocation(
         candidate_digest=repair.candidate.content_digest,
@@ -382,17 +573,41 @@ def run_hacker_fixer_solver(
     if solver.budget_queries != plan.solver_budget_queries:
         raise ValueError("solver execution budget differs from the frozen plan")
 
+    if solver.frr_collapse_detected:
+        failed_patches.append(
+            FailedPatchRecord(
+                round_index=round_index,
+                candidate_digest=repair.candidate.content_digest,
+                repair_artifact_digest=repair.repair_artifact_digest,
+                failure_reasons=("frr_collapse_detected",),
+                solver_results_digest=solver.results_digest,
+            )
+        )
+
+    # RepairCandidateBinding must be committed before fresh reattack starts.
+    binding = repair_candidate_binding
+    if binding is not None:
+        if binding.new_verifier_profile_digest != repair.candidate.verifier_profile_digest:
+            raise ValueError("RepairCandidateBinding does not match repair candidate profile")
+        if binding.old_verifier_profile_digest != plan.initial_verifier_profile_digest:
+            raise ValueError("RepairCandidateBinding parent profile mismatch")
+
     post_spec = plan.resolved_post_repair_hacker
+    post_anchor = binding.content_digest if binding is not None else repair.candidate.content_digest
     post_context = HackerInstantiationContext(
         phase="post_repair",
-        anchor_digest=repair.candidate.content_digest,
+        anchor_digest=post_anchor,
         previous_instance_id=pre_session.instance_id,
+        require_fresh_attack_envelope=True,
     )
     post_session = hacker_factory(post_spec, post_context)
     if post_session.instance_id == pre_session.instance_id:
         raise ValueError("post-repair hacker must be a fresh runtime instance")
     if post_session.parent_checkpoint_digest is not None:
         raise ValueError("post-repair hacker must not inherit a prior attacker checkpoint")
+
+    if post_attack_state_envelope is not None:
+        assert_fresh_attack_envelope(post_attack_state_envelope)
 
     post_invocation = HackerInvocation(
         phase="post_repair",
@@ -402,7 +617,7 @@ def run_hacker_fixer_solver(
         attack_family=plan.attack_family,
         budget_queries=plan.post_attack_budget_queries,
         seed=plan.seed + 1,
-        anchor_digest=repair.candidate.content_digest,
+        anchor_digest=post_anchor,
     )
     post_execution = post_session.run(post_invocation)
     _validate_attack_execution(post_execution, invocation=post_invocation, session=post_session)
@@ -410,6 +625,20 @@ def run_hacker_fixer_solver(
         raise ValueError(
             "fresh_reattack_inheritance_blocker: post-repair attack cannot inherit parent state"
         )
+    if post_attack_state_envelope is not None:
+        if post_execution.attacker_state_envelope_digest not in {
+            None,
+            post_attack_state_envelope.content_digest,
+        }:
+            raise ValueError("post-attack envelope digest mismatch")
+
+    decision = evaluate_stopping_rule(
+        plan.stopping_rule,
+        round_index=round_index,
+        repair=repair,
+        solver=solver,
+        post_attack_complete=True,
+    )
 
     return HackerFixerSolverArtifact(
         plan=plan,
@@ -417,21 +646,33 @@ def run_hacker_fixer_solver(
         repair=repair,
         solver=solver,
         post_attack=post_execution,
+        repair_candidate_binding=binding,
+        failed_patches=tuple(failed_patches),
+        stopping_decision=decision,
+        post_attack_state_envelope_digest=(
+            post_attack_state_envelope.content_digest if post_attack_state_envelope else None
+        ),
     )
 
 
 __all__ = [
     "AgentProgramSpec",
     "AttackExecution",
+    "FailedPatchRecord",
     "FixerExecution",
     "FixerInvocation",
     "HackerFixerSolverArtifact",
     "HackerFixerSolverPlan",
+    "HackerFixerStoppingRule",
     "HackerInstantiationContext",
     "HackerInvocation",
     "HackerSession",
+    "SealedRepairHoldout",
     "SolverExecution",
     "SolverInvocation",
     "VerifierCandidateBinding",
+    "assert_fixer_cannot_see_holdout",
+    "assert_fresh_attack_envelope",
+    "evaluate_stopping_rule",
     "run_hacker_fixer_solver",
 ]
