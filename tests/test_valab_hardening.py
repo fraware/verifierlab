@@ -528,7 +528,7 @@ def test_repair_trivial_reject_fails() -> None:
     assert "trivial_reject_detected" in (artifact.metadata.get("gate_failures") or [])
 
 
-def test_repair_good_pass_gates() -> None:
+def test_repair_development_helper_does_not_pass_qualification_gate() -> None:
     known = [
         {"steps": [{"op": "refund", "amount": 120}]},
         {"steps": [{"op": "refund", "amount": 200}]},
@@ -562,9 +562,13 @@ def test_repair_good_pass_gates() -> None:
         fresh_episodes=3,
         budget_queries=3,
     )
-    assert artifact.schema_version == "3"
+    assert artifact.schema_version == "5"
     assert artifact.trivial_reject_detected is False
-    assert artifact.status == "pass"
+    assert artifact.qualification_grade is False
+    assert artifact.status == "fail"
+    assert artifact.fresh_attack["ledger"]["qualification_grade"] is False
+    assert "fresh_attack_not_canonical_campaign" in artifact.metadata["gate_failures"]
+    assert "synthetic_holdout_not_qualification_grade" in artifact.metadata["gate_failures"]
     assert artifact.failure_taxonomy
     assert artifact.paired_stats.get("far_delta_bootstrap")
 

@@ -3,7 +3,7 @@
   "budget_digest": "b1d307581a2ae9accde7867a444bf45d9edf962097c37f75c59d7c4afac6c2ee",
   "campaign": "pack-c-isomorphic",
   "campaign_digest": "491afcb460e2d46005b8c1a7bf1dfb0ec45d888cd847c1ebe813a581cea4b029",
-  "content_digest": "acfa12744feec7ccae482afa263ed63e1283ca2b50ea0197cc19a5e0f3027b23",
+  "content_digest": "453ef38f6c3a7a23e45e5722949a2a769e342d0e34a10b89b037a07f0e4e1edd",
   "expected_taxonomies": [
     "isomorphic_relabel"
   ],
@@ -23,5 +23,5 @@
     ],
     "mode": "content_addressed"
   },
-  "verifier_profile_digest": "42764e2103126582530ab56eb29a700fbd79e79bcee96b54e92c07efaf1b4acb"
+  "verifier_profile_digest": "0f79cb2710d731e2a6cb9b174d1c35857349f4e4bd6d1d1a3c4dc89f44be3097"
 }

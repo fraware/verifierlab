@@ -1,7 +1,9 @@
 """Public decision types for verifier outputs.
 
 Fail-closed normalization: nonempty strings such as ``\"reject\"`` must never
-become acceptance via Python truthiness (``bool(\"reject\") is True``).
+become acceptance via Python truthiness (``bool(\"reject\") is True``), and
+numeric scores must never imply an acceptance threshold unless a verifier
+profile explicitly declares one.
 """
 
 from __future__ import annotations
@@ -26,7 +28,8 @@ class DecisionKind(str, Enum):
     ABSTAIN = "abstain"
     INDETERMINATE = "indeterminate"
     ERROR = "error"
-    # Legacy numeric channel; :attr:`Decision.status` maps via ``accepted``.
+    # Numeric score channel. Acceptance remains unknown until an explicit
+    # profile-declared mapping is applied by the verifier integration layer.
     SCORE = "score"
 
 
@@ -94,11 +97,13 @@ class Decision(BaseModel):
 
     @classmethod
     def from_raw(cls, value: Any) -> Decision:
-        """Normalize arbitrary verifier output without truthiness coercion.
+        """Normalize arbitrary verifier output without truthiness or score coercion.
 
         Strings like ``\"reject\"`` / ``\"false\"`` never become accept.
-        Unrecognized values become ``error`` / ``indeterminate`` with
-        ``accepted=None`` (fail closed).
+        Bare numeric values remain score-only with ``accepted=None``. A numeric
+        score can become accept/reject only after an explicit verifier-profile
+        decision mapping is applied elsewhere. Unrecognized values become
+        ``error`` / ``indeterminate`` with ``accepted=None`` (fail closed).
         """
         if isinstance(value, Decision):
             return value
@@ -108,7 +113,7 @@ class Decision(BaseModel):
             return cls(kind=value, accepted=kind_to_accepted(value), raw=value)
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             score = float(value)
-            return cls(kind=DecisionKind.SCORE, score=score, accepted=score >= 0.5)
+            return cls(kind=DecisionKind.SCORE, score=score, accepted=None)
         if isinstance(value, str):
             kind = parse_decision_token(value)
             if kind is None:
@@ -182,7 +187,7 @@ class Decision(BaseModel):
             elif score is not None:
                 return cls(
                     kind=DecisionKind.SCORE,
-                    accepted=score >= 0.5,
+                    accepted=None,
                     score=score,
                     label=label,
                     reason_codes=reason_codes,
@@ -264,7 +269,7 @@ def _parse_decision_field(
     decision_field: Any,
     accepted: bool | None,
 ) -> tuple[DecisionKind | None, bool | None, str | None]:
-    """Parse legacy ``decision`` key. Never uses ``bool(str)``."""
+    """Parse legacy ``decision`` key. Never uses truthiness or score thresholds."""
     if isinstance(decision_field, bool):
         kind = DecisionKind.ACCEPT if decision_field else DecisionKind.REJECT
         return kind, decision_field if accepted is None else accepted, None
@@ -277,8 +282,7 @@ def _parse_decision_field(
             accepted = kind_to_accepted(parsed)
         return parsed, accepted, None
     if isinstance(decision_field, (int, float)) and not isinstance(decision_field, bool):
-        score = float(decision_field)
-        return DecisionKind.SCORE, score >= 0.5, None
+        return DecisionKind.SCORE, accepted, None
     return None, None, "unrecognized_decision"
 
 

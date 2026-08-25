@@ -421,14 +421,18 @@ class TestGate4Repair:
             fresh_episodes=3,
             budget_queries=3,
         )
-        assert artifact.schema_version == "3"
+        assert artifact.schema_version == "5"
         assert artifact.regression
         assert artifact.fresh_attack
         assert artifact.holdout is not None
         assert artifact.mandatory_fresh_attacker is True
         assert artifact.old_profile and artifact.new_profile
-        assert artifact.status == "pass"
+        assert artifact.qualification_grade is False
+        assert artifact.status == "fail"
         assert artifact.trivial_reject_detected is False
+        assert artifact.fresh_attack["ledger"]["qualification_grade"] is False
+        assert "fresh_attack_not_canonical_campaign" in artifact.metadata["gate_failures"]
+        assert "synthetic_holdout_not_qualification_grade" in artifact.metadata["gate_failures"]
 
     def test_trivial_reject_repair_fails(self) -> None:
         known = [

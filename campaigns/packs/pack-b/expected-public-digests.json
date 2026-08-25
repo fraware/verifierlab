@@ -3,7 +3,7 @@
   "budget_digest": "b1d307581a2ae9accde7867a444bf45d9edf962097c37f75c59d7c4afac6c2ee",
   "campaign": "pack-b-rubric",
   "campaign_digest": "0fd41a7789ea0f7d0ce5b642073e4e87d16d9eaf4c7460cc04f83fbd2f781d55",
-  "content_digest": "b1cf24f89fbd33172a894ecd8474df46964d73e2156cde5512bd6c7c037e50b0",
+  "content_digest": "4679aed15a773f79e0e6b9b5de7f2f329a4731150735089bb27022e8e5a10af2",
   "expected_taxonomies": [
     "rubric_gaming",
     "unauthorized_action"
@@ -24,5 +24,5 @@
     ],
     "mode": "content_addressed"
   },
-  "verifier_profile_digest": "0d5753e3f139e98318cd8b6483e1e89c73f07daf8a99c19ecf92347644b788f5"
+  "verifier_profile_digest": "4310c158aa0d5ed5052ceabdbd5cbc5397169ec6f18aafdeb6360de211a8b622"
 }
