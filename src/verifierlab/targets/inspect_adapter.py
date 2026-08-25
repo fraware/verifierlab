@@ -190,9 +190,7 @@ class MultiScoreCompositionPolicy:
 
     def apply(self, score_blob: Any) -> ScorePolicyResult:
         if not isinstance(score_blob, dict) or not score_blob:
-            return ScorePolicyResult(
-                accepted=None, status="abstain", reason_codes=["multi_empty"]
-            )
+            return ScorePolicyResult(accepted=None, status="abstain", reason_codes=["multi_empty"])
         results: list[bool | None] = []
         for key, blob in score_blob.items():
             sub = BooleanScorePolicy().apply({key: blob})
