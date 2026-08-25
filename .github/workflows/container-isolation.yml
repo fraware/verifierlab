@@ -7,7 +7,7 @@ on:
       - "docker/worker/**"
       - "src/verifierlab/execution/container.py"
       - "src/verifierlab/targets/isolation_probe.py"
-      - "tests/test_container_execution_policy.py"
+      - "tests/test_container_execution_boundary.py"
       - ".github/workflows/container-isolation.yml"
   workflow_dispatch:
 
@@ -30,7 +30,7 @@ jobs:
         run: uv sync --extra dev
 
       - name: Static policy tests
-        run: uv run pytest tests/test_container_execution_policy.py -q
+        run: uv run pytest tests/test_container_execution_boundary.py -q
 
       - name: Build worker image
         run: docker build -f docker/worker/Dockerfile -t verifierlab-worker:isolation .
