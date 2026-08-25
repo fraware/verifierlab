@@ -10,6 +10,7 @@ validity. They may use the environment and :class:`VerifierBroker` only.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -105,6 +106,8 @@ def _run_work_unit(payload: dict[str, Any]) -> dict[str, Any]:
     commitment_nonce = str(payload.get("commitment_nonce") or payload["unit_id"])
     learning = bool(payload.get("learning", True))
     split = payload.get("split")
+    verifier: Callable[[dict[str, Any]], Any]
+    runner: PythonVerifierRunner | None
 
     if env_kind == "fake":
         from verifierlab.targets.fake import FakeEnvironment, fake_refund_verifier
