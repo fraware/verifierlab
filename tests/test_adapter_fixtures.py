@@ -97,12 +97,12 @@ def test_inspect_score_policies() -> None:
 
     assert apply_score_policy({"s": {"value": True}}).accepted is True
     assert (
-        apply_score_policy({"s": {"value": 0.8}}, NumericThresholdScorePolicy(threshold=0.5)).accepted
+        apply_score_policy(
+            {"s": {"value": 0.8}}, NumericThresholdScorePolicy(threshold=0.5)
+        ).accepted
         is True
     )
-    assert (
-        apply_score_policy({"s": {"value": "C"}}, CategoricalMapScorePolicy()).accepted is True
-    )
+    assert apply_score_policy({"s": {"value": "C"}}, CategoricalMapScorePolicy()).accepted is True
     multi = apply_score_policy(
         {"a": {"value": True}, "b": {"value": False}},
         MultiScoreCompositionPolicy(require_all=True),
@@ -140,7 +140,9 @@ def test_inspect_live_minimal_task(tmp_path: Path) -> None:
     assert native["framework"] == "inspect"
     assert len(native["steps"]) >= 1
 
-    adapter = InspectAdapter(inspect_task=build_minimal_task(), model="mockllm/model", mode="live_task")
+    adapter = InspectAdapter(
+        inspect_task=build_minimal_task(), model="mockllm/model", mode="live_task"
+    )
     assert adapter.integration_status == "live_task"
     obs = adapter.reset(seed=0)
     assert obs["seed"] == 0

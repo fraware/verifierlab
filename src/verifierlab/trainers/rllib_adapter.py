@@ -30,8 +30,7 @@ def require_ray_rllib() -> Any:
         import ray
     except ImportError as exc:
         raise ImportError(
-            "RLlib adapter requires ray[rllib]; "
-            "install with: pip install 'verifierlab[rllib]'"
+            "RLlib adapter requires ray[rllib]; install with: pip install 'verifierlab[rllib]'"
         ) from exc
     return ray
 

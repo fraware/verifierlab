@@ -210,13 +210,9 @@ def build_planted_failure_sidecar(spec: CampaignSpec) -> dict[str, Any]:
             or planted.get("description")
             or "",
             "expected_taxonomies": list(
-                planted.get("expected_taxonomies")
-                or meta.get("expected_taxonomies")
-                or []
+                planted.get("expected_taxonomies") or meta.get("expected_taxonomies") or []
             ),
-            "optimized_attack_names": [
-                a.name for a in spec.attacks if a.cohort == "optimized"
-            ],
+            "optimized_attack_names": [a.name for a in spec.attacks if a.cohort == "optimized"],
         }
     else:
         optimized = [a for a in spec.attacks if a.cohort == "optimized"]
@@ -466,7 +462,9 @@ def lint_pack(path: Path) -> tuple[bool, list[Diagnostic], dict[str, Any]]:
             )
         diags.extend(assert_no_labels_in_public_pack(side))
         if (side / "expected-public-digests.json").is_file():
-            expected = json.loads((side / "expected-public-digests.json").read_text(encoding="utf-8"))
+            expected = json.loads(
+                (side / "expected-public-digests.json").read_text(encoding="utf-8")
+            )
             live = campaign_public_digest(spec)
             if expected.get("campaign_digest") != live:
                 diags.append(
