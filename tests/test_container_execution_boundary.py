@@ -24,7 +24,7 @@ def _policy() -> ContainerIsolationPolicy:
 
 
 def _inspect(policy: ContainerIsolationPolicy) -> dict[str, object]:
-    tmpfs = f"rw,noexec,nosuid,size={policy.tmpfs_bytes}"
+    tmpfs_common = f"rw,noexec,nosuid,size={policy.tmpfs_bytes}"
     return {
         "Config": {"User": policy.user},
         "HostConfig": {
@@ -34,8 +34,8 @@ def _inspect(policy: ContainerIsolationPolicy) -> dict[str, object]:
             "SecurityOpt": ["no-new-privileges=true", "seccomp=builtin"],
             "Binds": None,
             "Tmpfs": {
-                "/tmp": tmpfs,
-                "/var/lib/verifierlab/worker": tmpfs,
+                "/tmp": f"{tmpfs_common},mode=1777",
+                "/var/lib/verifierlab/worker": (f"{tmpfs_common},uid=10001,gid=10001,mode=0700"),
             },
             "IpcMode": "private",
             "CgroupnsMode": "private",
@@ -94,6 +94,14 @@ def test_create_command_contains_non_negotiable_controls() -> None:
     assert "--privileged" not in joined
     assert "--volume" not in joined
     assert "--mount" not in joined
+    assert any(item.startswith("--tmpfs=/tmp:") and "mode=1777" in item for item in command)
+    assert any(
+        item.startswith("--tmpfs=/var/lib/verifierlab/worker:")
+        and "uid=10001" in item
+        and "gid=10001" in item
+        and "mode=0700" in item
+        for item in command
+    )
     assert command[-1] == IMAGE
 
 
