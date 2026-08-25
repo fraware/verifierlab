@@ -182,7 +182,9 @@ def _run_development_fresh_attack(
         # into a convenient independent strategy instance.
         for _attempt in range(4):
             steps = [strategy.propose() for _ in range(max_steps)]
-            clean = [{k: v for k, v in step.items() if not str(k).startswith("_")} for step in steps]
+            clean = [
+                {k: v for k, v in step.items() if not str(k).startswith("_")} for step in steps
+            ]
             candidate = (
                 build_trajectory(clean)
                 if build_trajectory
@@ -423,21 +425,26 @@ def run_repair_campaign(
         prefix="hold",
     )
 
-    eq_budget = budget_queries if budget_queries is not None else max(fresh_episodes, len(regression_all))
+    eq_budget = (
+        budget_queries if budget_queries is not None else max(fresh_episodes, len(regression_all))
+    )
     eq_budget = max(int(eq_budget), fresh_episodes)
     minimum_budget = max(eq_budget, int(baseline_attack_budget or 0))
     if baseline_attack_budget is not None and eq_budget < int(baseline_attack_budget):
         gate_failures.append("budget_smaller_than_baseline")
 
-    candidate_campaign_id = campaign_id or digest_of(
-        {
-            "old_profile_digest": old_profile_digest,
-            "new_profile_digest": new_profile_digest,
-            "regression_corpus_digest": digest_of(regression_trajectories),
-            "holdout_corpus_digest": digest_of(holdout_trajectories),
-            "minimum_budget": minimum_budget,
-        }
-    )[:16]
+    candidate_campaign_id = (
+        campaign_id
+        or digest_of(
+            {
+                "old_profile_digest": old_profile_digest,
+                "new_profile_digest": new_profile_digest,
+                "regression_corpus_digest": digest_of(regression_trajectories),
+                "holdout_corpus_digest": digest_of(holdout_trajectories),
+                "minimum_budget": minimum_budget,
+            }
+        )[:16]
+    )
     repair_candidate: RepairCandidateBinding | None = None
     if caller_supplied_holdout and holdout_trajectories:
         repair_candidate = build_repair_candidate_binding(
@@ -547,7 +554,8 @@ def run_repair_campaign(
             clean_valid_old
         )
         new_accept = (
-            sum(bool(row.get("verifier_accepted")) for row in clean_valid_new) / len(clean_valid_new)
+            sum(bool(row.get("verifier_accepted")) for row in clean_valid_new)
+            / len(clean_valid_new)
             if clean_valid_new
             else 0.0
         )
@@ -588,7 +596,11 @@ def run_repair_campaign(
         failure_taxonomy.append("no_baseline_exploits")
 
     gate_failures = list(dict.fromkeys(gate_failures))
-    status = "pass" if qualification_grade and not gate_failures and not trivial_reject_detected else "fail"
+    status = (
+        "pass"
+        if qualification_grade and not gate_failures and not trivial_reject_detected
+        else "fail"
+    )
     notes.extend(f"gate_fail:{failure}" for failure in gate_failures)
 
     return RepairCampaignArtifact(
@@ -641,7 +653,9 @@ def run_repair_campaign(
                 "regression_n": len(regression_all),
                 "holdout_n": len(holdout_trajectories),
                 "fresh_n": len(fresh_attack_results),
-                "queries_used": fresh_ledger.get("queries_used", fresh_ledger.get("budget_queries")),
+                "queries_used": fresh_ledger.get(
+                    "queries_used", fresh_ledger.get("budget_queries")
+                ),
             },
         },
         learnability=learnability,
