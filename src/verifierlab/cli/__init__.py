@@ -45,12 +45,17 @@ pack_app = typer.Typer(
     help="Benchmark pack lint / verify / run / reproduce / inspect.",
     no_args_is_help=True,
 )
+assurance_app = typer.Typer(
+    help="Artifact-derived assurance qualification (WP-05).",
+    no_args_is_help=True,
+)
 app.add_typer(campaign_app, name="campaign")
 app.add_typer(report_app, name="report")
 app.add_typer(stats_app, name="stats")
 app.add_typer(plugins_app, name="plugins")
 app.add_typer(verifier_app, name="verifier")
 app.add_typer(pack_app, name="pack")
+app.add_typer(assurance_app, name="assurance")
 
 
 def _print_json(payload: object) -> None:
@@ -703,6 +708,63 @@ def stats_power(
         _print_json(payload)
     else:
         typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    raise typer.Exit(0)
+
+
+@assurance_app.command("qualify")
+def assurance_qualify(
+    run_or_study: Path = typer.Argument(..., help="Sealed run or study directory"),
+    claim: Path = typer.Option(..., "--claim", help="Path to AssuranceClaim JSON"),
+    trust_root: list[str] = typer.Option(
+        [],
+        "--trust-root",
+        help="External trust root as id=secret (repeatable)",
+    ),
+    attestation: list[Path] = typer.Option(
+        [],
+        "--attestation",
+        help="Path to ExternalAssuranceAttestation JSON (repeatable)",
+    ),
+    format: str = typer.Option("json", "--format", help="Output format: json|text"),
+) -> None:
+    """Qualify assurance maturity from sealed artifacts (not caller booleans)."""
+    from verifierlab.assurance import ExternalAssuranceAttestation, qualify_run
+
+    roots: dict[str, str] = {}
+    for item in trust_root:
+        if "=" not in item:
+            console.print(f"[red]invalid --trust-root {item!r}; expected id=secret[/red]")
+            raise typer.Exit(2)
+        rid, secret = item.split("=", 1)
+        roots[rid] = secret
+    atts: list[ExternalAssuranceAttestation] = []
+    for path in attestation:
+        atts.append(
+            ExternalAssuranceAttestation.model_validate(
+                json.loads(Path(path).read_text(encoding="utf-8"))
+            )
+        )
+    try:
+        result = qualify_run(
+            run_or_study,
+            claim=claim,
+            trust_roots=roots or None,
+            attestations=atts or None,
+        )
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    payload = result.model_dump(mode="json")
+    payload["content_digest"] = result.digest
+    if format == "json":
+        _print_json(payload)
+    else:
+        typer.echo(f"level: {result.level}")
+        typer.echo(f"ordinal: {result.ordinal}")
+        typer.echo(f"security_grade_execution: {result.security_grade_execution}")
+        typer.echo(f"blockers: {', '.join(result.blockers) or '(none)'}")
+        typer.echo(f"claim_digest: {result.claim_digest}")
+        typer.echo(f"resolver_version: {result.resolver_version}")
     raise typer.Exit(0)
 
 
