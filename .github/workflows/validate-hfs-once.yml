@@ -1,0 +1,25 @@
+name: Validate hacker fixer solver protocol
+
+on:
+  push:
+    branches: [research/hacker-fixer-solver]
+    paths:
+      - ".github/workflows/validate-hfs-once.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: research/hacker-fixer-solver
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.12
+      - run: uv sync --extra dev
+      - run: uv run ruff check src/verifierlab/campaigns/hacker_fixer_solver.py tests/test_hacker_fixer_solver_protocol.py
+      - run: uv run ruff format --check src/verifierlab/campaigns/hacker_fixer_solver.py tests/test_hacker_fixer_solver_protocol.py
+      - run: uv run mypy src/verifierlab/campaigns/hacker_fixer_solver.py tests/test_hacker_fixer_solver_protocol.py
+      - run: uv run pytest tests/test_hacker_fixer_solver_protocol.py -q
