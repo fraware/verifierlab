@@ -25,7 +25,9 @@ def test_single_layer_attribution_binds_proposition_and_evidence() -> None:
         proposition="The verifier accepted a case forbidden by its declared executable contract.",
         basis=("declared_spec_comparison",),
         evidence_digests=EVIDENCE,
-        assumptions=("The declared contract digest is the contract governing this verifier version.",),
+        assumptions=(
+            "The declared contract digest is the contract governing this verifier version.",
+        ),
     )
     assert assessment.status == "attributed"
     assert assessment.layers == (FailureLayer.IMPLEMENTATION,)
@@ -106,28 +108,36 @@ def test_invalid_status_layer_shapes_fail_closed() -> None:
         "evidence_digests": EVIDENCE,
     }
     with pytest.raises(ValueError, match="exactly one"):
-        FailureLayerAssessment(
-            **common,
-            status="attributed",
-            layers=(FailureLayer.IMPLEMENTATION, FailureLayer.SPECIFICATION),
+        FailureLayerAssessment.model_validate(
+            {
+                **common,
+                "status": "attributed",
+                "layers": (FailureLayer.IMPLEMENTATION, FailureLayer.SPECIFICATION),
+            }
         )
     with pytest.raises(ValueError, match="at least two"):
-        FailureLayerAssessment(
-            **common,
-            status="mixed",
-            layers=(FailureLayer.IMPLEMENTATION,),
+        FailureLayerAssessment.model_validate(
+            {
+                **common,
+                "status": "mixed",
+                "layers": (FailureLayer.IMPLEMENTATION,),
+            }
         )
     with pytest.raises(ValueError, match="cannot assert"):
-        FailureLayerAssessment(
-            **common,
-            status="indeterminate",
-            layers=(FailureLayer.IMPLEMENTATION,),
+        FailureLayerAssessment.model_validate(
+            {
+                **common,
+                "status": "indeterminate",
+                "layers": (FailureLayer.IMPLEMENTATION,),
+            }
         )
     with pytest.raises(ValueError, match="unique"):
-        FailureLayerAssessment(
-            **common,
-            status="mixed",
-            layers=(FailureLayer.SPECIFICATION, FailureLayer.SPECIFICATION),
+        FailureLayerAssessment.model_validate(
+            {
+                **common,
+                "status": "mixed",
+                "layers": (FailureLayer.SPECIFICATION, FailureLayer.SPECIFICATION),
+            }
         )
 
 
