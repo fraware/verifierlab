@@ -1,8 +1,13 @@
-"""Artifact-derived assurance qualification (WP-05).
+"""Artifact-validated assurance qualification.
 
-Public qualification path: ``EvidenceResolver`` → typed ``EvidenceFact`` records
-→ ``AssuranceQualification``. Caller-supplied boolean bags are not accepted.
-The PR #10 module remains a policy seed only (``SEED_NOT_QUALIFICATION_PATH``).
+The public qualification path is:
+
+``EvidenceResolver -> EvidenceFact -> AssuranceQualification``.
+
+A maturity fact is true only when its supporting artifact can be parsed,
+content-addressed, and cross-validated against the other artifacts that give
+the fact meaning. Caller supplied boolean bags, arbitrary 64-character strings,
+and field presence are never qualification evidence.
 """
 
 from __future__ import annotations
@@ -17,13 +22,63 @@ from pydantic import BaseModel, ConfigDict, Field
 from verifierlab.artifacts.canonical import digest_of
 from verifierlab.assurance.maturity import AssuranceClaim, AssuranceLevel
 
-RESOLVER_VERSION = "1"
+RESOLVER_VERSION = "2"
+ZERO_DIGEST = "0" * 64
 
 FactOutcome = Literal["true", "false", "indeterminate"]
 
 
+def _valid_digest(value: Any) -> bool:
+    if not isinstance(value, str) or len(value) != 64 or value == ZERO_DIGEST:
+        return False
+    try:
+        int(value, 16)
+    except ValueError:
+        return False
+    return True
+
+
+def _read_json(path: Path) -> dict[str, Any] | None:
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _payload_without_content_digest(body: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in body.items() if key != "content_digest"}
+
+
+def _wrapped_digest(body: dict[str, Any]) -> str:
+    return digest_of(_payload_without_content_digest(body))
+
+
+def _nested_digest_match(value: Any, target: str) -> dict[str, Any] | None:
+    """Find a dictionary whose canonical digest equals ``target``."""
+    if isinstance(value, dict):
+        candidate = _payload_without_content_digest(value)
+        try:
+            if digest_of(candidate) == target:
+                return candidate
+        except (TypeError, ValueError):
+            pass
+        for child in value.values():
+            found = _nested_digest_match(child, target)
+            if found is not None:
+                return found
+    elif isinstance(value, list):
+        for child in value:
+            found = _nested_digest_match(child, target)
+            if found is not None:
+                return found
+    return None
+
+
 class EvidenceFact(BaseModel):
-    """One typed fact derived from an immutable artifact."""
+    """One typed fact derived from validated evidence."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -46,7 +101,7 @@ class EvidenceFact(BaseModel):
 
 
 class ExternalAssuranceAttestation(BaseModel):
-    """Signed independent-review attestation verified against external trust roots."""
+    """External-review attestation verified against a configured trust root."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -67,7 +122,7 @@ class ExternalAssuranceAttestation(BaseModel):
 
 
 class AssuranceQualification(BaseModel):
-    """Maturity decision bound to claim, facts, blockers, and artifact refs."""
+    """Maturity decision bound to claim, facts, blockers, and evidence refs."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -97,9 +152,12 @@ def _fact(
     reasons: tuple[str, ...] = (),
     timestamp: float | None = None,
 ) -> EvidenceFact:
+    source_digest = source if _valid_digest(source) else digest_of(
+        {"fact_id": fact_id, "missing_or_invalid_source": source}
+    )
     return EvidenceFact(
         fact_id=fact_id,
-        source_artifact_digest=source if len(source) == 64 else digest_of({"ref": source}),
+        source_artifact_digest=source_digest,
         validator=validator,
         validator_version=RESOLVER_VERSION,
         outcome=outcome,
@@ -108,25 +166,8 @@ def _fact(
     )
 
 
-def _read_json(path: Path) -> dict[str, Any] | None:
-    if not path.is_file():
-        return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    return data if isinstance(data, dict) else None
-
-
-def _file_digest(path: Path) -> str:
-    return digest_of(json.loads(path.read_text(encoding="utf-8")))
-
-
 class EvidenceResolver:
-    """Derive ``EvidenceFact`` records from a sealed run or study directory.
-
-    Manual JSON with all-true booleans and no artifacts cannot qualify.
-    """
+    """Derive assurance facts from validated immutable artifacts."""
 
     def __init__(
         self,
@@ -140,6 +181,97 @@ class EvidenceResolver:
         self.claim = claim
         self.trust_roots = dict(trust_roots or {})
         self.attestations = list(attestations or [])
+        self._digest_cache: dict[str, dict[str, Any] | None] = {}
+
+    def _verified_json(
+        self,
+        path: Path,
+        *,
+        require_content_digest: bool = True,
+    ) -> tuple[dict[str, Any] | None, str | None, tuple[str, ...]]:
+        body = _read_json(path)
+        if body is None:
+            return None, None, (f"missing_or_invalid_json:{path.name}",)
+        if not require_content_digest:
+            return body, digest_of(body), ()
+        declared = body.get("content_digest")
+        if not _valid_digest(declared):
+            return body, None, (f"missing_or_invalid_content_digest:{path.name}",)
+        computed = _wrapped_digest(body)
+        if computed != declared:
+            return body, str(declared), (f"content_digest_mismatch:{path.name}",)
+        return body, str(declared), ()
+
+    def _store_payload(self, target: str) -> dict[str, Any] | None:
+        workspace = self.root.parent.parent
+        store_root = workspace / "store"
+        if not store_root.is_dir():
+            return None
+        try:
+            from verifierlab.artifacts.cas import ContentAddressedStore
+
+            payload = ContentAddressedStore(store_root).get_json(target)
+        except (FileNotFoundError, KeyError, OSError, ValueError):
+            return None
+        if not isinstance(payload, dict) or digest_of(payload) != target:
+            return None
+        return payload
+
+    def _resolve_digest_payload(self, target: Any) -> dict[str, Any] | None:
+        """Resolve a digest to the actual canonical payload, never to its spelling."""
+        if not _valid_digest(target):
+            return None
+        target_s = str(target)
+        if target_s in self._digest_cache:
+            return self._digest_cache[target_s]
+
+        direct = self._store_payload(target_s)
+        if direct is not None:
+            self._digest_cache[target_s] = direct
+            return direct
+
+        for path in sorted(self.root.rglob("*.json")):
+            body = _read_json(path)
+            if body is None:
+                continue
+            declared = body.get("content_digest")
+            if declared == target_s and _wrapped_digest(body) == target_s:
+                payload = _payload_without_content_digest(body)
+                self._digest_cache[target_s] = payload
+                return payload
+            nested = _nested_digest_match(body, target_s)
+            if nested is not None:
+                self._digest_cache[target_s] = nested
+                return nested
+
+        sealed = _read_json(self.root / "sealed_run.json") or {}
+        campaign_digest = sealed.get("campaign_digest")
+        if _valid_digest(campaign_digest):
+            campaign = self._store_payload(str(campaign_digest))
+            if campaign is not None:
+                nested = _nested_digest_match(campaign, target_s)
+                if nested is not None:
+                    self._digest_cache[target_s] = nested
+                    return nested
+
+        self._digest_cache[target_s] = None
+        return None
+
+    def _budget_binding_valid(self, sealed: dict[str, Any], manifest: dict[str, Any]) -> bool:
+        budget_digest = sealed.get("budget_digest")
+        if not _valid_digest(budget_digest):
+            return False
+        freeze_bundle_digest = sealed.get("freeze_seal_bundle_digest")
+        freeze_bundle = self._resolve_digest_payload(freeze_bundle_digest)
+        if freeze_bundle is None or freeze_bundle.get("budget_digest") != budget_digest:
+            return False
+        meta = manifest.get("metadata") or {}
+        source: Any = meta.get("budget") if isinstance(meta, dict) else None
+        if source is None:
+            source = manifest.get("ledger_digest")
+        if source in (None, ""):
+            return False
+        return digest_of(source) == budget_digest
 
     def resolve_facts(self) -> list[EvidenceFact]:
         facts: list[EvidenceFact] = []
@@ -154,15 +286,14 @@ class EvidenceResolver:
 
     def qualify(self) -> AssuranceQualification:
         facts = self.resolve_facts()
-        by_id = {f.fact_id: f for f in facts}
+        by_id = {fact.fact_id: fact for fact in facts}
         satisfied: list[str] = []
         blockers: list[str] = []
 
-        def ok(fid: str) -> bool:
-            f = by_id.get(fid)
-            return bool(f and f.is_true)
+        def ok(fact_id: str) -> bool:
+            fact = by_id.get(fact_id)
+            return bool(fact and fact.is_true)
 
-        # Cumulative gates — same ladder as the seed policy, artifact-derived.
         if not ok("implementation_present"):
             return self._result(
                 AssuranceLevel.NOT_IMPLEMENTED,
@@ -204,10 +335,11 @@ class EvidenceResolver:
             "qualification_estimands_complete",
             "negative_results_preserved",
             "environment_assurance_determinate",
+            "qualification_evidence_non_synthetic",
         ]
-        missing_sci = [name for name in scientific if not ok(name)]
-        if missing_sci:
-            blockers.extend(missing_sci)
+        missing_scientific = [name for name in scientific if not ok(name)]
+        if missing_scientific:
+            blockers.extend(missing_scientific)
             return self._result(level, facts, blockers=blockers, satisfied=satisfied)
         satisfied.extend(scientific)
         level = AssuranceLevel.SCIENTIFICALLY_QUALIFIED
@@ -220,9 +352,9 @@ class EvidenceResolver:
             "deployment_chronology_anchored",
             "deployment_not_synthetic",
         ]
-        missing_dep = [name for name in deployment if not ok(name)]
-        if missing_dep:
-            blockers.extend(missing_dep)
+        missing_deployment = [name for name in deployment if not ok(name)]
+        if missing_deployment:
+            blockers.extend(missing_deployment)
             return self._result(level, facts, blockers=blockers, satisfied=satisfied)
         satisfied.extend(deployment)
         return self._result(
@@ -240,11 +372,19 @@ class EvidenceResolver:
         blockers: list[str],
         satisfied: list[str],
     ) -> AssuranceQualification:
-        facts_digest = digest_of([f.model_dump(mode="json") for f in facts])
+        facts_digest = digest_of([fact.model_dump(mode="json") for fact in facts])
         artifact_refs = tuple(
-            sorted({f.source_artifact_digest for f in facts if f.source_artifact_digest})
+            sorted(
+                {
+                    fact.source_artifact_digest
+                    for fact in facts
+                    if fact.is_true and _valid_digest(fact.source_artifact_digest)
+                }
+            )
         )
-        security = any(f.fact_id == "security_grade_execution" and f.is_true for f in facts)
+        security = any(
+            fact.fact_id == "security_grade_execution" and fact.is_true for fact in facts
+        )
         return AssuranceQualification(
             level=level.label,
             ordinal=int(level),
@@ -254,180 +394,373 @@ class EvidenceResolver:
             claim_digest=self.claim.digest,
             facts_digest=facts_digest,
             artifact_refs=artifact_refs,
-            fact_ids=tuple(f.fact_id for f in facts),
+            fact_ids=tuple(fact.fact_id for fact in facts),
             resolver_version=RESOLVER_VERSION,
         )
 
     def _lifecycle_facts(self) -> list[EvidenceFact]:
-        facts: list[EvidenceFact] = []
-        sealed = _read_json(self.root / "sealed_run.json")
-        receipt = _read_json(self.root / "label_release_receipt.json")
-        freeze = _read_json(self.root / "freeze.json")
-        release = _read_json(self.root / "release.json")
-        manifest = _read_json(self.root / "manifest.json")
-
-        has_impl = bool(sealed or manifest)
-        src = (
-            str(sealed.get("content_digest"))
-            if sealed and sealed.get("content_digest")
-            else digest_of({"root": str(self.root)})
+        manifest, manifest_digest, _ = self._verified_json(
+            self.root / "manifest.json", require_content_digest=False
         )
-        facts.append(
+        sealed, sealed_digest, sealed_errors = self._verified_json(self.root / "sealed_run.json")
+        freeze, freeze_digest, freeze_errors = self._verified_json(self.root / "freeze.json")
+        release, release_digest, release_errors = self._verified_json(self.root / "release.json")
+        receipt, receipt_digest, receipt_errors = self._verified_json(
+            self.root / "label_release_receipt.json"
+        )
+
+        has_impl = manifest is not None or sealed is not None
+        source = sealed_digest or manifest_digest or digest_of({"root": str(self.root)})
+        facts = [
             _fact(
                 "implementation_present",
-                source=src,
-                validator="lifecycle.sealed_or_manifest",
+                source=source,
+                validator="lifecycle.valid_manifest_or_sealed_run",
                 outcome="true" if has_impl else "false",
-                reasons=() if has_impl else ("no_sealed_run_or_manifest",),
+                reasons=() if has_impl else ("no_manifest_or_sealed_run",),
             )
-        )
+        ]
 
-        bound = bool(sealed and sealed.get("content_digest") and freeze)
+        errors = (*sealed_errors, *freeze_errors, *release_errors, *receipt_errors)
+        cross_ok = bool(
+            sealed
+            and sealed_digest
+            and freeze
+            and freeze_digest
+            and release
+            and release_digest
+            and receipt
+            and receipt_digest
+            and sealed.get("freeze_digest") == freeze_digest
+            and receipt.get("sealed_run_digest") == sealed_digest
+            and receipt.get("freeze_digest") == freeze_digest
+        )
+        chronology = receipt.get("chronology") if receipt else None
+        if isinstance(chronology, dict) and chronology.get("release_tip_digest"):
+            cross_ok = cross_ok and chronology.get("release_tip_digest") == release_digest
+
         facts.append(
             _fact(
                 "evidence_artifacts_bound",
-                source=src,
-                validator="lifecycle.artifact_presence",
-                outcome="true" if bound else "false",
+                source=sealed_digest or source,
+                validator="lifecycle.content_and_cross_digest_validation",
+                outcome="true" if cross_ok and not errors else "false",
+                reasons=errors if errors else (() if cross_ok else ("lifecycle_cross_link_invalid",)),
             )
         )
+
+        freeze_bundle_ok = False
+        if sealed:
+            freeze_bundle_digest = sealed.get("freeze_seal_bundle_digest")
+            freeze_bundle = self._resolve_digest_payload(freeze_bundle_digest)
+            freeze_bundle_ok = bool(
+                freeze_bundle
+                and freeze_bundle.get("run_id") == sealed.get("run_id")
+                and freeze_bundle.get("campaign_digest") == sealed.get("campaign_digest")
+                and freeze_bundle.get("budget_digest") == sealed.get("budget_digest")
+            )
+        immutable_ok = cross_ok and freeze_bundle_ok
         facts.append(
             _fact(
                 "immutable_artifacts_bound",
-                source=src,
-                validator="lifecycle.sealed_run_digest",
-                outcome="true" if bound else "false",
+                source=sealed_digest or source,
+                validator="lifecycle.freeze_seal_bundle_binding",
+                outcome="true" if immutable_ok else "false",
+                reasons=() if immutable_ok else ("freeze_seal_bundle_unresolved_or_mismatched",),
             )
         )
 
-        budget_ok = bool(sealed and sealed.get("budget_digest"))
+        budget_ok = bool(sealed and manifest and self._budget_binding_valid(sealed, manifest))
         facts.append(
             _fact(
                 "exact_budget_evidence",
-                source=str(sealed.get("budget_digest") or src) if sealed else src,
-                validator="lifecycle.budget_digest",
+                source=str(sealed.get("budget_digest")) if sealed else source,
+                validator="lifecycle.derived_budget_binding",
                 outcome="true" if budget_ok else "false",
+                reasons=() if budget_ok else ("budget_digest_not_derived_from_bound_manifest",),
             )
         )
 
-        life_ok = bool(freeze and release and receipt)
+        lifecycle_ok = False
+        if manifest and freeze_digest and release_digest and cross_ok:
+            chain = [str(item) for item in (manifest.get("chain") or [])]
+            lifecycle_ok = bool(
+                manifest.get("lifecycle")
+                in {"label_release", "triage", "stats", "repair", "disclosure"}
+                and manifest.get("tip_digest") == release_digest
+                and freeze_digest in chain
+                and release_digest in chain
+            )
         facts.append(
             _fact(
                 "lifecycle_freeze_adjudicate_release",
-                source=str(receipt.get("content_digest") or src) if receipt else src,
-                validator="lifecycle.freeze_adjudicate_release",
-                outcome="true" if life_ok else "false",
-                reasons=() if life_ok else ("missing_freeze_release_or_receipt",),
+                source=release_digest or source,
+                validator="lifecycle.chain_and_tip_validation",
+                outcome="true" if lifecycle_ok else "false",
+                reasons=() if lifecycle_ok else ("lifecycle_chain_not_closed",),
             )
         )
         return facts
 
     def _execution_facts(self) -> list[EvidenceFact]:
-        sealed = _read_json(self.root / "sealed_run.json") or {}
+        sealed, sealed_digest, sealed_errors = self._verified_json(self.root / "sealed_run.json")
+        if sealed is None or sealed_digest is None or sealed_errors:
+            return [
+                _fact(
+                    "security_grade_execution",
+                    source=sealed_digest or "invalid-sealed-run",
+                    validator="execution.boundary_payload_validation",
+                    outcome="false",
+                    reasons=sealed_errors or ("sealed_run_invalid",),
+                )
+            ]
+
         meta = sealed.get("metadata") or {}
-        src = str(sealed.get("content_digest") or digest_of({"exec": str(self.root)}))
         mode = str(meta.get("execution_mode") or meta.get("backend_kind") or "local_dev")
-        security_flag = bool(meta.get("security_grade"))
-        # Rootful / local / process paths hard-cap security_grade to false.
-        localish = mode in {"local_dev", "process", "process_local"} or not security_flag
-        grade = (
-            security_flag
-            and not localish
-            and mode
-            in {
-                "security_grade",
-                "container_isolated",
-                "microvm_isolated",
-                "separate_host",
-                "docker_rootless",
-            }
+        declared_grade = bool(meta.get("security_grade"))
+        boundary_digests = tuple(
+            str(item)
+            for item in (
+                sealed.get("execution_boundary_digests")
+                or meta.get("execution_boundary_digests")
+                or []
+            )
+            if item
         )
         reasons: list[str] = []
-        if localish:
-            reasons.append("rootful_or_local_execution_caps_security_grade")
-        if not meta.get("execution_boundary_digests") and not sealed.get(
-            "execution_boundary_digests"
-        ):
-            reasons.append("execution_boundary_missing")
-            grade = False
+        if mode not in {"docker_rootless", "microvm", "separate_host"}:
+            reasons.append("non_security_grade_execution_mode")
+        if not declared_grade:
+            reasons.append("sealed_run_does_not_declare_security_grade")
+        if not boundary_digests:
+            reasons.append("execution_boundary_digests_missing")
+
+        boundaries_ok = bool(boundary_digests)
+        probe_digests: set[str] = set()
+        if boundary_digests:
+            from verifierlab.execution.container import ExecutionBoundaryManifest
+
+            for boundary_digest in boundary_digests:
+                payload = self._resolve_digest_payload(boundary_digest)
+                if payload is None:
+                    boundaries_ok = False
+                    reasons.append(f"execution_boundary_unresolved:{boundary_digest[:12]}")
+                    continue
+                try:
+                    boundary = ExecutionBoundaryManifest.model_validate(payload)
+                except Exception:
+                    boundaries_ok = False
+                    reasons.append(f"execution_boundary_invalid:{boundary_digest[:12]}")
+                    continue
+                if boundary.content_digest() != boundary_digest:
+                    boundaries_ok = False
+                    reasons.append(f"execution_boundary_digest_mismatch:{boundary_digest[:12]}")
+                if not boundary.security_grade or not boundary.policy_satisfied:
+                    boundaries_ok = False
+                    reasons.append(f"execution_boundary_not_security_grade:{boundary_digest[:12]}")
+                if boundary.probe_report_digest:
+                    probe_digests.add(boundary.probe_report_digest)
+                else:
+                    boundaries_ok = False
+                    reasons.append(f"execution_boundary_probe_missing:{boundary_digest[:12]}")
+
+        probes_ok = bool(probe_digests)
+        if probe_digests:
+            from verifierlab.execution.protocol import IsolationProbeReport
+
+            for probe_digest in sorted(probe_digests):
+                payload = self._resolve_digest_payload(probe_digest)
+                if payload is None:
+                    probes_ok = False
+                    reasons.append(f"isolation_probe_unresolved:{probe_digest[:12]}")
+                    continue
+                try:
+                    report = IsolationProbeReport.model_validate(payload)
+                except Exception:
+                    probes_ok = False
+                    reasons.append(f"isolation_probe_invalid:{probe_digest[:12]}")
+                    continue
+                if report.content_digest() != probe_digest:
+                    probes_ok = False
+                    reasons.append(f"isolation_probe_digest_mismatch:{probe_digest[:12]}")
+                if not (
+                    report.ran_inside_executor
+                    and not report.structural_only
+                    and report.secret_sentinels_absent
+                    and report.randomized_gt_paths_absent
+                    and report.all_required_denied
+                    and report.security_grade_eligible
+                ):
+                    probes_ok = False
+                    reasons.append(f"isolation_probe_not_qualifying:{probe_digest[:12]}")
+        else:
+            reasons.append("isolation_probe_evidence_missing")
+
+        grade = bool(
+            declared_grade
+            and mode in {"docker_rootless", "microvm", "separate_host"}
+            and boundaries_ok
+            and probes_ok
+        )
         return [
             _fact(
                 "security_grade_execution",
-                source=src,
-                validator="execution.boundary_and_mode",
+                source=sealed_digest,
+                validator="execution.boundary_and_probe_payload_validation",
                 outcome="true" if grade else "false",
                 reasons=tuple(reasons),
             )
         ]
 
     def _holdout_facts(self) -> list[EvidenceFact]:
-        sealed = _read_json(self.root / "sealed_run.json") or {}
-        custody = _read_json(self.root / "custody" / "hidden_split.json")
-        src = str(
-            sealed.get("custody_digest")
-            or (custody or {}).get("content_digest")
-            or digest_of({"holdout": str(self.root)})
-        )
-        holdout = bool(sealed.get("custody_digest") or custody)
-        labels_out = bool(
-            (self.root / "vault" / "private").is_dir()
-            or sealed.get("vault_tip_digest")
-            or (self.root / "label_release_receipt.json").is_file()
-        )
+        sealed, sealed_digest, _ = self._verified_json(self.root / "sealed_run.json")
+        receipt, receipt_digest, _ = self._verified_json(self.root / "label_release_receipt.json")
+        source = receipt_digest or sealed_digest or digest_of({"holdout": str(self.root)})
+
+        vault_commitments = self.root / "vault" / "commitments"
+        labels_out = bool(receipt and receipt_digest and vault_commitments.is_dir())
+        leaks: list[str] = []
+        work_units = self.root / "work_units"
+        if labels_out and work_units.is_dir():
+            forbidden = {"gt_valid", "ground_truth", "ground_truth_ref", "hidden_label"}
+            for path in sorted(work_units.glob("*.json")):
+                body = _read_json(path) or {}
+                for key in forbidden:
+                    if body.get(key) is not None:
+                        leaks.append(f"{path.name}:{key}")
+        if leaks:
+            labels_out = False
+
+        custody_ok = False
+        if sealed and _valid_digest(sealed.get("custody_digest")):
+            custody = self._resolve_digest_payload(sealed.get("custody_digest"))
+            custody_ok = custody is not None
+
         return [
             _fact(
                 "hidden_labels_outside_attack_plane",
-                source=src,
-                validator="custody.hidden_labels",
+                source=source,
+                validator="custody.vault_and_attack_plane_scan",
                 outcome="true" if labels_out else "false",
+                reasons=tuple(f"attack_plane_label_leak:{item}" for item in leaks)
+                if leaks
+                else (() if labels_out else ("validated_label_custody_evidence_missing",)),
             ),
             _fact(
                 "hidden_holdout_sealed",
-                source=src,
-                validator="custody.hidden_split",
-                outcome="true" if holdout else "false",
-                reasons=() if holdout else ("custody_digest_missing",),
+                source=str(sealed.get("custody_digest")) if sealed else source,
+                validator="custody.digest_resolution",
+                outcome="true" if custody_ok else "false",
+                reasons=() if custody_ok else ("custody_digest_unresolved",),
             ),
         ]
 
     def _stats_facts(self) -> list[EvidenceFact]:
-        sealed = _read_json(self.root / "sealed_run.json") or {}
-        src = str(
-            sealed.get("preregistration_digest") or sealed.get("content_digest") or ("0" * 64)
-        )
-        prereg = bool(sealed.get("preregistration_digest"))
-        # Strong attacker / negatives / estimands: require sealed digests or report.
+        sealed, sealed_digest, _ = self._verified_json(self.root / "sealed_run.json")
+        source = sealed_digest or digest_of({"stats": str(self.root)})
+        preregistration = None
+        preregistration_digest: str | None = None
+        if sealed and _valid_digest(sealed.get("preregistration_digest")):
+            preregistration_digest = str(sealed["preregistration_digest"])
+            preregistration = self._resolve_digest_payload(preregistration_digest)
+
+        prereg_ok = False
+        primary_ids: tuple[str, ...] = ()
+        if preregistration is not None and preregistration_digest is not None:
+            try:
+                from verifierlab.config.preregistration import AnalysisPreregistration
+
+                registration = AnalysisPreregistration.model_validate(preregistration)
+                prereg_ok = registration.content_digest == preregistration_digest
+                primary_ids = tuple(
+                    item.estimand_id for item in registration.estimands if item.role == "primary"
+                )
+            except Exception:
+                prereg_ok = False
+
         report = _read_json(self.root / "report" / "stats.json") or {}
-        negatives = True
-        if report:
-            # Fail if report drops censored/missing channels.
-            negatives = "censored" in report or "missingness" in str(report)
-        budgeted = bool(sealed.get("budget_digest"))
-        estimands = bool(prereg) or bool(report.get("primary_estimands"))
+        report_source = digest_of(report) if report else source
+        registered = report.get("registered_estimands")
+        complete = bool(prereg_ok and primary_ids and isinstance(registered, dict))
+        if complete and isinstance(registered, dict):
+            for estimand_id in primary_ids:
+                item = registered.get(estimand_id)
+                if not isinstance(item, dict):
+                    complete = False
+                    break
+                result = item.get("result")
+                if not isinstance(result, dict) or result.get("status") not in {
+                    "estimated",
+                    "indeterminate",
+                }:
+                    complete = False
+                    break
+
+        negative_results = bool(
+            report
+            and report.get("negative_results_preserved") is True
+            and isinstance(report.get("censored"), dict)
+        )
+
+        manifest = _read_json(self.root / "manifest.json") or {}
+        budgeted = bool(
+            sealed
+            and manifest
+            and self._budget_binding_valid(sealed, manifest)
+            and sealed.get("attacker_identity_digests")
+        )
+
+        synthetic_reasons: list[str] = []
+        for candidate in (
+            sealed or {},
+            _read_json(self.root / "scientific_study_registration.json") or {},
+            report,
+            _read_json(self.root / "environment_assurance_ref.json") or {},
+            _read_json(self.root / "envassure" / "environment_assurance_ref.json") or {},
+        ):
+            metadata = candidate.get("metadata") if isinstance(candidate, dict) else None
+            if isinstance(metadata, dict) and (
+                metadata.get("synthetic") is True or metadata.get("non_live") is True
+            ):
+                synthetic_reasons.append("synthetic_or_non_live_metadata")
+            if isinstance(candidate, dict) and candidate.get("synthetic_non_deployment_evidence"):
+                synthetic_reasons.append("synthetic_non_deployment_evidence")
+
         return [
             _fact(
                 "preregistered_study",
-                source=src,
-                validator="stats.preregistration",
-                outcome="true" if prereg else "false",
+                source=preregistration_digest or source,
+                validator="stats.preregistration_payload",
+                outcome="true" if prereg_ok else "false",
+                reasons=() if prereg_ok else ("preregistration_digest_unresolved_or_invalid",),
             ),
             _fact(
                 "strong_attacker_budgeted",
-                source=str(sealed.get("budget_digest") or src),
-                validator="stats.budget",
+                source=str(sealed.get("budget_digest")) if sealed else source,
+                validator="stats.attacker_identity_and_budget_binding",
                 outcome="true" if budgeted else "false",
+                reasons=() if budgeted else ("attacker_identity_or_exact_budget_evidence_missing",),
             ),
             _fact(
                 "qualification_estimands_complete",
-                source=src,
-                validator="stats.estimands",
-                outcome="true" if estimands else "false",
+                source=report_source,
+                validator="stats.registered_estimand_compilation",
+                outcome="true" if complete else "false",
+                reasons=() if complete else ("primary_estimands_not_executably_compiled",),
             ),
             _fact(
                 "negative_results_preserved",
-                source=src,
-                validator="stats.negatives",
-                outcome="true" if negatives else "false",
+                source=report_source,
+                validator="stats.explicit_negative_result_preservation",
+                outcome="true" if negative_results else "false",
+                reasons=() if negative_results else ("negative_result_preservation_not_proven",),
+            ),
+            _fact(
+                "qualification_evidence_non_synthetic",
+                source=report_source,
+                validator="stats.synthetic_evidence_guard",
+                outcome="false" if synthetic_reasons else "true",
+                reasons=tuple(sorted(set(synthetic_reasons))),
             ),
         ]
 
@@ -435,203 +768,294 @@ class EvidenceResolver:
         from verifierlab.assurance.envassure import (
             EnvironmentAssuranceRef,
             propagate_envassure_into_qualification,
+            verify_frozen_envassure_bundle,
         )
 
-        sealed = _read_json(self.root / "sealed_run.json") or {}
-        meta = sealed.get("metadata") or {}
-        ref_body = _read_json(self.root / "environment_assurance_ref.json")
+        sealed, sealed_digest, _ = self._verified_json(self.root / "sealed_run.json")
+        ref_path = self.root / "environment_assurance_ref.json"
+        if not ref_path.is_file():
+            ref_path = self.root / "envassure" / "environment_assurance_ref.json"
+        ref_body = _read_json(ref_path)
+        source = sealed_digest or digest_of({"envassure": str(self.root)})
         if ref_body is None:
-            ref_body = _read_json(self.root / "envassure" / "environment_assurance_ref.json")
-        env_ref: EnvironmentAssuranceRef | None = None
-        src = str(
-            sealed.get("environment_assurance_digest")
-            or meta.get("environment_assurance_digest")
-            or digest_of({"envassure": str(self.root)})
-        )
-        if ref_body:
-            try:
-                env_ref = EnvironmentAssuranceRef.model_validate(
-                    {k: v for k, v in ref_body.items() if k != "content_digest"}
-                )
-                src = env_ref.digest
-            except Exception:
-                return [
-                    _fact(
-                        "environment_assurance_determinate",
-                        source=src,
-                        validator="envassure.ref",
-                        outcome="false",
-                        reasons=("environment_assurance_ref_invalid",),
-                    )
-                ]
-        elif sealed.get("environment_assurance_digest") or meta.get("environment_assurance_digest"):
-            # Digest bound but body missing — fail closed for scientific path.
             return [
                 _fact(
                     "environment_assurance_determinate",
-                    source=src,
-                    validator="envassure.ref",
+                    source=source,
+                    validator="envassure.bundle_and_ref_validation",
                     outcome="false",
-                    reasons=("environment_assurance_ref_body_missing",),
+                    reasons=("environment_assurance_ref_missing",),
+                )
+            ]
+        try:
+            ref_payload = _payload_without_content_digest(ref_body)
+            env_ref = EnvironmentAssuranceRef.model_validate(ref_payload)
+        except Exception:
+            return [
+                _fact(
+                    "environment_assurance_determinate",
+                    source=source,
+                    validator="envassure.bundle_and_ref_validation",
+                    outcome="false",
+                    reasons=("environment_assurance_ref_invalid",),
+                )
+            ]
+        if ref_body.get("content_digest") is not None and ref_body.get("content_digest") != env_ref.digest:
+            return [
+                _fact(
+                    "environment_assurance_determinate",
+                    source=env_ref.digest,
+                    validator="envassure.bundle_and_ref_validation",
+                    outcome="false",
+                    reasons=("environment_assurance_ref_digest_mismatch",),
+                )
+            ]
+        if not sealed or sealed.get("environment_assurance_digest") != env_ref.digest:
+            return [
+                _fact(
+                    "environment_assurance_determinate",
+                    source=env_ref.digest,
+                    validator="envassure.bundle_and_ref_validation",
+                    outcome="false",
+                    reasons=("sealed_run_environment_assurance_binding_mismatch",),
                 )
             ]
 
-        # Verifier "success" inferred from sealed run presence; never upgrades EnvAssure.
-        verifier_success = bool(sealed.get("content_digest"))
+        bundle_path = self.root / "envassure" / "frozen-evidence-bundle.json"
+        if not bundle_path.is_file():
+            bundle_path = self.root / "frozen-evidence-bundle.json"
+        try:
+            verified_ref = verify_frozen_envassure_bundle(
+                bundle_path,
+                expected_digest=env_ref.bundle_digest,
+            )
+        except (OSError, ValueError):
+            return [
+                _fact(
+                    "environment_assurance_determinate",
+                    source=env_ref.digest,
+                    validator="envassure.bundle_and_ref_validation",
+                    outcome="false",
+                    reasons=("frozen_environment_assurance_bundle_invalid_or_missing",),
+                )
+            ]
+        if verified_ref.digest != env_ref.digest:
+            return [
+                _fact(
+                    "environment_assurance_determinate",
+                    source=env_ref.digest,
+                    validator="envassure.bundle_and_ref_validation",
+                    outcome="false",
+                    reasons=("environment_assurance_bundle_ref_mismatch",),
+                )
+            ]
         outcome, reasons = propagate_envassure_into_qualification(
             env_ref=env_ref,
-            verifier_success=verifier_success,
+            verifier_success=True,
         )
-        # Absent EnvAssure is not a scientific gate failure when study does not claim
-        # environment binding — treat as true with reason for non-EnvAssure runs only
-        # when no digest is expected. Flagship/WP-14 studies bind a ref.
-        if env_ref is None and not (
-            sealed.get("environment_assurance_digest") or meta.get("environment_assurance_digest")
-        ):
-            # Optional: no EnvAssure binding required for pre-WP-14 sealed runs.
-            outcome = "true"
-            reasons = ("environment_assurance_not_bound",)
         return [
             _fact(
                 "environment_assurance_determinate",
-                source=src,
-                validator="envassure.status_propagation",
+                source=env_ref.digest,
+                validator="envassure.bundle_and_ref_validation",
                 outcome=outcome,
                 reasons=reasons,
             )
         ]
 
     def _independence_facts(self) -> list[EvidenceFact]:
-        facts: list[EvidenceFact] = []
         review_ok = False
-        recon_ok = False
+        reconstruction_ok = False
         reasons: list[str] = []
-        src = digest_of({"claim": self.claim.digest, "roots": sorted(self.trust_roots)})
+        source = digest_of({"claim": self.claim.digest, "roots": sorted(self.trust_roots)})
         if not self.attestations:
             reasons.append("no_external_attestation")
-        for att in self.attestations:
+        for attestation in self.attestations:
             try:
                 verify_external_attestation(
-                    att,
+                    attestation,
                     claim=self.claim,
                     trust_roots=self.trust_roots,
                     subject_digest=self._subject_digest(),
                 )
-                review_ok = True
-                if att.reconstruction_digest:
-                    recon_ok = True
             except ValueError as exc:
                 reasons.append(str(exc))
-        if review_ok and not recon_ok:
-            reasons.append("reconstruction_digest_missing")
-        facts.append(
+                continue
+            review_ok = True
+            if attestation.reconstruction_digest and _valid_digest(attestation.reconstruction_digest):
+                reconstruction_ok = True
+        if review_ok and not reconstruction_ok:
+            reasons.append("reconstruction_digest_missing_or_invalid")
+        reason_tuple = tuple(reasons)
+        return [
             _fact(
                 "independent_review",
-                source=src,
+                source=source,
                 validator="attestation.external_trust_root",
                 outcome="true" if review_ok else "false",
-                reasons=tuple(reasons),
-            )
-        )
-        facts.append(
+                reasons=reason_tuple,
+            ),
             _fact(
                 "independent_reconstruction",
-                source=src,
+                source=source,
                 validator="attestation.reconstruction",
-                outcome="true" if recon_ok else "false",
-                reasons=tuple(reasons),
-            )
-        )
-        return facts
+                outcome="true" if reconstruction_ok else "false",
+                reasons=reason_tuple,
+            ),
+        ]
 
     def _deployment_facts(self) -> list[EvidenceFact]:
-        # Prefer WP-15 deployment/ layout; fall back to legacy markers.
         dep_root = self.root / "deployment"
-        regs_dir = self.root / "registrations"
-        if dep_root.is_dir() and (dep_root / "registrations").is_dir():
-            regs_dir = dep_root / "registrations"
-        regs = list(regs_dir.glob("*.json")) if regs_dir.is_dir() else []
-        pred_regs = []
+        source = digest_of({"deployment": str(dep_root)})
+        if not dep_root.is_dir():
+            return self._empty_deployment_facts(source)
+
+        predictions: list[Any] = []
+        outcomes: list[Any] = []
         synthetic = False
-        for path in regs:
-            if path.name.endswith(".payload.json"):
-                continue
-            body = _read_json(path) or {}
-            if body.get("registration_kind") == "deployment_prediction":
-                pred_regs.append(body)
-                if body.get("synthetic_non_deployment_evidence"):
+        try:
+            from verifierlab.assurance.deployment import (
+                AppendOnlyChronologyStore,
+                DeploymentCalibrationReport,
+                DeploymentOutcomeRecord,
+                DeploymentPredictionRegistration,
+            )
+
+            pred_dir = dep_root / "predictions"
+            for path in sorted(pred_dir.glob("*.json")) if pred_dir.is_dir() else []:
+                body, digest, errors = self._verified_json(path)
+                if body is None or digest is None or errors:
+                    continue
+                record = DeploymentPredictionRegistration.model_validate(
+                    _payload_without_content_digest(body)
+                )
+                if record.digest != digest:
+                    continue
+                predictions.append(record)
+                synthetic = synthetic or record.synthetic_non_deployment_evidence
+
+            out_dir = dep_root / "outcomes"
+            for path in sorted(out_dir.glob("*.json")) if out_dir.is_dir() else []:
+                body, digest, errors = self._verified_json(path)
+                if body is None or digest is None or errors:
+                    continue
+                record = DeploymentOutcomeRecord.model_validate(
+                    _payload_without_content_digest(body)
+                )
+                if record.digest != digest:
+                    continue
+                outcomes.append(record)
+                synthetic = synthetic or record.synthetic_non_deployment_evidence
+
+            events = AppendOnlyChronologyStore(dep_root / "chronology").events()
+            event_digests = {event.digest for event in events}
+            event_order = {event.event_id: index for index, event in enumerate(events)}
+            chronology_ok = bool(events)
+            for prediction in predictions:
+                chronology_ok = chronology_ok and prediction.chronology_event_digest in event_digests
+            for outcome in outcomes:
+                chronology_ok = chronology_ok and outcome.chronology_event_digest in event_digests
+                pred_event = f"pred-{outcome.prediction_id}"
+                out_event = f"out-{outcome.outcome_id}"
+                chronology_ok = chronology_ok and pred_event in event_order and out_event in event_order
+                if pred_event in event_order and out_event in event_order:
+                    chronology_ok = chronology_ok and event_order[pred_event] < event_order[out_event]
+
+            report_body, report_digest, report_errors = self._verified_json(
+                dep_root / "calibration_report.json"
+            )
+            report = None
+            if report_body is not None and report_digest is not None and not report_errors:
+                report = DeploymentCalibrationReport.model_validate(
+                    _payload_without_content_digest(report_body)
+                )
+                if report.digest != report_digest:
+                    report = None
+                elif report.synthetic_non_deployment_evidence:
                     synthetic = True
-        src = (
-            digest_of({"regs": [r.get("content_digest") for r in pred_regs]})
-            if pred_regs
-            else ("0" * 64)
-        )
-        outcomes = (dep_root / "outcomes.json").is_file() or (
-            (dep_root / "outcomes").is_dir() and any((dep_root / "outcomes").glob("*.json"))
-        )
-        calib = (dep_root / "calibration_report.json").is_file()
-        appl = (dep_root / "applicability.json").is_file()
 
-        chronology_ok = False
-        if (dep_root / "chronology" / "tip.json").is_file():
-            tip = _read_json(dep_root / "chronology" / "tip.json") or {}
-            chronology_ok = bool(tip.get("tip_digest")) and tip.get("tip_digest") != ("0" * 64)
-        if calib:
-            report = _read_json(dep_root / "calibration_report.json") or {}
-            if report.get("synthetic_non_deployment_evidence"):
-                synthetic = True
-            if report.get("supports_deployment_calibrated_claim") is False:
-                # Keep facts accurate; blockers handled by individual facts.
-                pass
-            if not report.get("chronology_tip_digest"):
-                chronology_ok = False
+            applicability = _read_json(dep_root / "applicability.json") or {}
+            applicability_ok = bool(
+                applicability.get("applicability_regime") or applicability.get("regime")
+            )
+            report_ok = bool(
+                report
+                and report.supports_deployment_calibrated_claim
+                and report.n_matched > 0
+                and report.n_outcomes > 0
+                and report.n_predictions > 0
+            )
+            source = report_digest or (predictions[0].digest if predictions else source)
+        except (OSError, ValueError, TypeError):
+            return self._empty_deployment_facts(source)
 
+        predictions_ok = bool(predictions) and chronology_ok
+        outcomes_ok = bool(outcomes) and chronology_ok
         return [
             _fact(
                 "prospective_predictions_registered",
-                source=src,
-                validator="deployment.prediction_registration",
-                outcome="true" if pred_regs else "false",
+                source=source,
+                validator="deployment.validated_prediction_chronology",
+                outcome="true" if predictions_ok else "false",
             ),
             _fact(
                 "deployment_outcomes_collected",
-                source=src,
-                validator="deployment.outcomes",
-                outcome="true" if outcomes else "false",
+                source=source,
+                validator="deployment.validated_outcome_chronology",
+                outcome="true" if outcomes_ok else "false",
             ),
             _fact(
                 "calibration_analysis_complete",
-                source=src,
-                validator="deployment.calibration",
-                outcome="true" if calib else "false",
+                source=source,
+                validator="deployment.validated_calibration_report",
+                outcome="true" if report_ok else "false",
             ),
             _fact(
                 "applicability_regime_declared",
-                source=src,
+                source=source,
                 validator="deployment.applicability",
-                outcome="true" if appl else "false",
+                outcome="true" if applicability_ok else "false",
             ),
             _fact(
                 "deployment_chronology_anchored",
-                source=src,
-                validator="deployment.chronology_hash_chain",
+                source=source,
+                validator="deployment.hash_chain_and_event_order",
                 outcome="true" if chronology_ok else "false",
-                reasons=() if chronology_ok else ("chronology_hash_chain_missing",),
+                reasons=() if chronology_ok else ("deployment_chronology_invalid",),
             ),
             _fact(
                 "deployment_not_synthetic",
-                source=src,
+                source=source,
                 validator="deployment.synthetic_guard",
-                outcome="false" if synthetic else ("true" if pred_regs else "false"),
+                outcome="false" if synthetic else ("true" if predictions_ok else "false"),
                 reasons=("synthetic_non_deployment_evidence",) if synthetic else (),
             ),
         ]
 
+    def _empty_deployment_facts(self, source: str) -> list[EvidenceFact]:
+        return [
+            _fact(
+                fact_id,
+                source=source,
+                validator=validator,
+                outcome="false",
+                reasons=("validated_deployment_evidence_missing",),
+            )
+            for fact_id, validator in (
+                ("prospective_predictions_registered", "deployment.validated_prediction_chronology"),
+                ("deployment_outcomes_collected", "deployment.validated_outcome_chronology"),
+                ("calibration_analysis_complete", "deployment.validated_calibration_report"),
+                ("applicability_regime_declared", "deployment.applicability"),
+                ("deployment_chronology_anchored", "deployment.hash_chain_and_event_order"),
+                ("deployment_not_synthetic", "deployment.synthetic_guard"),
+            )
+        ]
+
     def _subject_digest(self) -> str:
-        sealed = _read_json(self.root / "sealed_run.json")
-        if sealed and sealed.get("content_digest"):
-            return str(sealed["content_digest"])
-        return digest_of({"root": str(self.root.resolve())})
+        _sealed, sealed_digest, errors = self._verified_json(self.root / "sealed_run.json")
+        if sealed_digest is not None and not errors:
+            return sealed_digest
+        return digest_of({"root": str(self.root.resolve()), "validated_seal": False})
 
 
 def verify_external_attestation(
@@ -641,7 +1065,7 @@ def verify_external_attestation(
     trust_roots: dict[str, str],
     subject_digest: str,
 ) -> None:
-    """Verify attestation against external trust roots; reject self-issued / wrong subject."""
+    """Verify an attestation and reject self-issued or wrong-subject evidence."""
     if attestation.claim_digest != claim.digest:
         raise ValueError("attestation claim_digest mismatch")
     if attestation.subject_digest != subject_digest:
@@ -649,9 +1073,8 @@ def verify_external_attestation(
     root = trust_roots.get(attestation.trust_root_id)
     if root is None:
         raise ValueError("attestation trust root not configured")
-    # Self-issued: reviewer_id equals a local/self marker or trust root id collision.
-    if attestation.reviewer_id in {"self", "local", "internal"} or attestation.reviewer_id == (
-        attestation.trust_root_id
+    if attestation.reviewer_id in {"self", "local", "internal"} or (
+        attestation.reviewer_id == attestation.trust_root_id
     ):
         raise ValueError("self-issued attestation rejected")
     expected = digest_of(
@@ -681,8 +1104,8 @@ def sign_external_attestation(
     reconstruction_digest: str | None = None,
     issued_at: float | None = None,
 ) -> ExternalAssuranceAttestation:
-    """Helper to build a correctly signed attestation for tests / external tools."""
-    ts = float(time.time() if issued_at is None else issued_at)
+    """Build a correctly bound attestation for tests and external tools."""
+    timestamp = float(time.time() if issued_at is None else issued_at)
     signature = digest_of(
         {
             "attestation_id": attestation_id,
@@ -690,7 +1113,7 @@ def sign_external_attestation(
             "claim_digest": claim.digest,
             "reviewer_id": reviewer_id,
             "trust_root_id": trust_root_id,
-            "issued_at": ts,
+            "issued_at": timestamp,
             "reconstruction_digest": reconstruction_digest,
             "root": trust_root_secret,
         }
@@ -702,7 +1125,7 @@ def sign_external_attestation(
         reviewer_id=reviewer_id,
         trust_root_id=trust_root_id,
         signature=signature,
-        issued_at=ts,
+        issued_at=timestamp,
         reconstruction_digest=reconstruction_digest,
     )
 
@@ -714,7 +1137,7 @@ def qualify_run(
     trust_roots: dict[str, str] | None = None,
     attestations: list[ExternalAssuranceAttestation] | None = None,
 ) -> AssuranceQualification:
-    """Public qualification entry: artifact-derived facts only."""
+    """Public qualification entry point using validated artifact evidence only."""
     root = Path(run_or_study)
     if isinstance(claim, str | Path):
         claim_path = Path(claim)
@@ -725,20 +1148,19 @@ def qualify_run(
         claim_obj = AssuranceClaim.model_validate(claim)
     else:
         claim_obj = claim
-    # Refuse pure boolean promotion payloads dropped beside the run.
+
     boolean_bag = root / "assurance_evidence_booleans.json"
     if boolean_bag.is_file():
         raise ValueError(
             "caller-supplied AssuranceEvidence boolean bags are not a qualification path; "
-            "remove assurance_evidence_booleans.json and provide sealed artifacts"
+            "remove assurance_evidence_booleans.json and provide validated sealed artifacts"
         )
-    resolver = EvidenceResolver(
+    return EvidenceResolver(
         root,
         claim=claim_obj,
         trust_roots=trust_roots,
         attestations=attestations,
-    )
-    return resolver.qualify()
+    ).qualify()
 
 
 __all__ = [
