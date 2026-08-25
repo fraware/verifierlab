@@ -9,7 +9,9 @@ from verifierlab.verifiers.profile import ScoreDecisionMapping, VerifierProfile
 
 
 def _profile(*, threshold: float | None) -> VerifierProfile:
-    mapping = None if threshold is None else ScoreDecisionMapping(operator="ge", threshold=threshold)
+    mapping = (
+        None if threshold is None else ScoreDecisionMapping(operator="ge", threshold=threshold)
+    )
     return VerifierProfile(
         name="score-verifier",
         implementation_digest="sha256:impl",
