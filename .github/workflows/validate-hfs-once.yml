@@ -19,13 +19,36 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv python install 3.12
       - run: uv sync --extra dev
-      - name: Normalize new protocol files
-        run: uv run ruff format src/verifierlab/campaigns/hacker_fixer_solver.py tests/test_hacker_fixer_solver_protocol.py
-      - run: uv run ruff check src/verifierlab/campaigns/hacker_fixer_solver.py tests/test_hacker_fixer_solver_protocol.py
-      - run: uv run ruff format --check src/verifierlab/campaigns/hacker_fixer_solver.py tests/test_hacker_fixer_solver_protocol.py
-      - run: uv run mypy src/verifierlab/campaigns/hacker_fixer_solver.py tests/test_hacker_fixer_solver_protocol.py
-      - run: uv run pytest tests/test_hacker_fixer_solver_protocol.py -q
-      - name: Commit normalized protocol sources
+      - name: Apply strict test typing corrections
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("tests/test_hacker_fixer_solver_protocol.py")
+          text = path.read_text(encoding="utf-8")
+          text = text.replace(
+              "from typing import Any\n",
+              "from typing import Any, Literal\n",
+              1,
+          )
+          text = text.replace(
+              "def _agent(role: str, name: str, *, model: str | None = None) -> AgentProgramSpec:\n",
+              "def _agent(\n    role: Literal[\"hacker\", \"fixer\", \"solver\"],\n    name: str,\n    *,\n    model: str | None = None,\n) -> AgentProgramSpec:\n",
+              1,
+          )
+          old = '''    with pytest.raises(ValueError, match="exceeded"):\n        AttackExecution(**common, queries_used=2)\n    with pytest.raises(ValueError, match="number of result digests"):\n        AttackExecution(**common, queries_used=0)\n'''
+          new = '''    with pytest.raises(ValueError, match="exceeded"):\n        AttackExecution.model_validate({**common, "queries_used": 2})\n    with pytest.raises(ValueError, match="number of result digests"):\n        AttackExecution.model_validate({**common, "queries_used": 0})\n'''
+          if text.count(old) != 1:
+              raise SystemExit("expected one budget-negative-test block")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+      - name: Normalize and validate protocol
+        run: |
+          uv run ruff format src/verifierlab/campaigns/hacker_fixer_solver.py tests/test_hacker_fixer_solver_protocol.py
+          uv run ruff check src/verifierlab/campaigns/hacker_fixer_solver.py tests/test_hacker_fixer_solver_protocol.py
+          uv run ruff format --check src/verifierlab/campaigns/hacker_fixer_solver.py tests/test_hacker_fixer_solver_protocol.py
+          uv run mypy src/verifierlab/campaigns/hacker_fixer_solver.py tests/test_hacker_fixer_solver_protocol.py
+          uv run pytest tests/test_hacker_fixer_solver_protocol.py -q
+      - name: Commit validated protocol sources
         run: |
           set -euo pipefail
           git diff --check
@@ -33,5 +56,5 @@ jobs:
           git config user.email "repo-maintenance@users.noreply.github.com"
           git add src/verifierlab/campaigns/hacker_fixer_solver.py tests/test_hacker_fixer_solver_protocol.py
           git diff --cached --quiet && exit 1
-          git commit -m "style(campaigns): normalize experiment protocol"
+          git commit -m "feat(campaigns): enforce fresh reattack protocol"
           git push origin HEAD:research/hacker-fixer-solver
