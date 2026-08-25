@@ -10,8 +10,8 @@ A digest-pinned worker image is mandatory. Rootless daemon execution is required
 for ``security_grade=True``. The policy may explicitly permit a rootful daemon
 for CI/conformance exercises, but such a run remains below security grade even
 when every container-local control passes. No host bind/volume/device mount is
-permitted. Mutable persistent-attacker state is intentionally unsupported until
-it has a dedicated protocol that cannot expose coordinator state.
+permitted. Mutable persistent-attacker state uses AttackerStateEnvelope transfer
+rather than host mounts.
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from verifierlab.artifacts.canonical import digest_of
+from verifierlab.execution.protocol import ExecutionBackendKind
 
 _IMAGE_DIGEST_RE = re.compile(r"(?:@sha256:|^sha256:)([0-9a-f]{64})$")
 _WORKER_DATA = "/var/lib/verifierlab/worker"
@@ -62,13 +63,15 @@ class ContainerIsolationPolicy(BaseModel):
 
 
 class ExecutionBoundaryManifest(BaseModel):
-    """Observed isolation controls for one worker container."""
+    """Observed isolation controls for one worker container (schema v2)."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     mode: Literal["container_isolated"] = "container_isolated"
     engine: Literal["docker"] = "docker"
+    backend_kind: ExecutionBackendKind
+    host_trust_domain_digest: str = Field(min_length=1)
     image_ref: str
     image_digest: str = Field(min_length=64, max_length=64)
     container_id_digest: str = Field(min_length=64, max_length=64)
@@ -93,6 +96,7 @@ class ExecutionBoundaryManifest(BaseModel):
     nano_cpus: int
     create_command_digest: str = Field(min_length=64, max_length=64)
     inspect_digest: str = Field(min_length=64, max_length=64)
+    probe_report_digest: str | None = None
     policy_satisfied: bool
     security_grade: bool
 
@@ -160,6 +164,16 @@ def daemon_is_rootless(security_options: list[str] | tuple[str, ...]) -> bool:
     return any(item == "name=rootless" or item.startswith("name=rootless;") for item in normalized)
 
 
+def host_trust_domain_digest(daemon_security_options: list[str] | tuple[str, ...]) -> str:
+    """Content-address the observed daemon trust-domain metadata."""
+    return digest_of(
+        {
+            "daemon_security_options": sorted(str(v) for v in daemon_security_options),
+            "rootless": daemon_is_rootless(daemon_security_options),
+        }
+    )
+
+
 def _security_opt_present(options: Any, expected: str) -> bool:
     if not isinstance(options, list):
         return False
@@ -191,6 +205,7 @@ def boundary_manifest_from_inspect(
     inspect_payload: dict[str, Any],
     daemon_security_options: list[str] | tuple[str, ...],
     create_command: list[str],
+    probe_report_digest: str | None = None,
 ) -> ExecutionBoundaryManifest:
     """Validate effective runtime controls and compile their immutable manifest."""
     host = inspect_payload.get("HostConfig")
@@ -237,9 +252,15 @@ def boundary_manifest_from_inspect(
     )
     rootless_policy_ok = controls["daemon_rootless"] or not policy.require_rootless
     policy_satisfied = container_controls_ok and resources_match and rootless_policy_ok
+    # Rootful host ⇒ security_grade=false even when every container-local control passes.
     security_grade = all(controls.values()) and resources_match
+    backend_kind: ExecutionBackendKind = (
+        "docker_rootless" if controls["daemon_rootless"] else "docker_rootful"
+    )
 
     manifest = ExecutionBoundaryManifest(
+        backend_kind=backend_kind,
+        host_trust_domain_digest=host_trust_domain_digest(daemon_security_options),
         image_ref=policy.image,
         image_digest=policy.image_digest,
         container_id_digest=digest_of({"container_id": container_id}),
@@ -250,6 +271,7 @@ def boundary_manifest_from_inspect(
         nano_cpus=observed_nano_cpus,
         create_command_digest=digest_of(create_command),
         inspect_digest=digest_of(inspect_payload),
+        probe_report_digest=probe_report_digest,
         policy_satisfied=policy_satisfied,
         security_grade=security_grade,
         daemon_rootless=controls["daemon_rootless"],
@@ -281,10 +303,15 @@ def boundary_manifest_from_inspect(
 
 def assert_security_compatible_work_unit(work_unit: dict[str, Any]) -> None:
     """Reject state channels that would require a writable host mount."""
-    if work_unit.get("persistent") or work_unit.get("attacker_dir") or work_unit.get("run_dir"):
+    if work_unit.get("attacker_dir") or work_unit.get("run_dir"):
         raise RuntimeError(
             "isolated worker refuses host-backed mutable attacker state; "
-            "use a dedicated state-transfer protocol"
+            "use AttackerStateEnvelope one-shot transfer"
+        )
+    if work_unit.get("persistent") and not work_unit.get("attacker_state_digest"):
+        raise RuntimeError(
+            "isolated worker refuses host-backed persistent attacker state; "
+            "pass attacker_state_digest via AttackerStateEnvelope"
         )
     if "ground_truth_ref" in work_unit:
         raise RuntimeError("isolated worker refuses ground-truth references")
@@ -435,7 +462,6 @@ class ContainerWorkerExecutor:
             return result
         finally:
             if container_id:
-                # Cleanup failure must not overwrite the primary execution error.
                 with suppress(Exception):
                     self._run(
                         [self.docker_binary, "container", "rm", "--force", container_id],
@@ -453,4 +479,5 @@ __all__ = [
     "boundary_manifest_from_inspect",
     "build_create_command",
     "daemon_is_rootless",
+    "host_trust_domain_digest",
 ]

@@ -66,11 +66,28 @@ def main() -> None:
     os.environ["VALAB_ROLE"] = ROLE
     _assert_pruned_runtime()
 
-    # Import only after proving the installed worker package has been pruned.
-    from verifierlab.campaigns.worker import execute_work_unit
-
     request = _load_request(sys.argv[1:])
-    result = execute_work_unit(request)
+    if request.get("probe_catalogue"):
+        from verifierlab.execution.probes import run_malicious_probe_catalogue
+
+        report = run_malicious_probe_catalogue(
+            backend_kind="docker_rootless",
+            ran_inside_executor=True,
+            secret_sentinels={},  # values never enter the worker; key absence is attested
+            gt_guess_seed=int(request.get("gt_guess_seed") or 0),
+            host_environ=dict(os.environ),
+        )
+        result = {
+            "unit_id": request.get("unit_id"),
+            "probe_catalogue": True,
+            "isolation_probe_report": report.model_dump(mode="json"),
+            "isolation_probe_report_digest": report.content_digest,
+        }
+    else:
+        # Import only after proving the installed worker package has been pruned.
+        from verifierlab.campaigns.worker import execute_work_unit
+
+        result = execute_work_unit(request)
     sys.stdout.write(json.dumps(result, sort_keys=True, separators=(",", ":")) + "\n")
 
 

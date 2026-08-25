@@ -31,6 +31,12 @@ from verifierlab.campaigns.splits import materialize_split_manifest, split_looku
 from verifierlab.campaigns.worker import execute_work_unit
 from verifierlab.config.campaign import AttackSpec, CampaignSpec, load_campaign
 from verifierlab.execution.local import LocalLauncher
+from verifierlab.execution.protocol import ExecutionPolicy
+from verifierlab.execution.secure import (
+    SecurityGradeRefused,
+    assert_local_dev_maturity_cap,
+    select_secure_launcher,
+)
 from verifierlab.labels.adjudication_service import adjudicate_run, resolve_is_valid
 from verifierlab.labels.freeze import FreezeRecord, assert_run_sealed_immutable
 from verifierlab.labels.vault import LabelVault
@@ -213,18 +219,71 @@ async def run_campaign_async(
     # Ensure vault keyring exists on coordinator; workers never open it.
     LabelVault.open(run_dir / "vault", workspace=workspace)
 
-    launcher = LocalLauncher(
-        store=store,
-        run_dir=run_dir,
-        budget=spec.budget,
-        max_workers=max_workers,
-        use_processes=use_processes,
-    )
-    work_units = _order_units_for_persistence(_build_work_units(spec, run_dir=run_dir))
-    # Persistent attackers share filesystem checkpoints — serialize those units.
-    if any(u.get("persistent") for u in work_units):
-        launcher.max_workers = 1
-    outcome = await launcher.run_all(work_units, executor_fn=execute_work_unit)
+    execution_policy = ExecutionPolicy.model_validate((spec.metadata or {}).get("execution") or {})
+    assert_local_dev_maturity_cap(execution_policy)
+    execution_meta: dict[str, Any] = {
+        "execution_policy_digest": execution_policy.content_digest,
+        "execution_mode": execution_policy.mode,
+        "local_dev_maturity_cap": execution_policy.local_dev_maturity_cap,
+    }
+    boundary_digests: list[str] = []
+    probe_report_digest: str | None = None
+
+    if execution_policy.mode == "security_grade":
+        try:
+            secure = select_secure_launcher(execution_policy)
+        except SecurityGradeRefused as exc:
+            raise RuntimeError(
+                "security-grade execution refused (fail closed; no local fallback): " + str(exc)
+            ) from exc
+        if execution_policy.run_isolation_probes:
+            probe = secure.run_isolation_probes(gt_guess_seed=spec.seed)
+            probe_report_digest = probe.content_digest
+            execution_meta["isolation_probe_report_digest"] = probe_report_digest
+            execution_meta["isolation_probe_security_grade_eligible"] = (
+                probe.security_grade_eligible
+            )
+        work_units = _order_units_for_persistence(_build_work_units(spec, run_dir=run_dir))
+        rows = []
+        for unit in work_units:
+            # Security-grade plane: no host attacker_dir mounts.
+            unit = {k: v for k, v in unit.items() if k not in {"attacker_dir", "run_dir"}}
+            if unit.get("persistent"):
+                raise RuntimeError(
+                    "security-grade campaign requires AttackerStateEnvelope for "
+                    "persistent attackers; host attacker_dir is forbidden"
+                )
+            row = secure.execute(unit)
+            rows.append(row)
+            digest = row.get("execution_boundary_digest")
+            if digest:
+                boundary_digests.append(str(digest))
+        outcome = {
+            "status": "completed",
+            "results": rows,
+            "completed": {str(r.get("unit_id")): r for r in rows if r.get("unit_id")},
+            "ledger_digest": None,
+            "overrun": False,
+        }
+        execution_meta["launcher"] = "secure"
+        execution_meta["backend_kind"] = secure.backend_kind
+        execution_meta["security_grade"] = bool(secure.security_grade)
+        execution_meta["execution_boundary_digests"] = boundary_digests
+    else:
+        launcher = LocalLauncher(
+            store=store,
+            run_dir=run_dir,
+            budget=spec.budget,
+            max_workers=max_workers,
+            use_processes=use_processes,
+        )
+        work_units = _order_units_for_persistence(_build_work_units(spec, run_dir=run_dir))
+        # Persistent attackers share filesystem checkpoints — serialize those units.
+        if any(u.get("persistent") for u in work_units):
+            launcher.max_workers = 1
+        outcome = await launcher.run_all(work_units, executor_fn=execute_work_unit)
+        execution_meta["launcher"] = "local_dev"
+        execution_meta["security_grade"] = False
 
     # Freeze learning attackers after the attack plane completes (holdout seal).
     from verifierlab.attacks.runtime import AttackerStore
@@ -282,6 +341,7 @@ async def run_campaign_async(
             "verifier_profile_digest": verifier_profile_digest,
             "verifier_profile_digest_source": "worker_consensus",
             "stats_plan": spec.stats_plan.model_dump(mode="json"),
+            **execution_meta,
         },
     )
     tip_payload = attack.model_dump(mode="json")
@@ -415,7 +475,15 @@ def freeze_run(run_dir: Path, *, store: ContentAddressedStore | None = None) -> 
         vault_tip_digest=vault_tip,
         report_config_digest=digest_of(meta.get("stats_plan") or {}),
         sealed_at=time.time(),
-        metadata={"freeze_id": freeze.freeze_id},
+        metadata={
+            "freeze_id": freeze.freeze_id,
+            "execution_mode": meta.get("execution_mode"),
+            "execution_policy_digest": meta.get("execution_policy_digest"),
+            "execution_boundary_digests": list(meta.get("execution_boundary_digests") or []),
+            "isolation_probe_report_digest": meta.get("isolation_probe_report_digest"),
+            "security_grade": meta.get("security_grade", False),
+            "backend_kind": meta.get("backend_kind"),
+        },
     )
     sealed_payload = sealed.model_dump(mode="json")
     sealed_digest = sealed.content_digest()

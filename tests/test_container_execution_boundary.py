@@ -183,12 +183,40 @@ def test_tmpfs_must_be_only_declared_writable_surface() -> None:
 
 
 def test_host_backed_state_and_ground_truth_are_refused() -> None:
-    with pytest.raises(RuntimeError, match="host-backed mutable attacker state"):
+    with pytest.raises(RuntimeError, match="host-backed persistent attacker state"):
         assert_security_compatible_work_unit({"unit_id": "u", "persistent": True})
     with pytest.raises(RuntimeError, match="host-backed mutable attacker state"):
         assert_security_compatible_work_unit({"unit_id": "u", "attacker_dir": "/host/state"})
     with pytest.raises(RuntimeError, match="ground-truth references"):
         assert_security_compatible_work_unit({"unit_id": "u", "ground_truth_ref": "x:y"})
+    # Envelope-mediated persistent state is allowed without host mounts.
+    assert_security_compatible_work_unit(
+        {"unit_id": "u", "persistent": True, "attacker_state_digest": "a" * 64}
+    )
+
+
+def test_boundary_manifest_v2_binds_backend_and_trust_domain() -> None:
+    manifest = _manifest()
+    assert manifest.schema_version == "2"
+    assert manifest.backend_kind == "docker_rootless"
+    assert len(manifest.host_trust_domain_digest) == 64
+    assert manifest.probe_report_digest is None
+
+
+def test_rootful_daemon_cannot_claim_security_grade() -> None:
+    policy = ContainerIsolationPolicy(image=IMAGE, require_rootless=False)
+    command = build_create_command(policy, name="unit-1")
+    manifest = boundary_manifest_from_inspect(
+        policy=policy,
+        container_id="c" * 64,
+        inspect_payload=_inspect(policy),
+        daemon_security_options=["name=seccomp,profile=builtin"],
+        create_command=command,
+    )
+    assert manifest.daemon_rootless is False
+    assert manifest.backend_kind == "docker_rootful"
+    assert manifest.policy_satisfied is True
+    assert manifest.security_grade is False
 
 
 def test_execution_record_binds_request_result_boundary_and_final_state() -> None:
