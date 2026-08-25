@@ -9,10 +9,10 @@ reference answers.
 
 from __future__ import annotations
 
-from contextlib import suppress
 import importlib.util
 import os
 import socket
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 

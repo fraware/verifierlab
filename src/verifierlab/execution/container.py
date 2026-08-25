@@ -16,11 +16,11 @@ it has a dedicated protocol that cannot expose coordinator state.
 
 from __future__ import annotations
 
-from contextlib import suppress
 import json
 import re
 import subprocess
 import uuid
+from contextlib import suppress
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
