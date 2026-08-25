@@ -406,6 +406,10 @@ def run_hacker_fixer_solver(
     )
     post_execution = post_session.run(post_invocation)
     _validate_attack_execution(post_execution, invocation=post_invocation, session=post_session)
+    if post_execution.parent_checkpoint_digest is not None:
+        raise ValueError(
+            "fresh_reattack_inheritance_blocker: post-repair attack cannot inherit parent state"
+        )
 
     return HackerFixerSolverArtifact(
         plan=plan,

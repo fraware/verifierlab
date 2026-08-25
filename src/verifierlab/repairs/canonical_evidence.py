@@ -303,6 +303,20 @@ def load_canonical_fresh_run(
         blockers.extend(
             f"persistent_attacker_state_present:{unit_id}" for unit_id in persistent_rows
         )
+    inherited_state_rows = [
+        str(row.get("unit_id") or "unknown")
+        for row in rows
+        if row.get("parent_state_digest")
+        or (
+            isinstance(row.get("attacker_state"), dict)
+            and row["attacker_state"].get("parent_state_digest")
+        )
+    ]
+    if inherited_state_rows:
+        blockers.extend(
+            f"fresh_reattack_inheritance_blocker:{unit_id}" for unit_id in inherited_state_rows
+        )
+        persistent_rows = list(dict.fromkeys([*persistent_rows, *inherited_state_rows]))
 
     holdout_isolated = all(row.get("learning") is False for row in rows)
     if not holdout_isolated:
