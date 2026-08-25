@@ -99,7 +99,9 @@ class HackerFixerSolverPlan(BaseModel):
             raise ValueError("post_repair_hacker must declare role='hacker'")
         if self.comparison_mode == "equal_budget":
             if self.pre_attack_budget_queries != self.post_attack_budget_queries:
-                raise ValueError("equal_budget comparison requires identical pre/post query budgets")
+                raise ValueError(
+                    "equal_budget comparison requires identical pre/post query budgets"
+                )
         elif self.post_attack_budget_queries < self.pre_attack_budget_queries:
             raise ValueError("escalating comparison requires post budget >= pre budget")
         return self
@@ -283,9 +285,9 @@ class HackerFixerSolverArtifact(BaseModel):
     solver: SolverExecution
     post_attack: AttackExecution
     qualification_grade: Literal[False] = False
-    claim_boundary: Literal[
+    claim_boundary: Literal["protocol_ordering_and_public_execution_receipts_only"] = (
         "protocol_ordering_and_public_execution_receipts_only"
-    ] = "protocol_ordering_and_public_execution_receipts_only"
+    )
 
     @property
     def content_digest(self) -> str:
