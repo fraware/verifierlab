@@ -132,6 +132,8 @@ class SealedRunManifest(ArtifactBase):
     research_registration_digests: list[str] = Field(default_factory=list)
     chronology_digest: str | None = None
     freeze_seal_bundle_digest: str | None = None
+    environment_assurance_digest: str | None = None
+    assurance_chain_digest: str | None = None
     sealed_at: float
     metadata: dict[str, Any] = Field(default_factory=dict)
 

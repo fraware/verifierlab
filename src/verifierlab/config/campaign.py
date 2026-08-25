@@ -10,6 +10,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from verifierlab.artifacts.records import AccessModel, DisclosureClass
+from verifierlab.assurance.envassure import EnvironmentAssuranceRef
 from verifierlab.budgets.budget import Budget, OverrunPolicy
 from verifierlab.config.preregistration import AnalysisPreregistration, StoppingPlan
 from verifierlab.diagnostics.codes import Diagnostic, DiagnosticSeverity
@@ -177,6 +178,7 @@ class CampaignSpec(BaseModel):
     disclosure_class: DisclosureClass = DisclosureClass.INTERNAL
     seed: int = 0
     work_units: int = Field(default=1, ge=1)
+    environment_assurance: EnvironmentAssuranceRef | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("name")
@@ -189,6 +191,13 @@ class CampaignSpec(BaseModel):
     @model_validator(mode="after")
     def _require_pinned_core(self) -> CampaignSpec:
         return self
+
+    @property
+    def environment_assurance_digest(self) -> str | None:
+        """Digest enters campaign/run/study identity when EnvAssure is bound."""
+        if self.environment_assurance is None:
+            return None
+        return self.environment_assurance.digest
 
 
 def _diagnostic_from_validation_error(exc: ValidationError) -> list[Diagnostic]:

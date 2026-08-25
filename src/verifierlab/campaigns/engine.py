@@ -222,6 +222,29 @@ async def run_campaign_async(
     store = ContentAddressedStore(workspace / "store")
     campaign_digest = store.put_json(spec.model_dump(mode="json"))
 
+    env_assurance_digest = spec.environment_assurance_digest
+    envassure_status = (
+        spec.environment_assurance.validation_status
+        if spec.environment_assurance is not None
+        else None
+    )
+    if spec.environment_assurance is not None:
+        (workspace / "envassure").mkdir(parents=True, exist_ok=True)
+        # Bind ref into workspace for freeze/study identity.
+        ref_path = workspace / "envassure" / "environment_assurance_ref.json"
+        ref_path.write_text(
+            json.dumps(
+                {
+                    **spec.environment_assurance.model_dump(mode="json"),
+                    "content_digest": spec.environment_assurance.digest,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
     run_id = run_id or f"run-{uuid.uuid4().hex[:12]}"
     run_dir = workspace / "runs" / run_id
     if run_dir.exists() and not resume:
@@ -355,6 +378,8 @@ async def run_campaign_async(
             "stats_plan": spec.stats_plan.model_dump(mode="json"),
             "attack_started_at": attack_started_at,
             "budget": spec.budget.model_dump(mode="json"),
+            "environment_assurance_digest": env_assurance_digest,
+            "envassure_status": envassure_status,
             **execution_meta,
         },
     )
@@ -607,6 +632,16 @@ def freeze_run(run_dir: Path, *, store: ContentAddressedStore | None = None) -> 
         research_registration_digests=research_regs,
         chronology_digest=chronology_digest,
         freeze_seal_bundle_digest=bundle_digest,
+        environment_assurance_digest=(
+            str(meta.get("environment_assurance_digest"))
+            if meta.get("environment_assurance_digest")
+            else None
+        ),
+        assurance_chain_digest=(
+            str(meta.get("assurance_chain_digest"))
+            if meta.get("assurance_chain_digest")
+            else None
+        ),
         sealed_at=time.time(),
         metadata={
             "freeze_id": freeze.freeze_id,
@@ -617,6 +652,9 @@ def freeze_run(run_dir: Path, *, store: ContentAddressedStore | None = None) -> 
             "security_grade": meta.get("security_grade", False),
             "backend_kind": meta.get("backend_kind"),
             "work_unit_cas_digest": work_unit_cas,
+            "environment_assurance_digest": meta.get("environment_assurance_digest"),
+            "assurance_chain_digest": meta.get("assurance_chain_digest"),
+            "envassure_status": meta.get("envassure_status"),
         },
     )
     sealed_payload = sealed.model_dump(mode="json")

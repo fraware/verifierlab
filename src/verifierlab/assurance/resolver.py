@@ -147,6 +147,7 @@ class EvidenceResolver:
         facts.extend(self._execution_facts())
         facts.extend(self._holdout_facts())
         facts.extend(self._stats_facts())
+        facts.extend(self._envassure_facts())
         facts.extend(self._independence_facts())
         facts.extend(self._deployment_facts())
         return facts
@@ -202,6 +203,7 @@ class EvidenceResolver:
             "hidden_holdout_sealed",
             "qualification_estimands_complete",
             "negative_results_preserved",
+            "environment_assurance_determinate",
         ]
         missing_sci = [name for name in scientific if not ok(name)]
         if missing_sci:
@@ -215,6 +217,8 @@ class EvidenceResolver:
             "deployment_outcomes_collected",
             "calibration_analysis_complete",
             "applicability_regime_declared",
+            "deployment_chronology_anchored",
+            "deployment_not_synthetic",
         ]
         missing_dep = [name for name in deployment if not ok(name)]
         if missing_dep:
@@ -427,6 +431,76 @@ class EvidenceResolver:
             ),
         ]
 
+    def _envassure_facts(self) -> list[EvidenceFact]:
+        from verifierlab.assurance.envassure import (
+            EnvironmentAssuranceRef,
+            propagate_envassure_into_qualification,
+        )
+
+        sealed = _read_json(self.root / "sealed_run.json") or {}
+        meta = sealed.get("metadata") or {}
+        ref_body = _read_json(self.root / "environment_assurance_ref.json")
+        if ref_body is None:
+            ref_body = _read_json(self.root / "envassure" / "environment_assurance_ref.json")
+        env_ref: EnvironmentAssuranceRef | None = None
+        src = str(
+            sealed.get("environment_assurance_digest")
+            or meta.get("environment_assurance_digest")
+            or digest_of({"envassure": str(self.root)})
+        )
+        if ref_body:
+            try:
+                env_ref = EnvironmentAssuranceRef.model_validate(
+                    {k: v for k, v in ref_body.items() if k != "content_digest"}
+                )
+                src = env_ref.digest
+            except Exception:
+                return [
+                    _fact(
+                        "environment_assurance_determinate",
+                        source=src,
+                        validator="envassure.ref",
+                        outcome="false",
+                        reasons=("environment_assurance_ref_invalid",),
+                    )
+                ]
+        elif sealed.get("environment_assurance_digest") or meta.get("environment_assurance_digest"):
+            # Digest bound but body missing — fail closed for scientific path.
+            return [
+                _fact(
+                    "environment_assurance_determinate",
+                    source=src,
+                    validator="envassure.ref",
+                    outcome="false",
+                    reasons=("environment_assurance_ref_body_missing",),
+                )
+            ]
+
+        # Verifier "success" inferred from sealed run presence; never upgrades EnvAssure.
+        verifier_success = bool(sealed.get("content_digest"))
+        outcome, reasons = propagate_envassure_into_qualification(
+            env_ref=env_ref,
+            verifier_success=verifier_success,
+        )
+        # Absent EnvAssure is not a scientific gate failure when study does not claim
+        # environment binding — treat as true with reason for non-EnvAssure runs only
+        # when no digest is expected. Flagship/WP-14 studies bind a ref.
+        if env_ref is None and not (
+            sealed.get("environment_assurance_digest") or meta.get("environment_assurance_digest")
+        ):
+            # Optional: no EnvAssure binding required for pre-WP-14 sealed runs.
+            outcome = "true"
+            reasons = ("environment_assurance_not_bound",)
+        return [
+            _fact(
+                "environment_assurance_determinate",
+                source=src,
+                validator="envassure.status_propagation",
+                outcome=outcome,
+                reasons=reasons,
+            )
+        ]
+
     def _independence_facts(self) -> list[EvidenceFact]:
         facts: list[EvidenceFact] = []
         review_ok = False
@@ -471,26 +545,47 @@ class EvidenceResolver:
         return facts
 
     def _deployment_facts(self) -> list[EvidenceFact]:
-        regs = (
-            list((self.root / "registrations").glob("*.json"))
-            if (self.root / "registrations").is_dir()
-            else []
-        )
+        # Prefer WP-15 deployment/ layout; fall back to legacy markers.
+        dep_root = self.root / "deployment"
+        regs_dir = self.root / "registrations"
+        if dep_root.is_dir() and (dep_root / "registrations").is_dir():
+            regs_dir = dep_root / "registrations"
+        regs = list(regs_dir.glob("*.json")) if regs_dir.is_dir() else []
         pred_regs = []
+        synthetic = False
         for path in regs:
             if path.name.endswith(".payload.json"):
                 continue
             body = _read_json(path) or {}
             if body.get("registration_kind") == "deployment_prediction":
                 pred_regs.append(body)
+                if body.get("synthetic_non_deployment_evidence"):
+                    synthetic = True
         src = (
             digest_of({"regs": [r.get("content_digest") for r in pred_regs]})
             if pred_regs
             else ("0" * 64)
         )
-        outcomes = (self.root / "deployment" / "outcomes.json").is_file()
-        calib = (self.root / "deployment" / "calibration_report.json").is_file()
-        appl = (self.root / "deployment" / "applicability.json").is_file()
+        outcomes = (dep_root / "outcomes.json").is_file() or (
+            (dep_root / "outcomes").is_dir() and any((dep_root / "outcomes").glob("*.json"))
+        )
+        calib = (dep_root / "calibration_report.json").is_file()
+        appl = (dep_root / "applicability.json").is_file()
+
+        chronology_ok = False
+        if (dep_root / "chronology" / "tip.json").is_file():
+            tip = _read_json(dep_root / "chronology" / "tip.json") or {}
+            chronology_ok = bool(tip.get("tip_digest")) and tip.get("tip_digest") != ("0" * 64)
+        if calib:
+            report = _read_json(dep_root / "calibration_report.json") or {}
+            if report.get("synthetic_non_deployment_evidence"):
+                synthetic = True
+            if report.get("supports_deployment_calibrated_claim") is False:
+                # Keep facts accurate; blockers handled by individual facts.
+                pass
+            if not report.get("chronology_tip_digest"):
+                chronology_ok = False
+
         return [
             _fact(
                 "prospective_predictions_registered",
@@ -515,6 +610,20 @@ class EvidenceResolver:
                 source=src,
                 validator="deployment.applicability",
                 outcome="true" if appl else "false",
+            ),
+            _fact(
+                "deployment_chronology_anchored",
+                source=src,
+                validator="deployment.chronology_hash_chain",
+                outcome="true" if chronology_ok else "false",
+                reasons=() if chronology_ok else ("chronology_hash_chain_missing",),
+            ),
+            _fact(
+                "deployment_not_synthetic",
+                source=src,
+                validator="deployment.synthetic_guard",
+                outcome="false" if synthetic else ("true" if pred_regs else "false"),
+                reasons=("synthetic_non_deployment_evidence",) if synthetic else (),
             ),
         ]
 
