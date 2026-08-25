@@ -315,4 +315,59 @@ found on this tree beyond what #7 already landed.
 | Optional `[stats]` SciPy extra declared; pure-Python remains executable path | done (no golden SciPy suite in this pass) |
 | Tests | `tests/test_stats_engine_wp06.py` + updated plan/prereg tests |
 
-WP-07–11 methods, WP-13 study, WP-14–22 remain for later agents.
+### WP-07 — response surface orchestrator
+
+| Item | Status |
+| ---- | ------ |
+| Cells from released bundle refs (payload digest bound; wrong digest reject) | done |
+| Design-wide task/env bindings; exact pool or separate/blocker | done |
+| Sparse grid expand → compile; out-of-grid reject | done |
+| Transfer discovery vs transfer roles; no scalar robustness | done |
+| CLI `valab stats surface-compile` | done |
+| Tests | `tests/test_response_surface_orchestrator_wp07.py` |
+
+### WP-08 — metamorphic evaluator + attack family
+
+| Item | Status |
+| ---- | ------ |
+| Builtin transform registry; GT-invariance first; invalid_transform ≠ verifier fail | done |
+| Abstention/`accepted=None` preserved as indeterminate | done |
+| `metamorphic_search` strategy; preregistered estimands; transform-quality calib | done |
+| Typed counterexamples | done |
+| Tests | `tests/test_metamorphic_attack_wp08.py` |
+
+### WP-09 — attack portfolio + strength wall
+
+| Item | Status |
+| ---- | ------ |
+| `AttackIdentity` + budget contract + candidate-eval meter | done |
+| `exploit_transfer`; discovery ≠ held-out corpus | done |
+| Model-capable plugin interface (fixture; providers optional) | done |
+| Planted strength calibration `supports_unknown_robustness_claim=false` | done |
+| Per-family vulnerable + clean guards; depth limitations doc | done |
+| Tests | `tests/test_attack_portfolio_wp09.py` |
+| Honest gap | Live model providers / Beam re-runs not executed here |
+
+### WP-10 — H/F/S qualification
+
+| Item | Status |
+| ---- | ------ |
+| Immutable order; `RepairCandidateBinding` before fresh reattack | done |
+| Fixer never sees sealed repair holdout; fresh `AttackerStateEnvelope` | done |
+| Equal-budget vs escalating (stronger = separate coordinate) | done |
+| Failed patches preserved; preregistered stopping | done |
+| Fixtures: clean patch w/o FRR collapse; overfit binding path | done |
+| Tests | `tests/test_hfs_qualification_wp10.py` |
+
+### WP-11 — failure layers + novelty + minimization
+
+| Item | Status |
+| ---- | ------ |
+| Taxonomy separate from layers; `map_exploit_class_to_failure_layer` always raises | done |
+| Minimization preserves public accept ∧ hidden invalidity ∧ intent | done (existing + WP-11 tests) |
+| Novelty → regression/holdout under leakage policy | done |
+| Report / repair / calibration strata hooks | done |
+| Tests | `tests/test_failure_layers_wp11.py` |
+
+WP-13 flagship study, WP-14–22 remain for later agents. Hooks/schemas above are
+consumable by WP-13 (surface plan, portfolio manifest, HFS artifact, layer section).

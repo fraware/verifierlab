@@ -625,12 +625,12 @@ def run_hacker_fixer_solver(
         raise ValueError(
             "fresh_reattack_inheritance_blocker: post-repair attack cannot inherit parent state"
         )
-    if post_attack_state_envelope is not None:
-        if post_execution.attacker_state_envelope_digest not in {
-            None,
-            post_attack_state_envelope.content_digest,
-        }:
-            raise ValueError("post-attack envelope digest mismatch")
+    if (
+        post_attack_state_envelope is not None
+        and post_execution.attacker_state_envelope_digest
+        not in {None, post_attack_state_envelope.content_digest}
+    ):
+        raise ValueError("post-attack envelope digest mismatch")
 
     decision = evaluate_stopping_rule(
         plan.stopping_rule,
