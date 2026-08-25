@@ -81,9 +81,9 @@ Package version is **`0.2.0rc2`**. Remaining thin surfaces below are intentional
 | Packs C/D/E | Excluded (`pack_heavy`) | Extras matrix / nightly |
 | Adapter fixtures | Always | Live SDKs in extras matrix |
 | Coverage threshold | `--cov-fail-under=40` | — |
-| Multi-OS process | Ubuntu/macOS + Windows (`continue-on-error`) | — |
+| Multi-OS process | Ubuntu/macOS hard-fail; Windows soft-fail (**not** release-qualified — see [support-matrix.md](support-matrix.md)) | — |
 | CodeQL | On PR/push | Weekly schedule |
-| pip-audit + SBOM | — | Release tags / manual |
+| pip-audit + SBOM | Hard-fail high/critical on `main` / release / tags | Manual dispatch |
 
 ## Thin (exists; do not overclaim)
 
@@ -103,7 +103,7 @@ Package version is **`0.2.0rc2`**. Remaining thin surfaces below are intentional
 - SciPy-backed exact intervals as an optional `[stats]` extra
 - Independent multi-host reproduction bake-off automation
 - In-process Harbor sandbox runner
-- Hard pip-audit fail on every PR (today: release workflow, soft on findings)
+- Hard pip-audit fail on every PR against unprotected forks (protected `main` / release already hard-fail; see [quality-engineering.md](quality-engineering.md))
 
 ## Adapter claim (copy into reports)
 

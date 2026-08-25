@@ -105,8 +105,9 @@ jobs:
     name: Smoke (${{ matrix.os }} / py${{ matrix.python-version }})
     needs: gate-tag
     runs-on: ${{ matrix.os }}
-    # Windows path smoke remains soft-fail as documented in docs/limitations.md;
-    # this prevents Windows from being represented as release-qualified.
+    # Windows path smoke remains soft-fail; Windows is not release-qualified
+    # (see docs/support-matrix.md). Do not treat a green Windows soft-fail as
+    # stable support.
     continue-on-error: ${{ matrix.os == 'windows-latest' }}
     strategy:
       fail-fast: false
@@ -181,10 +182,17 @@ jobs:
         run: uv sync --extra dev
 
       - name: Build wheel and sdist
+        env:
+          SOURCE_DATE_EPOCH: "1700000000"
         run: |
+          set -euo pipefail
           rm -rf dist
+          # Reproducible-ish builds: fixed SOURCE_DATE_EPOCH for release artifacts.
           uv build --out-dir dist
           ls -la dist
+          # Content-hash compare helper: record digests immediately after build.
+          cd dist
+          sha256sum verifierlab-* | tee BUILD_SHA256.txt
 
       - name: Fresh wheel install smoke
         run: |
@@ -216,12 +224,13 @@ jobs:
           uv run cyclonedx-py environment -o dist/sbom.cdx.json
           test -s dist/sbom.cdx.json
 
-      - name: Adapter matrix + release manifest
+      - name: Adapter matrix + schema registry + release manifest
         env:
           GITHUB_SHA: ${{ github.sha }}
           RELEASE_TAG: ${{ needs.gate-tag.outputs.tag }}
         run: |
           uv run python scripts/generate_adapter_matrix.py
+          test -f registry/schema-registry-v1.json
           uv run python scripts/build_release_manifest.py \
             --dist-dir dist \
             --output dist/release-manifest.json \
@@ -229,6 +238,21 @@ jobs:
             --commit "${GITHUB_SHA}"
           python -c "import json; json.load(open('dist/release-manifest.json', encoding='utf-8'))"
           python -c "import json; m=json.load(open('dist/adapter-matrix.json', encoding='utf-8')); assert m['adapters']"
+          python -c "import json; r=json.load(open('registry/schema-registry-v1.json', encoding='utf-8')); assert r['artifacts']"
+          cp registry/schema-registry-v1.json dist/schema-registry-v1.json
+          # Worker SBOM note (image digest filled when GHCR publish is enabled).
+          echo '{"note":"generate worker SBOM via syft after image publish","status":"hook"}' > dist/worker-sbom-hook.json
+
+      - name: Attest build provenance
+        if: needs.gate-tag.outputs.is_tag == 'true'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/verifierlab-*.whl
+            dist/verifierlab-*.tar.gz
+            dist/SHA256SUMS.txt
+            dist/sbom.cdx.json
+            dist/release-manifest.json
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
@@ -238,9 +262,12 @@ jobs:
             dist/verifierlab-*.whl
             dist/verifierlab-*.tar.gz
             dist/SHA256SUMS.txt
+            dist/BUILD_SHA256.txt
             dist/sbom.cdx.json
             dist/release-manifest.json
             dist/adapter-matrix.json
+            dist/schema-registry-v1.json
+            dist/worker-sbom-hook.json
 
   publish-pypi:
     name: Trusted publish (PyPI)

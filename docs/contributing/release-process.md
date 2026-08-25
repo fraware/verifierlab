@@ -75,6 +75,9 @@ public digests used by `valab pack verify` / `valab pack reproduce`.
 
 Merges into release-critical paths (decision, labels, budgets, statistics,
 sandbox, crypto) require two approvals — [MAINTAINERS.md](https://github.com/fraware/verifierlab/blob/main/MAINTAINERS.md).
+Admin-facing branch protection checklist:
+[repository-protection-policy.md](../repository-protection-policy.md).
+OS support: [support-matrix.md](../support-matrix.md).
 
 ## Related
 
