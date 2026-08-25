@@ -1,0 +1,54 @@
+name: One-shot repair validation cleanup
+
+on:
+  push:
+    branches: [assurance/p0-repair-reattack]
+    paths:
+      - ".github/workflows/fix-repair-validation-once.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: assurance/p0-repair-reattack
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.12
+      - run: uv sync --extra dev
+      - name: Replace obsolete provenance-only validator tests
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("tests/test_repair_qualification_boundary.py")
+          text = path.read_text(encoding="utf-8")
+          old_import = '''from verifierlab.repairs.compare import (\n    FreshAttackProvenance,\n    _run_development_fresh_attack,\n    _validate_fresh_provenance,\n)\n'''
+          new_import = '''from verifierlab.repairs.canonical_evidence import CanonicalFreshRunEvidence\nfrom verifierlab.repairs.compare import (\n    _run_development_fresh_attack,\n    _validate_canonical_fresh_evidence,\n)\n'''
+          if text.count(old_import) != 1:
+              raise SystemExit("obsolete import block not found exactly once")
+          text = text.replace(old_import, new_import, 1)
+
+          start = text.index("def test_fresh_provenance_binds_results_profile_and_budget() -> None:\n")
+          replacement = '''def _canonical_evidence(\n    *,\n    rows: list[dict[str, object]],\n    profile_digest: str,\n    repair_candidate_digest: str,\n    budget: int = 100,\n    holdout_isolated: bool = True,\n    execution_security_grade: bool = True,\n    fresh_attacker_established: bool = True,\n    blockers: tuple[str, ...] = (),\n) -> CanonicalFreshRunEvidence:\n    return CanonicalFreshRunEvidence(\n        run_id="fresh-run",\n        release_tip_digest="1" * 64,\n        sealed_run_digest="2" * 64,\n        campaign_digest="3" * 64,\n        verifier_profile_digest=profile_digest,\n        ledger_digest="4" * 64,\n        split_manifest_digest="5" * 64,\n        results_digest=digest_of(rows),\n        repair_candidate_digest=repair_candidate_digest,\n        budget_limit_queries=budget,\n        queries_used=min(10, budget),\n        holdout_unit_ids=("u1",),\n        sealed_holdout_work_digests=("6" * 64,),\n        execution_boundary_digests=("7" * 64,),\n        labels_released=True,\n        holdout_isolated=holdout_isolated,\n        execution_security_grade=execution_security_grade,\n        fresh_attacker_established=fresh_attacker_established,\n        qualification_blockers=blockers,\n    )\n\n\ndef test_canonical_fresh_evidence_binds_results_profile_budget_and_candidate() -> None:\n    rows = [\n        {\n            "unit_id": "u1",\n            "cohort": "fresh_attack",\n            "verifier_accepted": True,\n            "gt_valid": False,\n        }\n    ]\n    profile_digest = "8" * 64\n    candidate_digest = "9" * 64\n    evidence = _canonical_evidence(\n        rows=rows,\n        profile_digest=profile_digest,\n        repair_candidate_digest=candidate_digest,\n    )\n    failures = _validate_canonical_fresh_evidence(\n        evidence,\n        results=rows,\n        new_profile_digest=profile_digest,\n        minimum_budget=100,\n        repair_candidate_digest=candidate_digest,\n    )\n    assert failures == []\n\n\ndef test_canonical_fresh_evidence_fails_closed_on_rebinding_and_blockers() -> None:\n    rows = [{"unit_id": "u1", "cohort": "fresh_attack"}]\n    evidence = _canonical_evidence(\n        rows=rows,\n        profile_digest="a" * 64,\n        repair_candidate_digest="b" * 64,\n        budget=9,\n        holdout_isolated=False,\n        execution_security_grade=False,\n        fresh_attacker_established=False,\n        blockers=("execution_not_security_grade:u1",),\n    ).model_copy(update={"results_digest": "c" * 64})\n    failures = _validate_canonical_fresh_evidence(\n        evidence,\n        results=rows,\n        new_profile_digest="d" * 64,\n        minimum_budget=10,\n        repair_candidate_digest="e" * 64,\n    )\n    assert set(failures) == {\n        "canonical_fresh_results_digest_mismatch",\n        "canonical_fresh_verifier_profile_mismatch",\n        "canonical_repair_candidate_mismatch",\n        "canonical_fresh_budget_smaller_than_required",\n        "canonical_holdout_not_isolated",\n        "canonical_execution_not_security_grade",\n        "canonical_attacker_not_fresh",\n        "canonical_evidence_has_blockers",\n    }\n'''
+          text = text[:start] + replacement + "\n"
+          path.write_text(text, encoding="utf-8")
+          PY
+      - name: Normalize and test
+        run: |
+          uv run ruff format src/verifierlab/repairs/canonical_evidence.py src/verifierlab/repairs/compare.py tests/test_canonical_fresh_run_evidence.py tests/test_repair_qualification_boundary.py
+          uv run ruff check src tests
+          uv run pytest tests/test_repair_qualification_boundary.py tests/test_canonical_fresh_run_evidence.py -q
+      - name: Commit validation cleanup
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name "repo-maintenance"
+          git config user.email "repo-maintenance@users.noreply.github.com"
+          git add src/verifierlab/repairs/canonical_evidence.py src/verifierlab/repairs/compare.py tests/test_canonical_fresh_run_evidence.py tests/test_repair_qualification_boundary.py
+          git diff --cached --quiet && exit 1
+          git commit -m "test(repair): align qualification tests with canonical evidence"
+          git push origin HEAD:assurance/p0-repair-reattack
