@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 
@@ -22,7 +22,12 @@ from verifierlab.campaigns.hacker_fixer_solver import (
 )
 
 
-def _agent(role: str, name: str, *, model: str | None = None) -> AgentProgramSpec:
+def _agent(
+    role: Literal["hacker", "fixer", "solver"],
+    name: str,
+    *,
+    model: str | None = None,
+) -> AgentProgramSpec:
     kwargs: dict[str, Any] = {}
     if model is not None:
         kwargs.update(model_id=model, model_version="2026-08")
@@ -208,7 +213,9 @@ def test_protocol_rejects_post_repair_checkpoint_inheritance() -> None:
             spec,
             context,
             instance_id=f"instance-{count}",
-            parent_checkpoint_digest=(digest_of("old-state") if context.phase == "post_repair" else None),
+            parent_checkpoint_digest=(
+                digest_of("old-state") if context.phase == "post_repair" else None
+            ),
         )
 
     with pytest.raises(ValueError, match="must not inherit"):
@@ -307,9 +314,9 @@ def test_attack_execution_rejects_budget_overrun_and_count_mismatch() -> None:
         "result_digests": (digest_of("r1"),),
     }
     with pytest.raises(ValueError, match="exceeded"):
-        AttackExecution(**common, queries_used=2)
+        AttackExecution.model_validate({**common, "queries_used": 2})
     with pytest.raises(ValueError, match="number of result digests"):
-        AttackExecution(**common, queries_used=0)
+        AttackExecution.model_validate({**common, "queries_used": 0})
 
 
 def test_artifact_digest_is_deterministic() -> None:
