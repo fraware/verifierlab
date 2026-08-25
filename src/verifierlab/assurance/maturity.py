@@ -1,13 +1,12 @@
-"""Evidence-derived assurance maturity.
+"""Assurance maturity *policy seed* (WP-00 / PR #10). Not qualification.
 
-A maturity label is an output of evidence checks, never a campaign setting.
-The policy compiler binds one exact proposition to its scope, assumptions,
-trust boundary, specifications, and evidence references. Process-local
-execution is explicitly capped below scientific qualification.
+This module is a frozen decision table for later EvidenceResolver work (WP-05).
+It does not validate artifacts, signatures, isolation, or reviewer identity.
+``AssuranceEvidence`` booleans are an internal seed schema, not a public
+qualification API. Do not import ``compile_maturity_policy_seed`` from
+``verifierlab.assurance``; that package does not re-export it.
 
-This module does not validate referenced artifacts itself. Callers must derive
-predicate values from validated immutable artifacts; supplying booleans is not
-itself assurance evidence.
+Process-local execution remains capped below scientific qualification.
 """
 
 from __future__ import annotations
@@ -155,20 +154,18 @@ def _decision(
     )
 
 
-def qualify_assurance(
+def compile_maturity_policy_seed(
     evidence: AssuranceEvidence,
     *,
     claim: AssuranceClaim,
 ) -> AssuranceQualification:
-    """Return the strongest maturity level justified by supplied predicates.
+    """Compile the seed policy table from caller-supplied predicates.
 
-    Progression is monotone and cumulative: later levels require all earlier
-    obligations. The returned record binds the decision to canonical digests of
-    both the claim context and evidence predicate set.
-
-    This function is a policy compiler, not an artifact validator. A caller
-    must not set a predicate true unless the corresponding immutable evidence
-    has been validated and is referenced by ``evidence_refs``.
+    This is not scientific qualification. WP-05 must replace boolean inputs
+    with artifact-derived ``EvidenceFact`` records. Progression is monotone
+    and cumulative only as a policy sketch: later levels require all earlier
+    seed obligations. The returned record binds digests of the claim and the
+    *seed predicate set*, which is not itself evidence.
     """
     satisfied: list[str] = []
     blockers: list[str] = []
@@ -299,5 +296,5 @@ __all__ = [
     "AssuranceEvidence",
     "AssuranceLevel",
     "AssuranceQualification",
-    "qualify_assurance",
+    "compile_maturity_policy_seed",
 ]

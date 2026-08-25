@@ -1,12 +1,13 @@
-from verifierlab.assurance import (
-    AssuranceClaim,
+from verifierlab.assurance import SEED_NOT_QUALIFICATION_PATH, AssuranceClaim, AssuranceLevel
+from verifierlab.assurance.maturity import (
     AssuranceEvidence,
-    AssuranceLevel,
-    qualify_assurance,
+    compile_maturity_policy_seed,
 )
 
 
-def _claim(*, proposition: str = "verifier remains valid under declared optimization regime") -> AssuranceClaim:
+def _claim(
+    *, proposition: str = "verifier remains valid under declared optimization regime"
+) -> AssuranceClaim:
     return AssuranceClaim(
         proposition=proposition,
         scope="campaign family A; black-box access; query budget <= 1000",
@@ -33,27 +34,37 @@ def _evidence(**overrides: object) -> AssuranceEvidence:
     return AssuranceEvidence(**values)
 
 
+def test_public_package_is_policy_seed_not_qualification_api() -> None:
+    import verifierlab.assurance as assurance
+
+    assert SEED_NOT_QUALIFICATION_PATH is True
+    assert assurance.SEED_NOT_QUALIFICATION_PATH is True
+    assert "qualify_assurance" not in assurance.__all__
+    assert "AssuranceEvidence" not in assurance.__all__
+    assert not hasattr(assurance, "qualify_assurance")
+
+
 def test_not_implemented_is_explicit() -> None:
-    result = qualify_assurance(AssuranceEvidence(), claim=_claim())
+    result = compile_maturity_policy_seed(AssuranceEvidence(), claim=_claim())
     assert result.level == AssuranceLevel.NOT_IMPLEMENTED.label
     assert result.blockers == ("implementation_missing",)
 
 
 def test_internal_verification_requires_evidence_references() -> None:
-    result = qualify_assurance(_evidence(evidence_refs=()), claim=_claim())
+    result = compile_maturity_policy_seed(_evidence(evidence_refs=()), claim=_claim())
     assert result.level == AssuranceLevel.IMPLEMENTED_UNVERIFIED.label
     assert "evidence_references_missing" in result.blockers
 
 
 def test_missing_independent_evidence_caps_at_internal() -> None:
-    result = qualify_assurance(_evidence(), claim=_claim())
+    result = compile_maturity_policy_seed(_evidence(), claim=_claim())
     assert result.level == AssuranceLevel.INTERNALLY_VERIFIED.label
     assert "independent_review_missing" in result.blockers
     assert "independent_reconstruction_missing" in result.blockers
 
 
 def test_process_local_execution_cannot_be_scientifically_qualified() -> None:
-    result = qualify_assurance(
+    result = compile_maturity_policy_seed(
         _evidence(
             independent_review=True,
             independent_reconstruction=True,
@@ -71,7 +82,7 @@ def test_process_local_execution_cannot_be_scientifically_qualified() -> None:
 
 
 def test_security_grade_preregistered_evidence_reaches_scientific_level() -> None:
-    result = qualify_assurance(
+    result = compile_maturity_policy_seed(
         _evidence(
             execution_mode="container_isolated",
             worker_no_network=True,
@@ -95,7 +106,7 @@ def test_security_grade_preregistered_evidence_reaches_scientific_level() -> Non
 
 
 def test_deployment_calibrated_requires_prospective_outcome_chain() -> None:
-    result = qualify_assurance(
+    result = compile_maturity_policy_seed(
         _evidence(
             execution_mode="microvm_isolated",
             worker_no_network=True,
@@ -123,14 +134,14 @@ def test_deployment_calibrated_requires_prospective_outcome_chain() -> None:
 
 def test_qualification_is_bound_to_exact_claim_and_evidence() -> None:
     evidence = _evidence()
-    first = qualify_assurance(evidence, claim=_claim(proposition="claim A"))
-    second = qualify_assurance(evidence, claim=_claim(proposition="claim B"))
+    first = compile_maturity_policy_seed(evidence, claim=_claim(proposition="claim A"))
+    second = compile_maturity_policy_seed(evidence, claim=_claim(proposition="claim B"))
     assert first.claim_digest != second.claim_digest
     assert first.evidence_digest == second.evidence_digest
     assert first.digest != second.digest
 
     changed_evidence = _evidence(evidence_refs=("cas:run-manifest:other",))
-    third = qualify_assurance(changed_evidence, claim=_claim(proposition="claim A"))
+    third = compile_maturity_policy_seed(changed_evidence, claim=_claim(proposition="claim A"))
     assert first.claim_digest == third.claim_digest
     assert first.evidence_digest != third.evidence_digest
     assert first.digest != third.digest

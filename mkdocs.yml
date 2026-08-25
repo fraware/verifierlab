@@ -53,7 +53,7 @@ nav:
   - CLI: cli.md
   - Architecture: architecture.md
   - Methodology: methodology.md
-  - Assurance maturity: assurance-status.md
+  - Assurance maturity (policy seed): assurance-status.md
   - Adapters:
       - Overview: adapters.md
       - Matrix: adapters/matrix.md

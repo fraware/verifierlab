@@ -1,4 +1,10 @@
-# Assurance maturity is evidence-derived
+# Assurance maturity policy seed (not the qualification path)
+
+**WP-00 seed.** This page records the PR #10 decision table only. It is not
+the public qualification API. WP-05 replaces caller-supplied
+`AssuranceEvidence` booleans with `EvidenceResolver` / `EvidenceFact`.
+Do not issue `scientifically_qualified` or `deployment_calibrated` from this
+module.
 
 VerifierLab maturity labels are conclusions about one exact proposition. They are not campaign options, release channels, badges, or self-declared metadata.
 
