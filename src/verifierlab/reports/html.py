@@ -207,6 +207,11 @@ def build_report(
                 "report blocked until labels are released "
                 "(valab campaign freeze → adjudicate → release-labels)"
             )
+        receipt_path = run_dir / "label_release_receipt.json"
+        if not receipt_path.is_file():
+            raise PermissionError(
+                "report blocked: LabelReleaseReceipt missing after label release"
+            )
 
     resolved_access = access_model or meta.get("access_model")
     if not resolved_access and results:

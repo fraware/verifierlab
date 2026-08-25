@@ -10,6 +10,16 @@ from typing import Any
 from verifierlab.artifacts.canonical import digest_of
 from verifierlab.artifacts.cas import ContentAddressedStore
 from verifierlab.artifacts.lifecycle_records import LifecycleTipIndex
+from verifierlab.campaigns.registrations import (
+    ChronologyEvidence,
+    FreezeSealBundle,
+    ResearchRegistration,
+    ResearchRegistrationKind,
+    assert_attack_plane_immutable,
+    build_chronology_evidence,
+    list_registration_digests,
+    register_research_instrument,
+)
 
 
 class LifecycleState(str, Enum):
@@ -165,3 +175,23 @@ def write_tip_index(
 
 def tip_payload_digest(payload: dict[str, Any]) -> str:
     return digest_of(payload)
+
+
+__all__ = [
+    "ChronologyEvidence",
+    "FreezeSealBundle",
+    "LifecycleState",
+    "ResearchRegistration",
+    "ResearchRegistrationKind",
+    "assert_attack_plane_immutable",
+    "assert_transition",
+    "build_chronology_evidence",
+    "can_transition",
+    "labels_released",
+    "lifecycle_of",
+    "list_registration_digests",
+    "read_tip_index",
+    "register_research_instrument",
+    "tip_payload_digest",
+    "write_tip_index",
+]

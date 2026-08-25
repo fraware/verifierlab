@@ -143,9 +143,20 @@ def _build_work_units(
         unit["split"] = info["split"]
         # Holdout inaccessible to training updates.
         unit["learning"] = bool(info["learning"])
+        unit["label_tier"] = info.get("label_tier")
+        unit["attack_visible"] = info.get("attack_visible", True)
         if not unit["learning"] and unit.get("attacker_dir"):
             # Holdout may load frozen weights but must not write.
             unit["learning"] = False
+
+    # WP-04: opaque IDs on the attack plane when custody was materialized.
+    if run_dir is not None:
+        custody_path = Path(run_dir) / "custody" / "hidden_split.json"
+        if custody_path.is_file():
+            from verifierlab.campaigns.custody import apply_opaque_ids_to_work_units
+
+            custody = json.loads(custody_path.read_text(encoding="utf-8"))
+            draft = apply_opaque_ids_to_work_units(draft, custody)
     return draft
 
 
@@ -206,6 +217,7 @@ async def run_campaign_async(
 ) -> CampaignRunResult:
     """Run the attack plane only. Reports require freeze → adjudicate → release."""
     started = time.perf_counter()
+    attack_started_at = time.time()
     workspace = init_workspace(workspace)
     store = ContentAddressedStore(workspace / "store")
     campaign_digest = store.put_json(spec.model_dump(mode="json"))
@@ -341,6 +353,8 @@ async def run_campaign_async(
             "verifier_profile_digest": verifier_profile_digest,
             "verifier_profile_digest_source": "worker_consensus",
             "stats_plan": spec.stats_plan.model_dump(mode="json"),
+            "attack_started_at": attack_started_at,
+            "budget": spec.budget.model_dump(mode="json"),
             **execution_meta,
         },
     )
@@ -449,11 +463,119 @@ def freeze_run(run_dir: Path, *, store: ContentAddressedStore | None = None) -> 
         encoding="utf-8",
     )
 
-    # VALAB-05: seal the run bundle (vault tip digest, not plaintext labels).
+    # VALAB-05 / WP-04: seal the run bundle (vault tip digest, not plaintext labels).
     meta = dict(index.get("metadata") or {})
     campaign_digest = str(index.get("campaign_digest") or "")
     attack_digests = sorted(str(d) for d in (index.get("work_unit_digests") or []))
     vault_tip = vault.audit_tip
+    work_unit_cas = _digest_tree(run_dir / "work_units")
+
+    split_digest = None
+    public_split_digest = None
+    custody_digest = None
+    split_path = run_dir / "splits" / "manifest.json"
+    if split_path.is_file():
+        split_body = json.loads(split_path.read_text(encoding="utf-8"))
+        split_digest = str(split_body.get("content_digest") or digest_of(split_body))
+        public_split_digest = split_body.get("public_split_view_digest")
+        custody_digest = split_body.get("custody_digest")
+    pub_path = run_dir / "splits" / "public_view.json"
+    if pub_path.is_file() and not public_split_digest:
+        pub = json.loads(pub_path.read_text(encoding="utf-8"))
+        public_split_digest = str(pub.get("content_digest") or digest_of(pub))
+    custody_path = run_dir / "custody" / "hidden_split.json"
+    if custody_path.is_file() and not custody_digest:
+        custody = json.loads(custody_path.read_text(encoding="utf-8"))
+        custody_digest = str(custody.get("content_digest") or digest_of(custody))
+
+    attacker_ids: list[str] = []
+    attackers_dir = run_dir / "attackers"
+    if attackers_dir.is_dir():
+        for path in sorted(attackers_dir.rglob("*")):
+            if path.is_file():
+                attacker_ids.append(sha256_digest(path.read_bytes()))
+
+    state_heads: list[str] = []
+    for key in ("attacker_state_heads", "attack_state_head_digests"):
+        raw = meta.get(key)
+        if isinstance(raw, list):
+            state_heads.extend(str(x) for x in raw)
+
+    boundary_digests = [str(d) for d in (meta.get("execution_boundary_digests") or []) if d]
+    public_commitments = sorted(str(c) for c in commitments)
+
+    prereg_digest = None
+    if isinstance(meta.get("stats_plan"), dict):
+        prereg = meta["stats_plan"].get("preregistration")
+        if isinstance(prereg, dict):
+            prereg_digest = digest_of(prereg)
+    # Prefer CAS campaign preregistration when present.
+    if campaign_digest:
+        try:
+            camp = store.get_json(campaign_digest)
+            stats = camp.get("stats_plan") or {}
+            if isinstance(stats, dict) and stats.get("preregistration"):
+                prereg_digest = digest_of(stats["preregistration"])
+        except Exception:
+            pass
+
+    from verifierlab.campaigns.registrations import (
+        FreezeSealBundle,
+        build_chronology_evidence,
+        list_registration_digests,
+    )
+
+    research_regs = list_registration_digests(run_dir)
+    chronology = build_chronology_evidence(
+        run_dir,
+        run_id=str(index["run_id"]),
+        attack_started_at=meta.get("attack_started_at"),
+        sealed_at=time.time(),
+    )
+    chronology_digest = chronology.content_digest()
+    (run_dir / "chronology.json").write_text(
+        json.dumps(
+            {**chronology.model_dump(mode="json"), "content_digest": chronology_digest},
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    bundle = FreezeSealBundle(
+        run_id=str(index["run_id"]),
+        campaign_digest=campaign_digest or ("0" * 64),
+        split_manifest_digest=split_digest,
+        public_split_view_digest=public_split_digest,
+        custody_digest=custody_digest,
+        verifier_profile_digest=meta.get("verifier_profile_digest")
+        or meta.get("verifier_digest")
+        or meta.get("profile_digest"),
+        attacker_identity_digests=sorted(set(attacker_ids)),
+        budget_digest=digest_of(meta.get("budget") or index.get("ledger_digest") or {}),
+        work_unit_cas_digest=work_unit_cas,
+        execution_boundary_digests=boundary_digests,
+        attack_state_head_digests=sorted(set(state_heads)),
+        public_commitment_digests=public_commitments,
+        preregistration_digest=prereg_digest,
+        research_registration_digests=research_regs,
+        chronology_digest=chronology_digest,
+        sealed_at=time.time(),
+        metadata={"freeze_id": freeze.freeze_id},
+    )
+    bundle_digest = bundle.content_digest()
+    store.put_json(bundle.model_dump(mode="json"))
+    (run_dir / "freeze_seal_bundle.json").write_text(
+        json.dumps(
+            {**bundle.model_dump(mode="json"), "content_digest": bundle_digest},
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
     sealed = SealedRunManifest(
         seal_id=f"seal-{index['run_id']}",
         run_id=str(index["run_id"]),
@@ -470,10 +592,21 @@ def freeze_run(run_dir: Path, *, store: ContentAddressedStore | None = None) -> 
             "split_seed": meta.get("split_seed"),
         },
         budget_digest=digest_of(meta.get("budget") or index.get("ledger_digest") or {}),
-        inputs_digest=_digest_tree(run_dir / "work_units"),
+        inputs_digest=work_unit_cas,
         outputs_digest=_digest_tree(run_dir / "vault" / "commitments"),
         vault_tip_digest=vault_tip,
         report_config_digest=digest_of(meta.get("stats_plan") or {}),
+        split_manifest_digest=split_digest,
+        public_split_view_digest=public_split_digest,
+        custody_digest=custody_digest,
+        attacker_identity_digests=sorted(set(attacker_ids)),
+        execution_boundary_digests=boundary_digests,
+        attack_state_head_digests=sorted(set(state_heads)),
+        public_commitment_digests=public_commitments,
+        preregistration_digest=prereg_digest,
+        research_registration_digests=research_regs,
+        chronology_digest=chronology_digest,
+        freeze_seal_bundle_digest=bundle_digest,
         sealed_at=time.time(),
         metadata={
             "freeze_id": freeze.freeze_id,
@@ -483,6 +616,7 @@ def freeze_run(run_dir: Path, *, store: ContentAddressedStore | None = None) -> 
             "isolation_probe_report_digest": meta.get("isolation_probe_report_digest"),
             "security_grade": meta.get("security_grade", False),
             "backend_kind": meta.get("backend_kind"),
+            "work_unit_cas_digest": work_unit_cas,
         },
     )
     sealed_payload = sealed.model_dump(mode="json")
@@ -494,6 +628,21 @@ def freeze_run(run_dir: Path, *, store: ContentAddressedStore | None = None) -> 
         encoding="utf-8",
     )
     assert_run_sealed_immutable(run_dir)
+
+    # Capture immutable attack-plane tip for post-freeze mutation checks.
+    (run_dir / "attack_plane_lock.json").write_text(
+        json.dumps(
+            {
+                "work_unit_cas_digest": work_unit_cas,
+                "sealed_run_digest": sealed_digest,
+                "freeze_digest": tip_digest,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     return freeze
 
 
@@ -534,6 +683,16 @@ def release_labels(
     ws = run_dir.parent.parent
     if store is None:
         store = ContentAddressedStore(ws / "store")
+
+    # Post-freeze attack plane must remain immutable before label release.
+    lock_path = run_dir / "attack_plane_lock.json"
+    if lock_path.is_file():
+        from verifierlab.campaigns.registrations import assert_attack_plane_immutable
+
+        lock = json.loads(lock_path.read_text(encoding="utf-8"))
+        assert_attack_plane_immutable(
+            run_dir, expected_work_unit_digest=str(lock["work_unit_cas_digest"])
+        )
 
     vault = LabelVault.open(run_dir / "vault", workspace=ws)
     vault.release(role="coordinator")
@@ -596,6 +755,49 @@ def release_labels(
         json.dumps({**tip_payload, "content_digest": tip_digest}, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+
+    # WP-04: LabelReleaseReceipt binds exact sealed run + label set.
+    from verifierlab.labels.release import LabelReleaseReceipt, label_set_digest
+
+    sealed_path = run_dir / "sealed_run.json"
+    sealed_digest = ""
+    freeze_digest = ""
+    if sealed_path.is_file():
+        sealed = json.loads(sealed_path.read_text(encoding="utf-8"))
+        sealed_digest = str(sealed.get("content_digest") or "")
+        freeze_digest = str(sealed.get("freeze_digest") or "")
+    freeze_path = run_dir / "freeze.json"
+    if not freeze_digest and freeze_path.is_file():
+        freeze_digest = str(
+            json.loads(freeze_path.read_text(encoding="utf-8")).get("content_digest") or ""
+        )
+    if len(sealed_digest) == 64 and len(freeze_digest) == 64:
+        receipt = LabelReleaseReceipt(
+            receipt_id=f"label-receipt-{index['run_id']}",
+            run_id=str(index["run_id"]),
+            sealed_run_digest=sealed_digest,
+            freeze_digest=freeze_digest,
+            adjudication_digest=release.adjudication_digest,
+            label_set_digest=label_set_digest(sorted(commitments)),
+            commitment_digests=sorted(commitments),
+            released_at=float(release.released_at),
+            chronology={
+                "sealed_run_digest": sealed_digest,
+                "release_tip_digest": tip_digest,
+            },
+            metadata={"analysis_work_units": str(analysis_wu)},
+        )
+        receipt_digest = receipt.content_digest()
+        store.put_json(receipt.model_dump(mode="json"))
+        (run_dir / "label_release_receipt.json").write_text(
+            json.dumps(
+                {**receipt.model_dump(mode="json"), "content_digest": receipt_digest},
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
     return release
 
 
