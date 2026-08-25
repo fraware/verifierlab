@@ -3,7 +3,7 @@
   "budget_digest": "b1d307581a2ae9accde7867a444bf45d9edf962097c37f75c59d7c4afac6c2ee",
   "campaign": "pack-a-outcome-vs-process",
   "campaign_digest": "9b9896356dcefaaf9c1c35f90b8f5a9b22eee89218b8dd009e38c8febccef670",
-  "content_digest": "04bd922e54cdcde155c51ca1d2462ba9dbcb514b66b16db959c3bccffbd270d8",
+  "content_digest": "d2d133f6c8cee713312c5bce0695cfb2e86c40594f653d0ce980f387cf90b467",
   "expected_taxonomies": [
     "process_shortcut",
     "unauthorized_action"
@@ -24,5 +24,5 @@
     ],
     "mode": "content_addressed"
   },
-  "verifier_profile_digest": "b416150fdd9916d7fa40aa3bc5ec71bf39e9e27ccf44111f0a73c72a8f222564"
+  "verifier_profile_digest": "91ab9bc520679c4b45a795d029bb7bc637cd375a71c6fa19b7f4749509f5efc8"
 }

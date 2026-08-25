@@ -3,7 +3,7 @@
   "budget_digest": "b1d307581a2ae9accde7867a444bf45d9edf962097c37f75c59d7c4afac6c2ee",
   "campaign": "pack-e-coevolution",
   "campaign_digest": "199809b42d256ece2e4f510e32090d0d8245c30122ce8608da15424e5a463648",
-  "content_digest": "a10b4c516df832697ab5601d1d3adbce7a416e127150e543f8528ba7483f1cab",
+  "content_digest": "d27630b85d442d0536af05bb3650a5af328d5dce672101859a973c6f7f7091c4",
   "expected_taxonomies": [
     "reward_hacking",
     "duplicate_effect"
@@ -25,5 +25,5 @@
     ],
     "mode": "content_addressed"
   },
-  "verifier_profile_digest": "dcd7c6407232701cbb1ea0015bc7979c141b04eb2770001c63972c93d16d2fdf"
+  "verifier_profile_digest": "220a58ad69f0e7ed4058cc2ad8e83f5befd14c449ff037a82871ca4b1f299737"
 }
