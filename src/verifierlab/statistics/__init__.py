@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+from verifierlab.statistics.calibration import (
+    CalibrationAnalysisPlan,
+    CalibrationMetric,
+    CalibrationStratum,
+    PlantedCalibrationReport,
+    compile_planted_calibration_report,
+)
 from verifierlab.statistics.intervals import (
     Interval,
     cluster_bootstrap,
@@ -27,9 +34,14 @@ from verifierlab.statistics.plan import (
 )
 
 __all__ = [
+    "CalibrationAnalysisPlan",
+    "CalibrationMetric",
+    "CalibrationStratum",
     "Interval",
+    "PlantedCalibrationReport",
     "assert_gt_invariance",
     "cluster_bootstrap",
+    "compile_planted_calibration_report",
     "compile_stats_plan",
     "enrich_cohort_stats",
     "exact_clopper_pearson",
