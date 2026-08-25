@@ -53,6 +53,11 @@ jobs:
               encoding="utf-8",
           )
 
+          Path("src/verifierlab/reports/__init__.py").write_text(
+              '''"""Report builders with cycle-free package exports."""\n\nfrom __future__ import annotations\n\nfrom typing import Any\n\nfrom verifierlab.reports.metrics import (\n    AccessModelPoolError,\n    CohortMetrics,\n    MetricsIngestError,\n    MetricsReport,\n    compute_metrics,\n    compute_metrics_iter,\n)\n\n_LAZY_HTML_EXPORTS = frozenset({"build_report", "iter_work_unit_rows"})\n\n\ndef __getattr__(name: str) -> Any:\n    if name in _LAZY_HTML_EXPORTS:\n        from verifierlab.reports import html\n\n        return getattr(html, name)\n    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")\n\n\ndef __dir__() -> list[str]:\n    return sorted(set(globals()) | _LAZY_HTML_EXPORTS)\n\n\n__all__ = [\n    "AccessModelPoolError",\n    "CohortMetrics",\n    "MetricsIngestError",\n    "MetricsReport",\n    "build_report",\n    "compute_metrics",\n    "compute_metrics_iter",\n    "iter_work_unit_rows",\n]\n''',
+              encoding="utf-8",
+          )
+
           test_path = Path("tests/test_preregistered_estimands.py")
           text = test_path.read_text(encoding="utf-8")
           text = text.replace(
@@ -72,13 +77,22 @@ jobs:
             src/verifierlab/config/campaign.py
             src/verifierlab/statistics/preregistration.py
             src/verifierlab/statistics/preregistered.py
+            src/verifierlab/reports/__init__.py
             tests/test_preregistered_estimands.py
           )
           uv run ruff check --fix "${files[@]}"
           uv run ruff format "${files[@]}"
           uv run ruff check "${files[@]}"
-          uv run mypy src/verifierlab/config/preregistration.py src/verifierlab/config/campaign.py src/verifierlab/statistics/preregistration.py src/verifierlab/statistics/preregistered.py
+          uv run mypy src/verifierlab/config/preregistration.py src/verifierlab/config/campaign.py src/verifierlab/statistics/preregistration.py src/verifierlab/statistics/preregistered.py src/verifierlab/reports/__init__.py
           uv run pytest tests/test_preregistered_estimands.py tests/test_stats_plan_controls.py -q
+          uv run python - <<'PY'
+          from verifierlab.statistics.plan import compile_stats_plan
+          from verifierlab.reports import build_report, compute_metrics, iter_work_unit_rows
+          assert callable(compile_stats_plan)
+          assert callable(build_report)
+          assert callable(compute_metrics)
+          assert callable(iter_work_unit_rows)
+          PY
           uv run valab --help >/dev/null
       - name: Commit corrected dependency layer
         run: |
@@ -86,7 +100,7 @@ jobs:
           git diff --check
           git config user.name "repo-maintenance"
           git config user.email "repo-maintenance@users.noreply.github.com"
-          git add src/verifierlab/config/preregistration.py src/verifierlab/config/campaign.py src/verifierlab/statistics/preregistration.py src/verifierlab/statistics/preregistered.py tests/test_preregistered_estimands.py
+          git add src/verifierlab/config/preregistration.py src/verifierlab/config/campaign.py src/verifierlab/statistics/preregistration.py src/verifierlab/statistics/preregistered.py src/verifierlab/reports/__init__.py tests/test_preregistered_estimands.py
           git diff --cached --quiet && exit 1
-          git commit -m "fix(stats): remove preregistration import cycle"
+          git commit -m "fix(stats): remove preregistration import cycles"
           git push origin HEAD:assurance/p0-preregistered-estimands
