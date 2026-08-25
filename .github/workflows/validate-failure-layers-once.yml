@@ -19,6 +19,19 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv python install 3.12
       - run: uv sync --extra dev
+      - name: Repair strict negative-fixture typing
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("tests/test_failure_layers.py")
+          text = path.read_text(encoding="utf-8")
+          old = '''    with pytest.raises(ValueError, match="exactly one"):\n        FailureLayerAssessment(\n            **common,\n            status="attributed",\n            layers=(FailureLayer.IMPLEMENTATION, FailureLayer.SPECIFICATION),\n        )\n    with pytest.raises(ValueError, match="at least two"):\n        FailureLayerAssessment(\n            **common,\n            status="mixed",\n            layers=(FailureLayer.IMPLEMENTATION,),\n        )\n    with pytest.raises(ValueError, match="cannot assert"):\n        FailureLayerAssessment(\n            **common,\n            status="indeterminate",\n            layers=(FailureLayer.IMPLEMENTATION,),\n        )\n    with pytest.raises(ValueError, match="unique"):\n        FailureLayerAssessment(\n            **common,\n            status="mixed",\n            layers=(FailureLayer.SPECIFICATION, FailureLayer.SPECIFICATION),\n        )\n'''
+          new = '''    with pytest.raises(ValueError, match="exactly one"):\n        FailureLayerAssessment.model_validate(\n            {\n                **common,\n                "status": "attributed",\n                "layers": (FailureLayer.IMPLEMENTATION, FailureLayer.SPECIFICATION),\n            }\n        )\n    with pytest.raises(ValueError, match="at least two"):\n        FailureLayerAssessment.model_validate(\n            {\n                **common,\n                "status": "mixed",\n                "layers": (FailureLayer.IMPLEMENTATION,),\n            }\n        )\n    with pytest.raises(ValueError, match="cannot assert"):\n        FailureLayerAssessment.model_validate(\n            {\n                **common,\n                "status": "indeterminate",\n                "layers": (FailureLayer.IMPLEMENTATION,),\n            }\n        )\n    with pytest.raises(ValueError, match="unique"):\n        FailureLayerAssessment.model_validate(\n            {\n                **common,\n                "status": "mixed",\n                "layers": (FailureLayer.SPECIFICATION, FailureLayer.SPECIFICATION),\n            }\n        )\n'''
+          if text.count(old) != 1:
+              raise SystemExit("expected one invalid-shape fixture block")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
       - name: Normalize and validate failure layers
         run: |
           uv run ruff format src/verifierlab/exploits/layers.py src/verifierlab/exploits/__init__.py tests/test_failure_layers.py
