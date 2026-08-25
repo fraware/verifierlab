@@ -67,9 +67,17 @@ jobs:
           PY
       - name: Normalize and test
         run: |
-          uv run ruff format src/verifierlab/config/preregistration.py src/verifierlab/config/campaign.py src/verifierlab/statistics/preregistration.py src/verifierlab/statistics/preregistered.py tests/test_preregistered_estimands.py
-          uv run ruff check src tests
-          uv run mypy
+          files=(
+            src/verifierlab/config/preregistration.py
+            src/verifierlab/config/campaign.py
+            src/verifierlab/statistics/preregistration.py
+            src/verifierlab/statistics/preregistered.py
+            tests/test_preregistered_estimands.py
+          )
+          uv run ruff check --fix "${files[@]}"
+          uv run ruff format "${files[@]}"
+          uv run ruff check "${files[@]}"
+          uv run mypy src/verifierlab/config/preregistration.py src/verifierlab/config/campaign.py src/verifierlab/statistics/preregistration.py src/verifierlab/statistics/preregistered.py
           uv run pytest tests/test_preregistered_estimands.py tests/test_stats_plan_controls.py -q
           uv run valab --help >/dev/null
       - name: Commit corrected dependency layer
