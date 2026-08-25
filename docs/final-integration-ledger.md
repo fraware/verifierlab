@@ -234,18 +234,52 @@ noncanonical.
 
 ## Remaining gaps (out of WP-00 / merge-prep)
 
-WP-01 merge-prep (validate @ `085a7f7c`, hygiene, unique commits on this
-line) is done. Remaining Phase-1 *instrument* work still owned by WP-01/WP-04:
+Ordinary GitHub CI / Security / Adapters workflows have not been executed on
+this branch (not pushed).
 
-- `CalibrationObservation` still keys uniqueness on `run_digest`, not
-  `work_unit_digest` as the sealed-instrument spec requires.
-- Campaign lifecycle does not yet seal hidden design before attack or bind
-  execution-boundary digests into observations (WP-04).
-- Recursive public-artifact leakage scan beyond commitment-field tests is
-  not a separate adversarial harness.
-- Ordinary GitHub CI / Security / Adapters workflows have not been executed
-  on this branch (not pushed).
+### WP-01 — planted calibration instrument (completed on this line)
 
-WP-02+ (SecureLauncher, malicious probe catalogue inside the executor,
-EvidenceResolver rewrite, stats v2, docs rewrite, flagship study, release
-protection) were not implemented beyond what arrived in feature deltas.
+| Item | Status |
+| ---- | ------ |
+| Observation uniqueness on `work_unit_digest` (shared `run_digest` allowed) | done |
+| Seal-before-attack: `CalibrationInstrumentSeal` + public commitment only | done |
+| Truth join only after freeze/label release | done |
+| `CalibrationAnalysisRegistration` before observations | done |
+| Recursive public-artifact leakage harness | done |
+| `supports_unknown_robustness_claim=false` hard-coded | intact |
+| Commit | `4686125` |
+
+### WP-02 — security-grade three-plane execution (completed with honest host gaps)
+
+| Item | Status |
+| ---- | ------ |
+| Digest-pinned immutable worker + ContainerWorkerExecutor controls | done |
+| `ExecutionBoundaryManifest` schema v2 (backend, trust domain, probe digest) | done |
+| `IsolationProbeReport` + malicious probe catalogue | done |
+| `SecureLauncher` + capability negotiation (refuse, never degrade to local) | done |
+| MicroVM / separate-host backend **interfaces** | done (unavailable locally) |
+| Campaign engine selects security-grade via `metadata.execution` | done |
+| Sealed run binds execution/probe digests | done |
+| Worker entrypoint runs probe catalogue in-executor when flagged | done |
+| Real rootless in-executor probes on this Windows host | **not attested** — fail-closed |
+| `security_grade=true` claim on this host | **false / refused** without rootless Docker |
+| Commit | `f6500a5` |
+
+### WP-03 — AttackerStateEnvelope (completed)
+
+| Item | Status |
+| ---- | ------ |
+| Opaque CAS envelope, size cap, scan, append-only lineage | done |
+| `persistent_attack` vs `fresh_attack` (`parent_state_digest=null`) | done |
+| Explicit branches (no last-write-wins) | done |
+| Fresh reattack inheritance blocker (HFS + canonical evidence) | done |
+| Commit | `d753022` |
+
+### WP-12 — score/profile (verified intact)
+
+`ScoreDecisionMapping` / single profile digest tests remain green
+(`test_score_decision_*`, `test_campaign_profile_binding`). No migration gaps
+found on this tree beyond what #7 already landed.
+
+WP-05 EvidenceResolver rewrite, WP-06 stats v2, WP-07–11 expansions, WP-13
+study, WP-14–22 remain for later agents.
