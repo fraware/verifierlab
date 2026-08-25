@@ -489,8 +489,8 @@ def run_repair_campaign(
         }
         gate_failures.append("missing_canonical_fresh_run_evidence")
         if fresh_attack_provenance is not None:
-            legacy = _legacy_provenance(fresh_attack_provenance)
-            fresh_ledger["legacy_provenance"] = legacy.model_dump(mode="json")
+            legacy_record = _legacy_provenance(fresh_attack_provenance)
+            fresh_ledger["legacy_provenance"] = legacy_record.model_dump(mode="json")
     elif repair_candidate is None:
         evidence = _canonical_evidence(fresh_attack_canonical_evidence)
         fresh_ledger = {
