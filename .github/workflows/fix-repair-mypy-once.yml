@@ -1,0 +1,49 @@
+name: One-shot repair typing correction
+
+on:
+  push:
+    branches: [assurance/p0-repair-reattack]
+    paths:
+      - ".github/workflows/fix-repair-mypy-once.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: assurance/p0-repair-reattack
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.12
+      - run: uv sync --extra dev
+      - name: Apply asserted narrowing correction
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("src/verifierlab/repairs/compare.py")
+          text = path.read_text(encoding="utf-8")
+          old = '''        if fresh_attack_provenance is not None:\n            legacy = _legacy_provenance(fresh_attack_provenance)\n            fresh_ledger["legacy_provenance"] = legacy.model_dump(mode="json")\n'''
+          new = '''        if fresh_attack_provenance is not None:\n            legacy_record = _legacy_provenance(fresh_attack_provenance)\n            fresh_ledger["legacy_provenance"] = legacy_record.model_dump(mode="json")\n'''
+          if text.count(old) != 1:
+              raise SystemExit(f"expected one legacy branch, found {text.count(old)}")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+      - name: Validate typing correction
+        run: |
+          uv run ruff check src/verifierlab/repairs/compare.py
+          uv run ruff format --check src/verifierlab/repairs/compare.py
+          uv run mypy src/verifierlab/repairs/compare.py
+          uv run pytest tests/test_repair_qualification_boundary.py tests/test_canonical_fresh_run_evidence.py -q
+      - name: Commit typing correction
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name "repo-maintenance"
+          git config user.email "repo-maintenance@users.noreply.github.com"
+          git add src/verifierlab/repairs/compare.py
+          git diff --cached --quiet && exit 1
+          git commit -m "fix(repair): narrow legacy provenance binding"
+          git push origin HEAD:assurance/p0-repair-reattack
