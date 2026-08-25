@@ -49,6 +49,10 @@ assurance_app = typer.Typer(
     help="Artifact-derived assurance qualification (WP-05).",
     no_args_is_help=True,
 )
+deployment_app = typer.Typer(
+    help="Prospective deployment calibration (WP-15).",
+    no_args_is_help=True,
+)
 app.add_typer(campaign_app, name="campaign")
 app.add_typer(report_app, name="report")
 app.add_typer(stats_app, name="stats")
@@ -56,6 +60,7 @@ app.add_typer(plugins_app, name="plugins")
 app.add_typer(verifier_app, name="verifier")
 app.add_typer(pack_app, name="pack")
 app.add_typer(assurance_app, name="assurance")
+app.add_typer(deployment_app, name="deployment")
 
 
 def _print_json(payload: object) -> None:
@@ -804,6 +809,144 @@ def assurance_qualify(
         typer.echo(f"claim_digest: {result.claim_digest}")
         typer.echo(f"resolver_version: {result.resolver_version}")
     raise typer.Exit(0)
+
+
+@deployment_app.command("register-prediction")
+def deployment_register_prediction(
+    prediction: Path = typer.Argument(..., help="DeploymentPredictionRegistration JSON"),
+    out: Path = typer.Option(..., "--out", help="Deployment root directory"),
+    format: str = typer.Option("json", "--format"),
+) -> None:
+    """Register a prospective deployment prediction (before outcomes)."""
+    from verifierlab.assurance.deployment import register_prediction
+
+    body = json.loads(Path(prediction).read_text(encoding="utf-8"))
+    try:
+        rec = register_prediction(out, prediction=body)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    payload = rec.model_dump(mode="json")
+    payload["content_digest"] = rec.digest
+    if format == "json":
+        _print_json(payload)
+    else:
+        typer.echo(f"prediction_id: {rec.prediction_id}")
+        typer.echo(f"chronology_event_digest: {rec.chronology_event_digest}")
+        typer.echo(f"synthetic: {rec.synthetic_non_deployment_evidence}")
+    raise typer.Exit(0)
+
+
+@deployment_app.command("ingest-outcome")
+def deployment_ingest_outcome(
+    outcome: Path = typer.Argument(..., help="DeploymentOutcomeRecord JSON"),
+    out: Path = typer.Option(..., "--out", help="Deployment root directory"),
+    format: str = typer.Option("json", "--format"),
+) -> None:
+    """Ingest a deployment outcome after prediction chronology is anchored."""
+    from verifierlab.assurance.deployment import ingest_outcome
+
+    body = json.loads(Path(outcome).read_text(encoding="utf-8"))
+    try:
+        rec = ingest_outcome(out, outcome=body)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    payload = rec.model_dump(mode="json")
+    payload["content_digest"] = rec.digest
+    if format == "json":
+        _print_json(payload)
+    else:
+        typer.echo(f"outcome_id: {rec.outcome_id}")
+        typer.echo(f"prediction_id: {rec.prediction_id}")
+    raise typer.Exit(0)
+
+
+@deployment_app.command("calibration-report")
+def deployment_calibration_report(
+    plan: Path = typer.Argument(..., help="DeploymentCalibrationPlan JSON"),
+    out: Path = typer.Option(..., "--out", help="Deployment root directory"),
+    format: str = typer.Option("json", "--format"),
+) -> None:
+    """Build a deployment calibration report from prospective predictions+outcomes."""
+    from verifierlab.assurance.deployment import (
+        DeploymentCalibrationPlan,
+        build_calibration_report,
+    )
+
+    body = json.loads(Path(plan).read_text(encoding="utf-8"))
+    try:
+        report = build_calibration_report(out, plan=DeploymentCalibrationPlan.model_validate(body))
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    payload = report.model_dump(mode="json")
+    payload["content_digest"] = report.digest
+    if format == "json":
+        _print_json(payload)
+    else:
+        typer.echo(
+            f"supports_deployment_calibrated_claim: {report.supports_deployment_calibrated_claim}"
+        )
+        typer.echo(f"synthetic: {report.synthetic_non_deployment_evidence}")
+        typer.echo(f"blockers: {', '.join(report.blockers) or '(none)'}")
+        typer.echo(f"n_matched: {report.n_matched}")
+    raise typer.Exit(0)
+
+
+@app.command("reproduce")
+def reproduce_cmd(
+    bundle: Path = typer.Argument(..., help="Reproduction bundle file or directory"),
+    claim: Path | None = typer.Option(None, "--claim", help="AssuranceClaim JSON"),
+    trust_root: list[str] = typer.Option(
+        [],
+        "--trust-root",
+        help="External trust root as id=secret (repeatable)",
+    ),
+    attestation: Path | None = typer.Option(
+        None, "--attestation", help="ExternalAssuranceAttestation JSON"
+    ),
+    clean_room: bool = typer.Option(
+        False,
+        "--clean-room",
+        help="Internal clean-room dry-run (NOT independent)",
+    ),
+    format: str = typer.Option("json", "--format"),
+) -> None:
+    """Reconstruct from a self-contained reproduction bundle (WP-21)."""
+    from verifierlab.assurance.reproduce import reproduce_bundle
+
+    roots: dict[str, str] = {}
+    for item in trust_root:
+        if "=" not in item:
+            console.print(f"[red]invalid --trust-root {item!r}; expected id=secret[/red]")
+            raise typer.Exit(2)
+        rid, secret = item.split("=", 1)
+        roots[rid] = secret
+    try:
+        report = reproduce_bundle(
+            bundle,
+            claim=claim,
+            trust_roots=roots or None,
+            attestation=attestation,
+            clean_room_dry_run=clean_room,
+        )
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    payload = report.model_dump(mode="json")
+    payload["content_digest"] = report.digest
+    if format == "json":
+        _print_json(payload)
+    else:
+        typer.echo(f"reconstructed: {report.reconstructed}")
+        typer.echo(f"independent: {report.independent}")
+        typer.echo(f"clean_room_dry_run: {report.clean_room_dry_run}")
+        typer.echo(f"blockers: {', '.join(report.blockers) or '(none)'}")
+    code = 0 if report.reconstructed else 1
+    if clean_room and report.mechanics_ok:
+        code = 0
+    raise typer.Exit(code)
 
 
 __all__ = ["app"]
