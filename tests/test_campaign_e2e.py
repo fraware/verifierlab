@@ -11,7 +11,7 @@ import pytest
 
 from verifierlab.artifacts.cas import ContentAddressedStore
 from verifierlab.budgets import Budget, OverrunPolicy
-from verifierlab.campaigns.engine import init_workspace, run_campaign
+from verifierlab.campaigns.engine import freeze_run, init_workspace, run_campaign
 from verifierlab.execution.local import LocalLauncher, _run_fake_work_unit
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +41,14 @@ def test_fake_campaign_e2e(tmp_path: Path) -> None:
     assert data["run_digest"] == result.run_digest
     assert data["campaign_digest"]
     assert len(data["work_unit_digests"]) >= 1
+
+    profile_digest = result.manifest.metadata["verifier_profile_digest"]
+    assert len(profile_digest) == 64
+    assert result.manifest.metadata["verifier_profile_digest_source"] == "worker_consensus"
+
+    freeze_run(result.run_dir)
+    sealed = json.loads((result.run_dir / "sealed_run.json").read_text(encoding="utf-8"))
+    assert sealed["verifier_digest"] == profile_digest
 
 
 @pytest.mark.integration
