@@ -1,0 +1,131 @@
+{
+  "censored": {
+    "infra": 0,
+    "timeout": 2
+  },
+  "hfs": {
+    "order": [
+      "hacker",
+      "freeze",
+      "fixer",
+      "solver",
+      "fresh_reattack"
+    ],
+    "repair_candidate_binding_frozen": true
+  },
+  "missingness": {
+    "indeterminate": 2
+  },
+  "negatives_preserved": true,
+  "planted_calibration_separate": {
+    "fpr": 0.05,
+    "sensitivity": 0.9,
+    "supports_unknown_robustness_claim": false
+  },
+  "primary_estimands": [
+    {
+      "estimand_id": "E1_sealed_far_attack_success",
+      "interval": null,
+      "missingness": {
+        "censored": 1,
+        "infra": 0,
+        "timeout": 1
+      },
+      "n_clusters": 12,
+      "notes": "underpowered_at_task_cluster",
+      "point": null,
+      "status": "indeterminate"
+    },
+    {
+      "estimand_id": "E2_paired_repair_delta",
+      "interval": null,
+      "missingness": {
+        "censored": 1,
+        "infra": 0,
+        "timeout": 1
+      },
+      "n_clusters": 12,
+      "notes": "underpowered_at_task_cluster",
+      "point": null,
+      "status": "indeterminate"
+    },
+    {
+      "estimand_id": "E3_clean_frr_delta",
+      "interval": null,
+      "missingness": {
+        "censored": 1,
+        "infra": 0,
+        "timeout": 1
+      },
+      "n_clusters": 8,
+      "notes": "underpowered_at_task_cluster",
+      "point": null,
+      "status": "indeterminate"
+    },
+    {
+      "estimand_id": "E4_fresh_stronger_reattack",
+      "interval": null,
+      "missingness": {
+        "censored": 1,
+        "infra": 0,
+        "timeout": 1
+      },
+      "n_clusters": 12,
+      "notes": "underpowered_at_task_cluster",
+      "point": null,
+      "status": "indeterminate"
+    },
+    {
+      "estimand_id": "E5_metamorphic_violation",
+      "interval": null,
+      "missingness": {
+        "censored": 1,
+        "infra": 0,
+        "timeout": 1
+      },
+      "n_clusters": 12,
+      "notes": "underpowered_at_task_cluster",
+      "point": null,
+      "status": "indeterminate"
+    },
+    {
+      "estimand_id": "E6_planted_sensitivity_fpr",
+      "interval": null,
+      "missingness": {
+        "censored": 1,
+        "infra": 0,
+        "timeout": 1
+      },
+      "n_clusters": 10,
+      "notes": "underpowered_at_task_cluster",
+      "point": null,
+      "status": "indeterminate"
+    },
+    {
+      "estimand_id": "E7_time_to_exploit",
+      "interval": null,
+      "missingness": {
+        "censored": 1,
+        "infra": 0,
+        "timeout": 1
+      },
+      "n_clusters": 12,
+      "notes": "underpowered_at_task_cluster",
+      "point": null,
+      "status": "indeterminate"
+    },
+    {
+      "estimand_id": "E8_surface_budget_access_contrast",
+      "interval": null,
+      "missingness": {
+        "censored": 1,
+        "infra": 0,
+        "timeout": 1
+      },
+      "n_clusters": 12,
+      "notes": "underpowered_at_task_cluster",
+      "point": null,
+      "status": "indeterminate"
+    }
+  ]
+}

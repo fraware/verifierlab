@@ -1,0 +1,55 @@
+{
+  "artifact_refs": [
+    "0000000000000000000000000000000000000000000000000000000000000000",
+    "53bb2ec7378757edcef61938a989ce6d36fe16de4e94e5bc9a1c37727b377ec0",
+    "720a4ac59939f2d3c1d79072651653c1eabea7f65b931474654ea642cf09cc30",
+    "760978868585a59f46c2f051b5c1418944e671b9f9a0d0fc0f18d1269f063779",
+    "7e4482ad926fe67c8b2b98ca09dfd21a684a142c34f4dcff2f5b4db4f52c4b97",
+    "83020eff680f32b46246746d08ed360a0bab3ccb52d8e902608bcc65a13e6d30",
+    "942f3b9bdbb53e74cf77f82593f74e29a911d69b2f82c56cba025f82e9235030",
+    "f2848705b2cae616dcbb6e051d1cfb5e094c9908314213ece45f383f089e61c0"
+  ],
+  "blockers": [
+    "independent_review_missing",
+    "independent_reconstruction_missing"
+  ],
+  "claim_digest": "3727e5d16449dc7cad0b7ca371e99de513c2cb50308baf452280ef0706f68005",
+  "content_digest": "41f94fa4cc37ceb6a5915d36cb8b7a52c5af9576159b41ecdce290372142f12c",
+  "fact_ids": [
+    "implementation_present",
+    "evidence_artifacts_bound",
+    "immutable_artifacts_bound",
+    "exact_budget_evidence",
+    "lifecycle_freeze_adjudicate_release",
+    "security_grade_execution",
+    "hidden_labels_outside_attack_plane",
+    "hidden_holdout_sealed",
+    "preregistered_study",
+    "strong_attacker_budgeted",
+    "qualification_estimands_complete",
+    "negative_results_preserved",
+    "environment_assurance_determinate",
+    "independent_review",
+    "independent_reconstruction",
+    "prospective_predictions_registered",
+    "deployment_outcomes_collected",
+    "calibration_analysis_complete",
+    "applicability_regime_declared",
+    "deployment_chronology_anchored",
+    "deployment_not_synthetic"
+  ],
+  "facts_digest": "0307a896b634cac586e3561ea714827384b33ef883682cac810efd659fc1daed",
+  "level": "internally_verified",
+  "ordinal": 2,
+  "resolver_version": "1",
+  "satisfied": [
+    "implementation_present",
+    "evidence_artifacts_bound",
+    "immutable_artifacts_bound",
+    "exact_budget_evidence",
+    "lifecycle_freeze_adjudicate_release",
+    "hidden_labels_outside_attack_plane"
+  ],
+  "schema_version": "1",
+  "security_grade_execution": false
+}

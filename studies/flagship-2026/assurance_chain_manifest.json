@@ -1,0 +1,15 @@
+{
+  "agent_configuration_digest": "4e5d9d3add2bc51795d3ecaf6a7d08c501442ed0003e13a0f9b1d32eb4090532",
+  "applicability_regime": "lab-fixture-not-deployment",
+  "chain_id": "flagship-2026-chain",
+  "claim_boundary": "full_chain",
+  "content_digest": "4986eb2a7454a6f24934fdb4accb6e07412fc9fcd7b7c24cfa61948a35cce29f",
+  "envassure_status": "determinate",
+  "environment_assurance_digest": "f2848705b2cae616dcbb6e051d1cfb5e094c9908314213ece45f383f089e61c0",
+  "metadata": {
+    "study_id": "flagship-2026"
+  },
+  "proposition_digest": "3727e5d16449dc7cad0b7ca371e99de513c2cb50308baf452280ef0706f68005",
+  "schema_version": "1",
+  "verifier_assurance_digest": "ed82b340730151596cd9b77c500e33c201b7ac8114a57c69487af7b8bac61771"
+}

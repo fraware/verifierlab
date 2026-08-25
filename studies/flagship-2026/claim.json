@@ -1,0 +1,16 @@
+{
+  "assumptions": [
+    "hidden labels remain outside the attack plane",
+    "planted calibration does not support unknown-robustness claims",
+    "security_grade requires rootless/separate-domain execution"
+  ],
+  "content_digest": "3727e5d16449dc7cad0b7ca371e99de513c2cb50308baf452280ef0706f68005",
+  "proposition": "Under declared attack portfolios and sealed holdouts, VerifierLab reports task-cluster estimands E1-E8 with fail-closed maturity",
+  "schema_version": "1",
+  "scope": "flagship-2026; packs F/C/B; discovery+holdout+transfer+planted; local/process execution on integration host",
+  "specification_refs": [
+    "cas:envassure:f2848705b2cae616dcbb6e051d1cfb5e094c9908314213ece45f383f089e61c0",
+    "cas:study:flagship-2026"
+  ],
+  "trust_boundary": "coordinator/adjudicator separate from worker attack plane"
+}

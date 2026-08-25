@@ -1,0 +1,12 @@
+{
+  "clean_room_protocol": "docs/clean-room-protocol.md",
+  "content_digest": "e82e01c728c32f231ccf52a5f949eb7ab1ccfc9b262e89ff375b72f053ae2c70",
+  "independence": "NOT_independent",
+  "note": "Internal clean-room dry-run validates mechanics only",
+  "steps": [
+    "Verify artifact digests under artifacts/",
+    "Load claim.json and confirm claim_digest",
+    "Verify ExternalAssuranceAttestation against external trust roots",
+    "Re-run sealed evaluation under declared execution boundary"
+  ]
+}

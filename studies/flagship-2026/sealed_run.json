@@ -1,0 +1,33 @@
+{
+  "assurance_chain_digest": "4986eb2a7454a6f24934fdb4accb6e07412fc9fcd7b7c24cfa61948a35cce29f",
+  "budget_digest": "53bb2ec7378757edcef61938a989ce6d36fe16de4e94e5bc9a1c37727b377ec0",
+  "campaign_digest": "35db13b1a177e5be3e1f985fbcf1a90ba6ec2ec907eb1919a6cda919e08a7bf3",
+  "content_digest": "7e4482ad926fe67c8b2b98ca09dfd21a684a142c34f4dcff2f5b4db4f52c4b97",
+  "custody_digest": "942f3b9bdbb53e74cf77f82593f74e29a911d69b2f82c56cba025f82e9235030",
+  "environment_assurance_digest": "f2848705b2cae616dcbb6e051d1cfb5e094c9908314213ece45f383f089e61c0",
+  "freeze_digest": "376b6528384cc4172dfc78ca089afd1bb56b99b69cad2096298f9ac7d3581493",
+  "kind": "sealed_run",
+  "metadata": {
+    "backend_kind": "process",
+    "envassure_status": "determinate",
+    "environment_assurance_digest": "f2848705b2cae616dcbb6e051d1cfb5e094c9908314213ece45f383f089e61c0",
+    "execution_boundary_digests": [],
+    "execution_mode": "local_dev",
+    "security_grade": false,
+    "security_grade_attempt": {
+      "execution_mode_attempted": "security_grade",
+      "fail_closed": true,
+      "maturity_cap": "internally_verified",
+      "reason": "host_lacks_rootless_docker_or_separate_domain",
+      "requested": true,
+      "result": "refused",
+      "security_grade": false
+    },
+    "study_id": "flagship-2026"
+  },
+  "preregistration_digest": "760978868585a59f46c2f051b5c1418944e671b9f9a0d0fc0f18d1269f063779",
+  "run_id": "flagship-2026",
+  "schema_version": "2",
+  "seal_id": "seal-flagship-2026",
+  "sealed_at": 1787677399.7579834
+}

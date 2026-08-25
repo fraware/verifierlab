@@ -1,0 +1,86 @@
+{
+  "content_digest": "716ec8e437f943b3e154bd53f11fc4f828e7ccc9c45d31a7643be2604a7b8188",
+  "partition_digests": {
+    "clean_regression": "463ec3c0a9025d42a067e9524feacff5469a061ca0565ba3397565ffeb5e811a",
+    "discovery": "798d2e298db650df2bd1fa7a618e270ffff80c5e1c9a6c674aee9af8070eae89",
+    "final_sealed_evaluation": "1566f1d527f8fb6f26a3ece8f5b15cd584e26e0855744a14587c80c32a18020c",
+    "planted_calibration": "247a7b35b7a1a108d767addb822a7e84952c7f7dba588383725783fefacbadb8",
+    "repair_holdout": "942f3b9bdbb53e74cf77f82593f74e29a911d69b2f82c56cba025f82e9235030",
+    "transfer_corpus": "e01c57aa2a6a1bac269fa15a8efc533f38effed49b131021f663f2008db03c0b"
+  },
+  "partitions": {
+    "clean_regression": [
+      "clean-000",
+      "clean-001",
+      "clean-002",
+      "clean-003",
+      "clean-004",
+      "clean-005",
+      "clean-006",
+      "clean-007"
+    ],
+    "discovery": [
+      "disc-000",
+      "disc-001",
+      "disc-002",
+      "disc-003",
+      "disc-004",
+      "disc-005",
+      "disc-006",
+      "disc-007",
+      "disc-008",
+      "disc-009",
+      "disc-010",
+      "disc-011"
+    ],
+    "final_sealed_evaluation": [
+      "final-000",
+      "final-001",
+      "final-002",
+      "final-003",
+      "final-004",
+      "final-005",
+      "final-006",
+      "final-007",
+      "final-008",
+      "final-009",
+      "final-010",
+      "final-011"
+    ],
+    "planted_calibration": [
+      "plant-000",
+      "plant-001",
+      "plant-002",
+      "plant-003",
+      "plant-004",
+      "plant-005",
+      "plant-006",
+      "plant-007",
+      "plant-008",
+      "plant-009"
+    ],
+    "repair_holdout": [
+      "hold-000",
+      "hold-001",
+      "hold-002",
+      "hold-003",
+      "hold-004",
+      "hold-005",
+      "hold-006",
+      "hold-007"
+    ],
+    "transfer_corpus": [
+      "xfer-000",
+      "xfer-001",
+      "xfer-002",
+      "xfer-003",
+      "xfer-004",
+      "xfer-005"
+    ]
+  },
+  "pooling_policy": {
+    "planted_calibration": "never_pool_with_unknown_robustness",
+    "supports_unknown_robustness_claim": false
+  },
+  "study_id": "flagship-2026"
+}

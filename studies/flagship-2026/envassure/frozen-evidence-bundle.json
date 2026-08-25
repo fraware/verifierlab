@@ -1,0 +1,20 @@
+{
+  "assumption_set_digest": "f504fa77d49dd16fbebb34d758e685a197973a4b154661cacba927c629af92ed",
+  "claim_boundary": "environment_only",
+  "compiler_commit": "fraware-envassure-fixture-00000000000000000001",
+  "compiler_schema": "eac-r15",
+  "content_digest": "fd26681d1a1467dfdada0236df71d8b8c2f81236e36cc60aefa1ff6cc29e2de8",
+  "eac_r15_evidence_refs": [
+    "eac:evidence:fixture-1"
+  ],
+  "eac_r15_registration_refs": [
+    "EAC-R15-FIX-001"
+  ],
+  "ir_runtime_digest": "e90dc315f32c361d03d7cd31b842b50a680046b95a581c0e8c67f14112e6aef2",
+  "metadata": {
+    "non_live": true,
+    "synthetic": true
+  },
+  "schema_version": "1",
+  "validation_status": "determinate"
+}
