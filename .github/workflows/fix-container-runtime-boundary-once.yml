@@ -1,0 +1,88 @@
+name: One-shot container runtime boundary repair
+
+on:
+  push:
+    branches: [assurance/p0-container-execution]
+    paths:
+      - ".github/workflows/fix-container-runtime-boundary-once.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: assurance/p0-container-execution
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.12
+      - run: uv sync --extra dev
+      - name: Apply asserted boundary corrections
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one match, found {count}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          replace_once(
+              "src/verifierlab/execution/container.py",
+              '''    tmpfs_spec = f"rw,noexec,nosuid,size={policy.tmpfs_bytes}"\n''',
+              '''    tmpfs_common = f"rw,noexec,nosuid,size={policy.tmpfs_bytes}"\n    tmpfs_tmp = f"{tmpfs_common},mode=1777"\n    tmpfs_worker = f"{tmpfs_common},uid=10001,gid=10001,mode=0700"\n''',
+          )
+          replace_once(
+              "src/verifierlab/execution/container.py",
+              '''        f"--tmpfs={_TMP}:{tmpfs_spec}",\n        f"--tmpfs={_WORKER_DATA}:{tmpfs_spec}",\n''',
+              '''        f"--tmpfs={_TMP}:{tmpfs_tmp}",\n        f"--tmpfs={_WORKER_DATA}:{tmpfs_worker}",\n''',
+          )
+          replace_once(
+              "src/verifierlab/execution/container.py",
+              '''    required = {"rw", "noexec", "nosuid", f"size={policy.tmpfs_bytes}"}\n    for spec in value.values():\n        tokens = {token.strip().lower() for token in str(spec).split(",")}\n        if not required.issubset(tokens):\n            return False\n''',
+              '''    common = {"rw", "noexec", "nosuid", f"size={policy.tmpfs_bytes}"}\n    required_by_path = {\n        _TMP: common | {"mode=1777"},\n        _WORKER_DATA: common | {"uid=10001", "gid=10001", "mode=0700"},\n    }\n    for path, required in required_by_path.items():\n        tokens = {token.strip().lower() for token in str(value[path]).split(",")}\n        if not required.issubset(tokens):\n            return False\n''',
+          )
+          replace_once(
+              "src/verifierlab/execution/container.py",
+              '''        policy_satisfied=policy_satisfied,\n        security_grade=security_grade,\n        **controls,\n''',
+              '''        policy_satisfied=policy_satisfied,\n        security_grade=security_grade,\n        daemon_rootless=controls["daemon_rootless"],\n        network_none=controls["network_none"],\n        read_only_root=controls["read_only_root"],\n        cap_drop_all=controls["cap_drop_all"],\n        no_new_privileges=controls["no_new_privileges"],\n        seccomp_builtin=controls["seccomp_builtin"],\n        non_root_user=controls["non_root_user"],\n        no_host_mounts=controls["no_host_mounts"],\n        tmpfs_only_writable_paths=controls["tmpfs_only_writable_paths"],\n        private_ipc=controls["private_ipc"],\n        private_cgroupns=controls["private_cgroupns"],\n        host_pid_namespace_disabled=controls["host_pid_namespace_disabled"],\n        privileged_disabled=controls["privileged_disabled"],\n        devices_absent=controls["devices_absent"],\n''',
+          )
+
+          replace_once(
+              "tests/test_container_execution_boundary.py",
+              '''    tmpfs = f"rw,noexec,nosuid,size={policy.tmpfs_bytes}"\n''',
+              '''    tmpfs_common = f"rw,noexec,nosuid,size={policy.tmpfs_bytes}"\n''',
+          )
+          replace_once(
+              "tests/test_container_execution_boundary.py",
+              '''            "Tmpfs": {\n                "/tmp": tmpfs,\n                "/var/lib/verifierlab/worker": tmpfs,\n            },\n''',
+              '''            "Tmpfs": {\n                "/tmp": f"{tmpfs_common},mode=1777",\n                "/var/lib/verifierlab/worker": (\n                    f"{tmpfs_common},uid=10001,gid=10001,mode=0700"\n                ),\n            },\n''',
+          )
+          replace_once(
+              "tests/test_container_execution_boundary.py",
+              '''    assert "--mount" not in joined\n    assert command[-1] == IMAGE\n''',
+              '''    assert "--mount" not in joined\n    assert any(\n        item.startswith("--tmpfs=/tmp:") and "mode=1777" in item for item in command\n    )\n    assert any(\n        item.startswith("--tmpfs=/var/lib/verifierlab/worker:")\n        and "uid=10001" in item\n        and "gid=10001" in item\n        and "mode=0700" in item\n        for item in command\n    )\n    assert command[-1] == IMAGE\n''',
+          )
+          PY
+      - name: Validate corrected boundary
+        run: |
+          uv run ruff check --fix src/verifierlab/execution/container.py tests/test_container_execution_boundary.py
+          uv run ruff format src/verifierlab/execution/container.py tests/test_container_execution_boundary.py
+          uv run ruff check src/verifierlab/execution/container.py tests/test_container_execution_boundary.py
+          uv run mypy src/verifierlab/execution/container.py
+          uv run pytest tests/test_container_execution_boundary.py -q
+      - name: Commit boundary repair
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name "repo-maintenance"
+          git config user.email "repo-maintenance@users.noreply.github.com"
+          git add src/verifierlab/execution/container.py tests/test_container_execution_boundary.py
+          git diff --cached --quiet && exit 1
+          git commit -m "fix(container): bind writable worker tmpfs ownership"
+          git push origin HEAD:assurance/p0-container-execution
