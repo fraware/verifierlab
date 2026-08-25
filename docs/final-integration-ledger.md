@@ -16,6 +16,8 @@ Package version remains `0.2.0rc2` until Gate G7.
 | Starting SHA | `f59cd5b9bceb9785642938a634440e4eccf2d12f` |
 | Starting subject | `chore: remove accidental empty placeholder` |
 | Created | 2026-08-25 |
+| HEAD (WP-00 close) | `44f3e009c74842e5aca327744dedc52c7851eaed` |
+| Commits vs `main` | 124 |
 | Push | **not pushed** (WP-00 constraint) |
 | Merge to `main` | **not done** (WP-00 constraint) |
 
@@ -24,39 +26,39 @@ stays out of the repository.
 
 ## Disposition rules applied
 
-- Feature deltas only: rebase/cherry-pick of feature commits.
+- Feature deltas only: cherry-pick of feature commits (no merge of stacked
+  histories, no merge of validation PRs).
 - Never merge validation-only PRs: #14, #16, #18, #20, #29, #40, #41, #42,
   #44, #46, #48 and analog `validation/*` branches.
-- Temporary one-shot validator workflows (`*-once.yml`) are omitted; the
-  code/test commits they produced are kept.
-- Merge commits that stitch already-landed stacks are omitted (do not merge
+- Temporary one-shot validator workflows (`*-once.yml`) omitted; the
+  code/test commits they produced were kept.
+- Merge commits that stitch already-landed stacks omitted (do not merge
   the whole stack twice).
-- Conflicts are never resolved by whole-file ours/theirs without semantic
+- Conflicts never resolved by whole-file ours/theirs without semantic
   review.
-- Historical CI on validation marker SHAs does **not** automatically apply to
-  this tree. Ordinary CI must be re-run here.
+- Historical CI on validation marker SHAs does **not** automatically apply
+  to this tree.
 
-## Source map (heads at inventory freeze)
+## Source map
 
-| Source | Remote branch | Head SHA | Merge-base vs `main` | Status |
-| ------ | ------------- | -------- | -------------------- | ------ |
-| PR #12 | `origin/maintenance/ci-lint-baseline` | `cf5600cb0d6bf5f83a8801e592d7a1a5c2438c1b` | `f59cd5b` | pending |
-| PR #5 | `origin/assurance/p0-scientific-closure` | `7fa27c9d272c8e416fd862c070d7c26e296d1a26` | `54dab07c` | pending |
-| PR #6 | `origin/assurance/p0-release-integrity` | `2f8172101a10a68601ea0a59804d9ad396e57954` | `54dab07c` | pending |
-| PR #7 | `origin/assurance/p0-score-fail-closed` | `a90ea6b64cd37b8cb996be4db716bad744219ea7` | `54dab07c` | pending |
-| PR #8 | `origin/assurance/p0-statistics-plan` | `77190f1b33156f48e89efe9f250deaa7e01261bc` | `54dab07c` | pending |
-| PR #11 | `origin/assurance/p0-worker-plane-isolation` | `0d08279417b795fd6e6717ea97f126917cfdd3d3` | `54dab07c` | pending |
-| PR #27 | `origin/assurance/p0-preregistered-estimands` | `f6e6f6fac2f023d05eb54cc11e9cb2c86f6fb47b` | `54dab07c` | pending |
-| PR #9 | `origin/assurance/p0-repair-reattack` | `4a981f89f8a3d6070163cd68576ee623b89843ce` | `54dab07c` | pending |
-| Container executor | `origin/assurance/p0-container-execution` | `81428a7bdac977ce5670c1c8a95352a898cb3e6a` | `54dab07c` | pending |
-| PR #39 H/F/S | `origin/research/hacker-fixer-solver` | `f9d1162` (see unique commits) | `f59cd5b` | pending |
-| PR #43 surface | `origin/research/robustness-response-surface-v2` | (stacked on combined research core) | `f59cd5b` | pending |
-| PR #45 metamorphic | `origin/research/metamorphic-registry` | (stacked) | `f59cd5b` | pending |
-| PR #47 failure layers | `origin/research/failure-layer-taxonomy` | `06af47ebd0b240900e45002eae45b24b96d312ec` | `f59cd5b` | pending |
-| WP-01 calibration | `origin/research/planted-calibration` | `085a7f7c295fee5da289cc2435ebf8384a79a1ea` | `f59cd5b` | pending |
-| PR #10 maturity | `origin/assurance/p0-claim-maturity` | `d87b88e8be853fffd7e0ed65704c95addfaabf36` | `54dab07c` | pending (policy seed only) |
-
-H/F/S head (unique stack tip, excluding one-shot remove): `f9d1162`.
+| Source | Remote branch | Source head | Integration range | Status |
+| ------ | ------------- | ----------- | ----------------- | ------ |
+| Inventory freeze | (new docs) | n/a | `94ac8070` | landed |
+| PR #12 | `origin/maintenance/ci-lint-baseline` | `cf5600cb` | `107c89a`..`f63a3f82` | landed |
+| PR #5 | `origin/assurance/p0-scientific-closure` | `7fa27c9d` | `c971a5f`..`c7975470` | landed |
+| PR #6 | `origin/assurance/p0-release-integrity` | `2f817210` | `f0db3d3f` | landed |
+| PR #7 | `origin/assurance/p0-score-fail-closed` | `a90ea6b6` | `43ab590`..`6dffb624` | landed |
+| PR #8 | `origin/assurance/p0-statistics-plan` | `77190f1b` | `eb2ed5a`..`f365fb56` | landed |
+| PR #11 | `origin/assurance/p0-worker-plane-isolation` | `0d082794` | `cd68926`..`7e1adf76` | landed |
+| PR #27 | `origin/assurance/p0-preregistered-estimands` | `f6e6f6fa` | `d28b13d`..`4a779d14` | landed |
+| PR #9 | `origin/assurance/p0-repair-reattack` | `4a981f89` | `3ca4dc7`..`509c10a9` | landed |
+| Container executor | `origin/assurance/p0-container-execution` | `81428a7b` | `55f81d6`..`cebe5fc3` | landed |
+| PR #39 H/F/S | `origin/research/hacker-fixer-solver` | unique tip `f9d1162` | `c423196`..`004c6956` | landed |
+| PR #43 surface | `origin/research/robustness-response-surface-v2` | unique | `7843fbb`..`c9edb1b6` | landed |
+| PR #45 metamorphic | `origin/research/metamorphic-registry` | unique | `33432c6`..`45f8c6c6` | landed |
+| PR #47 failure layers | `origin/research/failure-layer-taxonomy` | `06af47eb` | `6b4ff7c`..`8c5db4bd` | landed |
+| WP-01 calibration | `origin/research/planted-calibration` | `085a7f7c` | `1da3947`..`402275bc` + `8e2a47ef` | landed (hygiene follow-up) |
+| PR #10 maturity | `origin/assurance/p0-claim-maturity` | `d87b88e8` | `6f7ca8e`..`ba46493` + `44f3e009` | landed as **policy seed only** |
 
 ## Validation-only sources (not merged)
 
@@ -64,35 +66,186 @@ H/F/S head (unique stack tip, excluding one-shot remove): `f9d1162`.
 | ----------- | ----------- | ----------- |
 | #14, #16, #18, #20, #29 | validation P0 markers | Evidence surfaces, not product deltas |
 | #40, #41, #42, #44, #46, #48 | research validation markers | Prove *those exact trees only* |
-| `origin/validation/p0-container-clean` | container validation | Forbidden; take `p0-container-execution` feature commits only |
-| `origin/validation/research-core-combined` @ `7eaa8788` | combined research core | Historical validation of a composed tree; compose via unique feature commits |
+| `origin/validation/p0-container-clean` | container validation | Forbidden; feature commits taken from `p0-container-execution` |
+| `origin/validation/research-core-combined` @ `7eaa8788` | combined research core | Historical validation of a composed tree |
 | `origin/validation/*-clean` | various | Validation markers |
-| Highest validated research composition | `31f47568` (PR #47/#48) | Does not apply to this integration SHA until equivalent tests rerun |
+| Highest validated research composition | `31f47568` (PR #47/#48) | Does not apply until equivalent tests rerun here |
 
-## Intentional omissions (feature branches)
+## Intentional omissions
 
-Temporary one-shot GitHub Actions workflows that add then delete `*-once.yml`
-are omitted on the integration tree. The product/test commits they produced
-are cherry-picked. Documented per slice below as each slice lands.
+Temporary `*-once.yml` workflows that add then delete a one-shot GitHub Actions
+job are omitted on this tree. Product and test commits they produced were
+cherry-picked. `git range-diff` after PR #12 and PR #7 showed those workflow
+commits as the only missing source commits (`=` for every feature patch).
 
-The validation composer commit `4e8c3b8` (`chore(validation): compose research
-assurance core`) is omitted: it restates already-landed P0 + H/F/S files and
-would merge the stack twice. Pack sidecar refresh after estimands is taken
-from PR #27 feature commit `43f2154`, not from the composer.
+The validation composer `4e8c3b8` (`chore(validation): compose research
+assurance core`) is omitted: it restates already-landed P0 + H/F/S files.
+Pack sidecars after combining PR #7 score mapping with PR #27 estimands were
+taken from the composed sidecar *content* at `4e8c3b8` during conflict
+resolution (see Slice PR #27), not by merging the composer commit.
+
+Container duplicate `0df0d09` (`fix(worker): prune command module as a file`)
+was skipped as empty: already applied via PR #11 `90b42db` / `104a675`.
+
+PR #10 public API `qualify_assurance` / `AssuranceEvidence` booleans are
+**not** the public qualification path. Follow-up `44f3e009` keeps the
+decision table as `compile_maturity_policy_seed` and
+`SEED_NOT_QUALIFICATION_PATH`. WP-05 rewrites this.
+
+`.github/workflows/container-isolation.yml` is kept: it is the product live
+probe workflow from the container feature branch, not a one-shot validator.
+
+## Conflicts
+
+| Slice | Files | Resolution |
+| ----- | ----- | ---------- |
+| PR #7 `d62265e` | `profile.py` (auto-merge) | Semantic keep: PR #12 formatter wrapping of `decision_space.value if isinstance(...)`; range-diff showed formatting-only `!` |
+| PR #7 `d2aee23` | `worker.py` (auto-merge) | Semantic keep: PR #12 `Callable` annotations plus PR #7 profile digest binding |
+| PR #27 `43f2154` | pack `profile.json` + `expected-public-digests.json` A–E | Semantic merge of PR #7 (`decision_mapping`, schema v2) with PR #27 (`pack-*@2`, campaign digest from preregistered YAML). Sidecar bytes matched composed research core `4e8c3b8` / failure-layer tip (not whole-file ours or theirs of the conflicted cherry-pick) |
+| PR #9 `a9a7108` | `tests/test_acceptance_gates.py` (auto-merge) | Semantic keep: PR #11 planted-oracle import path + PR #12 comment style + PR #9 qualification assertions |
+| Container `0df0d09` | Dockerfile prune | Empty after PR #11; skipped |
+
+No other content conflicts.
+
+## Range-diff / golden-file proof
+
+| Seam | Proof |
+| ---- | ----- |
+| PR #12 | `git range-diff origin/main..origin/maintenance/ci-lint-baseline 94ac807..f63a3f8` — all feature commits `=`; only one-shot formatter add/remove omitted |
+| PR #7 | `git range-diff` — feature commits `=` except `d62265e` formatting `!` from PR #12 wrap; one-shot workflows omitted |
+| PR #9 | feature commits `=`; one-shot workflows omitted |
+| PR #5/#6/#8/#11 | clean cherry-picks; empty `git diff` vs source heads for unique modules where checked |
+| H/F/S | empty `git diff origin/research/hacker-fixer-solver -- src/verifierlab/campaigns/hacker_fixer_solver.py tests/test_hacker_fixer_solver_protocol.py` |
+| Surface / metamorphic / layers | empty `git diff` vs respective source heads for unique modules |
+| Container | empty `git diff origin/assurance/p0-container-execution -- src/verifierlab/execution/container.py docker/worker/Dockerfile src/verifierlab/execution/__init__.py` |
+| Calibration | unique files match `085a7f7c` except WP-01 hygiene `8e2a47ef` (mypy loop-variable leak + ruff format/RUF005) |
 
 ## Slice log
-
-Slices are recorded as they land. `final_commits` are SHAs **on this branch**.
 
 ### Slice 0 — inventory freeze
 
 | Field | Value |
 | ----- | ----- |
+| Final commit | `94ac8070ab9e0a08fce8f2aca079a51c4ee01863` |
 | Contents | This ledger + `docs/claim-invalidation-ledger.md` |
 | Conflicts | none |
-| Tests rerun | none (docs only) |
+| Tests | none (docs only) |
 | Historical evidence applies | n/a |
 
----
+### Slice PR #12 — CI lint baseline
 
-Further slices are appended below as cherry-picks land.
+Feature commits landed; omitted `d822f60` / `992eeca` one-shot formatter workflow.
+
+### Slice PR #5 + #6 — Beam + release integrity
+
+All four Beam commits + unsigned-tag fail-closed release workflow.
+
+### Slice PR #7 — score / profile fail-closed
+
+Omitted one-shot lint and sidecar-refresh workflows. Sidecar *content*
+`9a5366b` kept.
+
+### Slice PR #8 — executable StatsPlan
+
+All four commits.
+
+### Slice PR #11 — worker-plane isolation
+
+All 18 feature commits. No one-shot workflows in this series.
+
+### Slice PR #27 — preregistered estimands
+
+Omitted one-shot wiring/migration/repair helper workflows. Pack YAML
+preregistration from `43f2154` kept. Sidecars semantically merged (see
+Conflicts).
+
+### Slice PR #9 — canonical fresh-repair evidence
+
+Omitted one-shot validation/mypy/schema helper workflows.
+
+**High-risk seam score+repair tests:** 47 passed
+(`test_score_decision_*`, `test_campaign_profile_binding`,
+`test_campaign_e2e`, `test_repair_qualification_boundary`,
+`test_canonical_fresh_run_evidence`, `test_phase_d_exploits_repair`,
+`test_beam_regression`, `test_stats_plan_controls`).
+
+### Slice container executor
+
+Omitted one-shot maintenance/validation/boundary helper workflows.
+Skipped empty duplicate Dockerfile prune `0df0d09`. Kept product
+`container-isolation.yml`.
+
+**High-risk seam isolation+container and container+engine tests:** 49 passed
+(`test_worker_plane_source_isolation`, `test_docker_trust_boundaries`,
+`test_container_execution_boundary`, `test_container_isolation_workflow`,
+`test_isolation_probe_source_contract`, `test_campaign_e2e`,
+`test_process_worker`).
+
+### Slice PR #39 — H/F/S unique commits
+
+`18dce98`, `f9f7fd6`, `d729391`. Omitted `validate-hfs-once.yml`.
+
+**High-risk seam stats+HFS tests:** 44 passed
+(`test_hacker_fixer_solver_protocol`, `test_stats_plan_controls`,
+`test_preregistered_estimands`, `test_metrics_report`, repair evidence tests).
+
+### Slice PR #43 / #45 / #47 — surface, metamorphic, failure layers
+
+Unique feature/test commits only. Omitted compose-research-core and
+`validate-*-once.yml`. Research golden tests: 54 passed.
+
+### Slice WP-01 — planted calibration
+
+Validated `085a7f7c` in a detached worktree (did not move this branch):
+Ruff RUF005 + format debt + mypy assignment leak in
+`statistics/calibration.py`; planted + regression tests 48 passed on that
+SHA. Unique feature commits cherry-picked; hygiene follow-up `8e2a47ef`.
+No one-shot validators in the unique series.
+
+**High-risk seam calibration+failure layers:** 42 passed
+(`test_planted_calibration`, `test_failure_layers`,
+`test_robustness_response_surface`, `test_metamorphic_registry`).
+
+### Slice PR #10 — policy seed
+
+Feature commits landed, then `44f3e009` removed boolean qualification from
+the public `verifierlab.assurance` API. Tests: 8 passed.
+
+## Ordinary CI on this tree (WP-00 close)
+
+Host: Windows / CPython 3.13.11 (conda). `uv sync` failed on TLS
+(`UnknownIssuer`); tests ran via conda Python with `PYTHONPATH=src;.`.
+
+| Command | Result |
+| ------- | ------ |
+| `python -m ruff check src tests` | pass |
+| `python -m ruff format --check src tests` | pass (166 files) |
+| `python -m mypy` | 9 errors, **host-specific**: `os.geteuid` / `resource.setrlimit` absent on Windows; `gym_adapter` unused `type: ignore` because local gymnasium is installed. Ubuntu CI (no gymnasium extra, POSIX `os`/`resource`) is the ordinary gate. `runner.py` setrlimit is pre-existing on `main`. |
+| `python -m pytest -m "not pack_heavy"` | **442 passed**, 4 skipped, 3 deselected, **1 failed**: `tests/integration/envassure/test_envassure.py::test_envassure_live_when_installable` — local stub `envassure` package exposes neither `EnvAssureTarget` nor `make_target`. Adapter was not touched on this branch (`git log origin/main..HEAD -- src/verifierlab/targets/envassure_adapter.py` empty). Fail-closed adapter behavior; not an integration delta. |
+| `python scripts/check_base_imports.py` | OK |
+
+## Historical validation evidence
+
+Does **not** still apply to this SHA. Re-run equivalent suites here
+(ordinary CI above is the start). Beam-derived robustness numbers remain
+invalid until Beam-dependent experiments are re-executed (see
+`docs/claim-invalidation-ledger.md`). Implicit-score results remain
+noncanonical.
+
+## Remaining gaps (out of WP-00 / merge-prep)
+
+WP-01 merge-prep (validate @ `085a7f7c`, hygiene, unique commits on this
+line) is done. Remaining Phase-1 *instrument* work still owned by WP-01/WP-04:
+
+- `CalibrationObservation` still keys uniqueness on `run_digest`, not
+  `work_unit_digest` as the sealed-instrument spec requires.
+- Campaign lifecycle does not yet seal hidden design before attack or bind
+  execution-boundary digests into observations (WP-04).
+- Recursive public-artifact leakage scan beyond commitment-field tests is
+  not a separate adversarial harness.
+- Ordinary GitHub CI / Security / Adapters workflows have not been executed
+  on this branch (not pushed).
+
+WP-02+ (SecureLauncher, malicious probe catalogue inside the executor,
+EvidenceResolver rewrite, stats v2, docs rewrite, flagship study, release
+protection) were not implemented beyond what arrived in feature deltas.
