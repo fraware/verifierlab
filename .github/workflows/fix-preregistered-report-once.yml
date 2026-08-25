@@ -1,0 +1,84 @@
+name: One-shot registered metric report repair
+
+on:
+  push:
+    branches: [assurance/p0-preregistered-estimands]
+    paths:
+      - ".github/workflows/fix-preregistered-report-once.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: assurance/p0-preregistered-estimands
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.12
+      - run: uv sync --extra dev
+      - name: Apply structured-rate presentation repair
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one target block, found {count}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          replace_once(
+              "src/verifierlab/reports/html.py",
+              '''def _fmt(value: float | None) -> str:\n    if value is None:\n        return "—"\n    return f"{value:.4f}"\n''',
+              '''def _metric_estimate(value: Any) -> float | None:\n    if isinstance(value, dict):\n        value = value.get("estimate")\n    if value is None:\n        return None\n    if isinstance(value, bool) or not isinstance(value, (int, float)):\n        raise TypeError(f"metric estimate must be numeric or null, got {type(value).__name__}")\n    return float(value)\n\n\ndef _fmt(value: Any) -> str:\n    estimate = _metric_estimate(value)\n    if estimate is None:\n        return "—"\n    return f"{estimate:.4f}"\n''',
+          )
+          replace_once(
+              "src/verifierlab/reports/html.py",
+              '''\n\ndef _load_stats_plan(run_dir: Path, manifest: dict[str, Any]) -> StatsPlan:\n''',
+              '''\n\ndef _presentation_cohorts(stats: dict[str, Any]) -> list[dict[str, Any]]:\n    cohorts = [dict(value) for value in (stats.get("cohorts") or {}).values()]\n    by_name = {str(item.get("cohort")): item for item in cohorts}\n    for registered in (stats.get("registered_estimands") or {}).values():\n        if not isinstance(registered, dict):\n            continue\n        definition = registered.get("definition") or {}\n        result = registered.get("result") or {}\n        if not isinstance(definition, dict) or not isinstance(result, dict):\n            continue\n        cohort_name = definition.get("cohort")\n        metric = definition.get("metric")\n        interval = result.get("interval")\n        if cohort_name not in by_name or not isinstance(interval, dict):\n            continue\n        if not {"low", "high"}.issubset(interval):\n            continue\n        method = str(interval.get("method") or result.get("interval_method") or "registered")\n        if metric == "cohort_far":\n            by_name[str(cohort_name)]["far_ci"] = {"intervals": {method: interval}}\n        elif metric == "cohort_frr":\n            by_name[str(cohort_name)]["frr_ci"] = {"intervals": {method: interval}}\n    return cohorts\n\n\ndef _load_stats_plan(run_dir: Path, manifest: dict[str, Any]) -> StatsPlan:\n''',
+          )
+          replace_once(
+              "src/verifierlab/reports/html.py",
+              '''    cohorts = list((stats.get("cohorts") or {}).values())\n''',
+              '''    cohorts = _presentation_cohorts(stats)\n''',
+          )
+          replace_once(
+              "src/verifierlab/reports/html.py",
+              '''                "far": c.get("far"),\n                "frr": c.get("frr"),\n''',
+              '''                "far": _metric_estimate(c.get("far")),\n                "frr": _metric_estimate(c.get("frr")),\n''',
+          )
+
+          replace_once(
+              "tests/test_metrics_report.py",
+              '''from verifierlab.reports import MetricsIngestError, build_report, compute_metrics\n''',
+              '''from verifierlab.config.campaign import StatsPlan\nfrom verifierlab.reports import MetricsIngestError, build_report, compute_metrics\n''',
+          )
+          test_path = Path("tests/test_metrics_report.py")
+          text = test_path.read_text(encoding="utf-8")
+          marker = "def test_build_report_preregistered_rate_shape"
+          if marker in text:
+              raise SystemExit("registered report test already present")
+          text += '''\n\ndef test_build_report_preregistered_rate_shape(tmp_path: Path) -> None:\n    run_dir = tmp_path / "registered"\n    rows = [\n        {\n            "unit_id": "u0",\n            "cohort": "optimized",\n            "access_model": "black-box",\n            "verifier_accepted": True,\n            "gt_valid": False,\n        },\n        {\n            "unit_id": "u1",\n            "cohort": "optimized",\n            "access_model": "black-box",\n            "verifier_accepted": False,\n            "gt_valid": False,\n        },\n    ]\n    plan = StatsPlan.model_validate(\n        {\n            "methods": ["wilson"],\n            "alpha": 0.05,\n            "stopping_rule": "fixed_n",\n            "multiple_comparison_policy": "pre_registered_primary",\n            "preregistration": {\n                "schema_version": "1",\n                "registration_id": "report-rate-shape",\n                "estimands": [\n                    {\n                        "estimand_id": "far_optimized",\n                        "metric": "cohort_far",\n                        "role": "primary",\n                        "inference": "interval",\n                        "cohort": "optimized",\n                        "interval_method": "wilson",\n                        "alpha": 0.05,\n                        "direction": "higher_is_worse",\n                    }\n                ],\n                "assumptions": ["test fixture only"],\n            },\n        }\n    )\n    payload = build_report(\n        run_dir,\n        results=rows,\n        access_model="black-box",\n        require_labels_released=False,\n        stats_plan=plan,\n    )\n    registered = payload["metrics"]["registered_estimands"]["far_optimized"]["result"]\n    assert registered["estimate"] == 0.5\n    assert registered["interval"]["method"] == "wilson"\n    html = (run_dir / "report" / "report.html").read_text(encoding="utf-8")\n    assert "0.5000" in html\n    assert "(wilson)" in html\n    csv_text = (run_dir / "report" / "metrics.csv").read_text(encoding="utf-8")\n    assert "optimized,2,0.5" in csv_text\n    assert "{'estimate'" not in csv_text\n'''
+          test_path.write_text(text, encoding="utf-8")
+          PY
+      - name: Validate registered report rendering
+        run: |
+          uv run ruff check src/verifierlab/reports/html.py tests/test_metrics_report.py
+          uv run ruff format --check src/verifierlab/reports/html.py tests/test_metrics_report.py
+          uv run mypy src/verifierlab/reports/html.py
+          uv run pytest tests/test_metrics_report.py tests/test_preregistered_estimands.py -q
+      - name: Commit report repair
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name "repo-maintenance"
+          git config user.email "repo-maintenance@users.noreply.github.com"
+          git add src/verifierlab/reports/html.py tests/test_metrics_report.py
+          git diff --cached --quiet && exit 1
+          git commit -m "fix(report): render registered rate estimands"
+          git push origin HEAD:assurance/p0-preregistered-estimands
