@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from verifierlab.config.campaign import StatsPlan
+from verifierlab.config.campaign import StatsPlan, load_campaign_dict
 from verifierlab.statistics.plan import compile_stats_plan
 from verifierlab.statistics.preregistration import AnalysisPreregistration, EstimandSpec
 
@@ -213,3 +213,31 @@ def test_sequential_monitoring_remains_unimplemented() -> None:
     plan = _plan(_registration()).model_copy(update={"stopping_rule": "sequential_alpha"})
     with pytest.raises(ValueError, match="no alpha-spending procedure"):
         compile_stats_plan(_rows(), plan=plan)
+
+
+def _campaign_payload(plan: StatsPlan) -> dict[str, object]:
+    return {
+        "schema_version": "1",
+        "name": "registered-analysis",
+        "pinned_versions": {"verifierlab": "0.2.0rc2", "campaign": "registered@1"},
+        "access_model": "black-box",
+        "budget": {"max_queries": 10, "overrun_policy": "stop"},
+        "environment": {"kind": "fake", "ref": "fake"},
+        "verifier": {"kind": "python", "ref": "examples.refunds.verifier:grade"},
+        "ground_truth": {"provider": "examples.refunds.gt:label"},
+        "stats_plan": plan.model_dump(mode="json"),
+    }
+
+
+def test_campaign_semantics_accept_registered_primary_family() -> None:
+    spec, diagnostics = load_campaign_dict(_campaign_payload(_plan(_registration())))
+    assert spec is not None
+    assert not [d for d in diagnostics if d.code == "VALAB.CAMPAIGN.PREREGISTRATION_REQUIRED"]
+
+
+def test_campaign_semantics_reject_primary_family_without_registration() -> None:
+    spec, diagnostics = load_campaign_dict(_campaign_payload(_plan()))
+    assert spec is not None
+    matching = [d for d in diagnostics if d.code == "VALAB.CAMPAIGN.PREREGISTRATION_REQUIRED"]
+    assert len(matching) == 1
+    assert matching[0].path == "stats_plan.preregistration"
