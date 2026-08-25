@@ -1,12 +1,13 @@
 # Quality engineering (WP-18)
 
 Honest coverage, property, mutation, fuzz, audit, and SBOM posture for the
-`integration/final-assurance` tree. Package remains `0.2.0rc2`.
+final release-candidate tree. Package remains `0.2.0rc2` until the release
+version is deliberately advanced.
 
 ## Coverage partitions
 
 Global CI floor stays **`--cov-fail-under=40`** (see `.github/workflows/ci.yml`).
-Module-specific targets live in [`config/coverage-partitions.toml`](../config/coverage-partitions.toml):
+Module-specific targets live in `config/coverage-partitions.toml`.
 
 | Partition | Practical target | Intent |
 | --------- | ---------------- | ------ |
@@ -23,14 +24,14 @@ uv run python scripts/check_coverage_partitions.py --enforce   # nightly
 ```
 
 Do not suddenly raise the global floor until partition reports are green on
-Python 3.11–3.13.
+Python 3.11-3.13.
 
 ## Property tests
 
 Hypothesis is already in `[dev]`. Additional property suites:
 
-- `tests/test_science_core.py` — canonicalization digests
-- `tests/test_property_wp18.py` — budgets, lifecycle, migration non-promotion
+- `tests/test_science_core.py` - canonicalization digests
+- `tests/test_property_wp18.py` - budgets, lifecycle, migration non-promotion
 
 ## Mutation / fuzz scaffolding
 
@@ -48,18 +49,16 @@ fail-closed entry).
 
 ## Dependency audit
 
-`security.yml` runs CodeQL on PR/push. `pip-audit` high/critical findings
-**hard-fail** on:
+`security.yml` runs CodeQL on PR/push. On protected release lines, `pip-audit`
+runs in strict mode and **any unwaived reported vulnerability hard-fails**.
+The release workflow does not silently downgrade or suppress findings by
+severity. Pull requests targeting `main` use the same hard-fail posture.
 
-- annotated release tags `v*`
-- published GitHub Releases
-- pushes to `main` / `release/0.2-rc` (WP-18 strengthen)
-- `workflow_dispatch` when `fail_audit=true`
-
-Time-bounded waivers (if ever needed) must be recorded as a committed JSON
-artifact under `security/waivers/` with fields `id`, `package`, `advisory`,
-`severity`, `expires_on`, `rationale`, `owner`. Absent a valid unexpired
-waiver, high/critical findings fail closed.
+Time-bounded waiver documents may be recorded under `security/waivers/` for
+review/audit history, but this release does **not** automatically convert those
+documents into `pip-audit` suppressions. A waiver therefore cannot make a red
+security workflow green by itself; an explicit reviewed workflow change would
+be required.
 
 ## Worker image SBOM + secret scan
 
