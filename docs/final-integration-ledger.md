@@ -417,5 +417,80 @@ consumable by WP-13 (surface plan, portfolio manifest, HFS artifact, layer secti
 | Never claimed `scientifically_qualified` / `security_grade` / `deployment_calibrated` | honest |
 | Tests | `tests/test_flagship_wp13.py` |
 
-WP-16–22 (adapter matrix honesty polish, coverage partitions, protected main,
-full docs rewrite, final acceptance gates) remain for the next agent.
+### WP-16 — Adapter contract and honest matrix
+
+| Item | Status |
+| ---- | ------ |
+| `AdapterContractVersion` surfaces | done (`targets/contract.py`) |
+| Matrix statuses live-tested / protocol-reference-tested / fixture-only / unsupported | done |
+| EnvAssure fixture-only until installable | done |
+| Object-store scoped-prefix isolation test | done |
+| Base import gate unchanged | done |
+| Tests | `tests/test_adapter_contract_wp16.py` |
+
+### WP-17 — Schema registry and migrations
+
+| Item | Status |
+| ---- | ------ |
+| `registry/schema-registry-v1.json` + `artifacts/schema_registry.py` | done |
+| One-way migrations; unknown versions fail closed | done |
+| Migrations cannot upgrade maturity | done |
+| `valab bundle verify` / `valab bundle migrate --to` (dry-run default) | done |
+| Golden fixture + one-byte tamper | done |
+| Tests | `tests/test_schema_registry_wp17.py` |
+
+### WP-18 — Quality engineering
+
+| Item | Status |
+| ---- | ------ |
+| Coverage partitions (global floor remains 40%) | done |
+| Hypothesis property tests | done (`test_property_wp18.py`) |
+| Mutation/fuzz scaffolding + corpus | done |
+| pip-audit hard-fail on main/release + waiver schema | done |
+| Worker secret scan + SBOM notes | done |
+| Docs | `docs/quality-engineering.md` |
+
+### WP-19 — Release engineering / protected-main policy
+
+| Item | Status |
+| ---- | ------ |
+| Signed annotated tag checks (no unsigned fallback) | present + strengthened |
+| `docs/repository-protection-policy.md` required checks | done (admin must enable) |
+| Windows removed from stable support matrix (soft-fail retained) | done |
+| SOURCE_DATE_EPOCH, schema registry artifact, provenance attestation | done |
+| No PyPI publish / production signed tag from this agent | honored |
+
+### WP-20 — Documentation and claim cleanup
+
+| Item | Status |
+| ---- | ------ |
+| README honest integration status | done |
+| Architecture / methodology / threat model rewrite | done |
+| `docs/claim-language.md` + lint | done |
+| Security-grade + method-surface tutorials | done |
+| CHANGELOG Unreleased; version stays `0.2.0rc2` | done |
+
+### WP-22 — Final acceptance gates
+
+| Item | Status |
+| ---- | ------ |
+| `docs/final-acceptance.md` Gates A–J | done |
+| `tests/test_final_acceptance_gates.py` + NG-01…NG-15 | done |
+| G7 in-repo software readiness | **READY** (external blockers remain) |
+
+## G7 readiness
+
+**In-repo software/acceptance: READY** for Gate G7 review on
+`integration/final-assurance` when final-acceptance tests are green.
+
+Not claimed and still externally blocked:
+
+- GitHub admin: enable protected `main` required checks
+- Rootless / separate-domain runner for live `security_grade` probes
+- External attestation trust root + independent clean-room reconstruction
+- Real prospective deployment field outcomes
+- Maintainer-signed stable tag / trusted PyPI publish
+
+Flagship study maturity remains **`internally_verified`** with honest blockers —
+never `scientifically_qualified` / `security_grade` / `deployment_calibrated`
+without derived evidence.
