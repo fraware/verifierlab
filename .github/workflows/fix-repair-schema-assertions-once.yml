@@ -1,0 +1,55 @@
+name: One-shot repair schema assertion refresh
+
+on:
+  push:
+    branches: [assurance/p0-repair-reattack]
+    paths:
+      - ".github/workflows/fix-repair-schema-assertions-once.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: assurance/p0-repair-reattack
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.12
+      - run: uv sync --extra dev
+      - name: Refresh exact artifact-version assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          paths = [
+              Path("tests/test_acceptance_gates.py"),
+              Path("tests/test_phase_d_exploits_repair.py"),
+              Path("tests/test_valab_hardening.py"),
+          ]
+          needle = 'assert artifact.schema_version == "3"'
+          replacement = 'assert artifact.schema_version == "5"'
+          for path in paths:
+              text = path.read_text(encoding="utf-8")
+              count = text.count(needle)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one stale schema assertion, found {count}")
+              path.write_text(text.replace(needle, replacement, 1), encoding="utf-8")
+          PY
+      - name: Validate refreshed assertions
+        run: |
+          uv run ruff check tests/test_acceptance_gates.py tests/test_phase_d_exploits_repair.py tests/test_valab_hardening.py
+          uv run ruff format --check tests/test_acceptance_gates.py tests/test_phase_d_exploits_repair.py tests/test_valab_hardening.py
+          uv run pytest tests/test_acceptance_gates.py::TestGate4Repair::test_repair_artifact_has_regression_fresh_holdout tests/test_phase_d_exploits_repair.py::test_repair_campaign_artifact_profiles_holdout_paired tests/test_valab_hardening.py::test_repair_good_pass_gates -q
+      - name: Commit assertion refresh
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name "repo-maintenance"
+          git config user.email "repo-maintenance@users.noreply.github.com"
+          git add tests/test_acceptance_gates.py tests/test_phase_d_exploits_repair.py tests/test_valab_hardening.py
+          git diff --cached --quiet && exit 1
+          git commit -m "test(repair): expect canonical artifact schema v5"
+          git push origin HEAD:assurance/p0-repair-reattack
