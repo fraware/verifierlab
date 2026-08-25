@@ -16,8 +16,8 @@ Package version remains `0.2.0rc2` until Gate G7.
 | Starting SHA | `f59cd5b9bceb9785642938a634440e4eccf2d12f` |
 | Starting subject | `chore: remove accidental empty placeholder` |
 | Created | 2026-08-25 |
-| HEAD (WP-00 close) | `44f3e009c74842e5aca327744dedc52c7851eaed` |
-| Commits vs `main` | 124 |
+| Feature-close SHA | `44f3e009c74842e5aca327744dedc52c7851eaed` |
+| Commits vs `main` | (see `git rev-list --count origin/main..HEAD`) |
 | Push | **not pushed** (WP-00 constraint) |
 | Merge to `main` | **not done** (WP-00 constraint) |
 
