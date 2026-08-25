@@ -2,27 +2,32 @@ import pytest
 
 from verifierlab.campaigns.engine import _single_verifier_profile_digest
 
-
 A = "a" * 64
 B = "b" * 64
 
 
 def test_profile_binding_accepts_single_digest_across_rows() -> None:
-    assert _single_verifier_profile_digest(
-        [
-            {"verifier_profile_digest": A},
-            {"verifier_profile_digest": A, "error": "budget stopped"},
-        ]
-    ) == A
+    assert (
+        _single_verifier_profile_digest(
+            [
+                {"verifier_profile_digest": A},
+                {"verifier_profile_digest": A, "error": "budget stopped"},
+            ]
+        )
+        == A
+    )
 
 
 def test_profile_binding_allows_unattributable_infrastructure_error() -> None:
-    assert _single_verifier_profile_digest(
-        [
-            {"error": "worker failed before verifier construction"},
-            {"verifier_profile_digest": A},
-        ]
-    ) == A
+    assert (
+        _single_verifier_profile_digest(
+            [
+                {"error": "worker failed before verifier construction"},
+                {"verifier_profile_digest": A},
+            ]
+        )
+        == A
+    )
 
 
 def test_profile_binding_rejects_completed_row_without_digest() -> None:
