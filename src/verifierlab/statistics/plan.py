@@ -313,12 +313,30 @@ def _family_size(cohorts: dict[str, CohortMetrics], *, gap_available: bool) -> i
     return max(1, 2 * len(cohorts) + 1 + int(gap_available))
 
 
-def _effective_alpha(plan: StatsPlan, *, family_size: int) -> tuple[float, dict[str, Any]]:
+def _effective_alpha(
+    plan: StatsPlan,
+    *,
+    family_size: int,
+    look_index: int | None = None,
+) -> tuple[float, dict[str, Any]]:
     if plan.stopping_rule == "sequential_alpha":
-        raise ValueError(
-            "sequential_alpha is declared but no alpha-spending procedure is implemented; "
-            "refusing to compile inferential results"
-        )
+        from verifierlab.statistics.sequential import alpha_spent_at_look, require_sequential_plan
+
+        stopping = plan.stopping_plan
+        if stopping is None and plan.preregistration is not None:
+            stopping = plan.preregistration.stopping_plan
+        stopping = require_sequential_plan(stopping)
+        idx = 0 if look_index is None else look_index
+        spent = alpha_spent_at_look(stopping, idx)
+        effective = float(spent["incremental_alpha"])
+        return effective, {
+            "policy": "sequential_alpha",
+            "family_size": family_size,
+            "nominal_alpha": float(plan.alpha),
+            "effective_alpha": effective,
+            "applied": True,
+            "sequential": spent,
+        }
     if plan.multiple_comparison_policy == "pre_registered_primary":
         raise ValueError(
             "pre_registered_primary is declared but no explicit estimand-family compiler is "
@@ -332,6 +350,17 @@ def _effective_alpha(plan: StatsPlan, *, family_size: int) -> tuple[float, dict[
             "nominal_alpha": float(plan.alpha),
             "effective_alpha": effective,
             "applied": True,
+        }
+    if plan.multiple_comparison_policy == "holm":
+        # Holm adjusts per-test thresholds from raw p-values at decision time;
+        # intervals use nominal alpha here and holm decisions are attached separately.
+        return float(plan.alpha), {
+            "policy": "holm",
+            "family_size": family_size,
+            "nominal_alpha": float(plan.alpha),
+            "effective_alpha": float(plan.alpha),
+            "applied": True,
+            "note": "holm thresholds applied to p-values via holm_step_down",
         }
     return float(plan.alpha), {
         "policy": "none",

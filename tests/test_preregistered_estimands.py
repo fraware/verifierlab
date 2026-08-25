@@ -209,10 +209,21 @@ def test_duplicate_estimand_ids_fail_closed() -> None:
         )
 
 
-def test_sequential_monitoring_remains_unimplemented() -> None:
+def test_sequential_monitoring_fails_closed_without_stopping_plan() -> None:
     plan = _plan(_registration()).model_copy(update={"stopping_rule": "sequential_alpha"})
-    with pytest.raises(ValueError, match="no alpha-spending procedure"):
+    with pytest.raises(ValueError, match="no preregistered StoppingPlan"):
         compile_stats_plan(_rows(), plan=plan)
+
+
+def test_sequential_monitoring_with_stopping_plan_compiles() -> None:
+    from verifierlab.config.preregistration import StoppingPlan
+
+    stopping = StoppingPlan(looks=(1.0,), nominal_alpha=0.05)
+    plan = _plan(_registration()).model_copy(
+        update={"stopping_rule": "sequential_alpha", "stopping_plan": stopping}
+    )
+    payload = compile_stats_plan(_rows(), plan=plan)
+    assert payload["stopping_rule"] == "sequential_alpha"
 
 
 def _campaign_payload(plan: StatsPlan) -> dict[str, object]:

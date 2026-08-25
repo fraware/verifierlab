@@ -283,12 +283,14 @@ def compile_preregistered_stats_plan(
     pool_overall: bool,
 ) -> dict[str, Any]:
     """Compile only declared inferential estimands for pre-registered-primary policy."""
-    if plan.stopping_rule == "sequential_alpha":
-        raise ValueError(
-            "sequential_alpha is declared but no alpha-spending procedure is implemented; "
-            "refusing to compile inferential results"
-        )
     registration = plan.preregistration
+    if plan.stopping_rule == "sequential_alpha":
+        from verifierlab.statistics.sequential import require_sequential_plan
+
+        stopping = plan.stopping_plan
+        if stopping is None and registration is not None:
+            stopping = registration.stopping_plan
+        require_sequential_plan(stopping)
     if registration is None:
         raise ValueError(
             "pre_registered_primary requires an explicit AnalysisPreregistration; "

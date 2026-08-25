@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from verifierlab.artifacts.records import AccessModel, DisclosureClass
 from verifierlab.budgets.budget import Budget, OverrunPolicy
-from verifierlab.config.preregistration import AnalysisPreregistration
+from verifierlab.config.preregistration import AnalysisPreregistration, StoppingPlan
 from verifierlab.diagnostics.codes import Diagnostic, DiagnosticSeverity
 
 
@@ -77,9 +77,14 @@ class StatsPlan(BaseModel):
     )
     multiple_comparison_policy: str = Field(
         default="none",
-        description="none | bonferroni | pre_registered_primary",
+        description="none | bonferroni | holm | pre_registered_primary",
     )
     preregistration: AnalysisPreregistration | None = None
+    stopping_plan: StoppingPlan | None = None
+    default_sampling_unit: str = Field(
+        default="task",
+        description="task | environment | trajectory | episode — primary must not be trajectory",
+    )
 
     @field_validator("methods")
     @classmethod
@@ -108,9 +113,17 @@ class StatsPlan(BaseModel):
     @field_validator("multiple_comparison_policy")
     @classmethod
     def _known_mcp(cls, value: str) -> str:
-        allowed = {"none", "bonferroni", "pre_registered_primary"}
+        allowed = {"none", "bonferroni", "holm", "pre_registered_primary"}
         if value not in allowed:
             raise ValueError(f"multiple_comparison_policy must be one of {sorted(allowed)}")
+        return value
+
+    @field_validator("default_sampling_unit")
+    @classmethod
+    def _known_sampling_unit(cls, value: str) -> str:
+        allowed = {"task", "environment", "trajectory", "episode"}
+        if value not in allowed:
+            raise ValueError(f"default_sampling_unit must be one of {sorted(allowed)}")
         return value
 
 
@@ -243,17 +256,21 @@ def validate_campaign_semantics(spec: CampaignSpec) -> list[Diagnostic]:
             )
         )
     if spec.stats_plan.stopping_rule == "sequential_alpha":
-        diags.append(
-            Diagnostic(
-                code="VALAB.CAMPAIGN.SEQUENTIAL_UNSUPPORTED",
-                severity=DiagnosticSeverity.ERROR,
-                message=(
-                    "stopping_rule='sequential_alpha' is not implemented; use a fixed/budget "
-                    "design or add a preregistered sequential alpha-spending procedure"
-                ),
-                path="stats_plan.stopping_rule",
+        plan = spec.stats_plan.stopping_plan
+        if plan is None and spec.stats_plan.preregistration is not None:
+            plan = spec.stats_plan.preregistration.stopping_plan
+        if plan is None:
+            diags.append(
+                Diagnostic(
+                    code="VALAB.CAMPAIGN.SEQUENTIAL_UNSUPPORTED",
+                    severity=DiagnosticSeverity.ERROR,
+                    message=(
+                        "stopping_rule='sequential_alpha' requires a preregistered "
+                        "StoppingPlan with looks (Lan-DeMets); refusing fake sequential path"
+                    ),
+                    path="stats_plan.stopping_plan",
+                )
             )
-        )
     if (
         spec.stats_plan.multiple_comparison_policy == "pre_registered_primary"
         and spec.stats_plan.preregistration is None

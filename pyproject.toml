@@ -104,6 +104,12 @@ docs = [
     "mkdocs-material>=9.5,<10",
     "mike>=2.1,<3",
 ]
+stats = [
+    # Optional SciPy golden cross-check extra (WP-06). Pure-Python intervals in
+    # verifierlab.statistics.intervals remain the executable path; SciPy is not
+    # required at runtime and is not silently substituted.
+    "scipy>=1.11,<2",
+]
 
 [project.scripts]
 valab = "verifierlab.cli:app"

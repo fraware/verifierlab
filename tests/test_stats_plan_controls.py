@@ -21,10 +21,26 @@ def test_bonferroni_changes_effective_alpha() -> None:
     }
 
 
-def test_sequential_alpha_is_rejected_until_procedure_exists() -> None:
+def test_sequential_alpha_without_stopping_plan_is_rejected() -> None:
     plan = StatsPlan(stopping_rule="sequential_alpha")
-    with pytest.raises(ValueError, match="no alpha-spending procedure"):
+    with pytest.raises(ValueError, match="no preregistered StoppingPlan"):
         _effective_alpha(plan, family_size=1)
+
+
+def test_sequential_alpha_with_lan_demets_plan_spends_alpha() -> None:
+    from verifierlab.statistics.sequential import StoppingPlan
+
+    plan = StatsPlan(
+        stopping_rule="sequential_alpha",
+        stopping_plan=StoppingPlan(looks=(0.5, 1.0), nominal_alpha=0.05),
+    )
+    effective, record = _effective_alpha(plan, family_size=1, look_index=0)
+    assert record["policy"] == "sequential_alpha"
+    assert record["applied"] is True
+    assert 0.0 < effective <= 0.05
+    final_eff, final_rec = _effective_alpha(plan, family_size=1, look_index=1)
+    assert final_rec["sequential"]["information_fraction"] == 1.0
+    assert final_eff >= effective
 
 
 def test_pre_registered_primary_is_rejected_until_family_compiler_exists() -> None:

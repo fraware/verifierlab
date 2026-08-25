@@ -8,6 +8,10 @@ from verifierlab.config.preregistration import (
     InferenceMode,
     InterpretationDirection,
     IntervalMethod,
+    MissingnessPolicy,
+    MultiplicityPlan,
+    SamplingUnit,
+    StoppingPlan,
 )
 
 __all__ = [
@@ -18,4 +22,8 @@ __all__ = [
     "InferenceMode",
     "InterpretationDirection",
     "IntervalMethod",
+    "MissingnessPolicy",
+    "MultiplicityPlan",
+    "SamplingUnit",
+    "StoppingPlan",
 ]
