@@ -281,5 +281,38 @@ this branch (not pushed).
 (`test_score_decision_*`, `test_campaign_profile_binding`). No migration gaps
 found on this tree beyond what #7 already landed.
 
-WP-05 EvidenceResolver rewrite, WP-06 stats v2, WP-07–11 expansions, WP-13
-study, WP-14–22 remain for later agents.
+### WP-04 — freeze → adjudicate → release + hidden-holdout custody
+
+| Item | Status |
+| ---- | ------ |
+| Freeze seals campaign/split/profile/budget/work-unit CAS/execution/state/commitments/prereg | done (`SealedRunManifest` v2 + `FreezeSealBundle`) |
+| `LabelReleaseReceipt` binds sealed run + label set | done |
+| Post-freeze attack mutation reject; split rebind reject; label inject gates | done |
+| Opaque holdout IDs + side-channel scan | done |
+| Chronology + research registration hooks (calibration/metamorphic/HFS/surface/deployment) | done |
+| Reports require release receipt (or explicit public-only ungated) | done |
+| Tests | `tests/test_lifecycle_custody_wp04.py` |
+
+### WP-05 — artifact-derived assurance maturity
+
+| Item | Status |
+| ---- | ------ |
+| `EvidenceResolver` → typed `EvidenceFact` (not caller booleans) | done |
+| `ExternalAssuranceAttestation` vs external trust roots (reject self/wrong subject) | done |
+| Cumulative scientific gates; local/rootful ⇒ `security_grade=false` | done |
+| CLI `valab assurance qualify RUN --claim CLAIM.json` | done |
+| `SEED_NOT_QUALIFICATION_PATH` retained | intact |
+| Tests | `tests/test_assurance_resolver_wp05.py` |
+
+### WP-06 — statistical engine closure
+
+| Item | Status |
+| ---- | ------ |
+| Task/environment default sampling unit; trajectory primary forbidden | done |
+| Expanded estimand metrics + Holm/Bonferroni + TOST equivalence | done |
+| Real Lan-DeMets `StoppingPlan` or fail-closed (no fake sequential) | done |
+| Digest-bound `PowerPlan`; underpowered → indeterminate blocker | done |
+| Optional `[stats]` SciPy extra declared; pure-Python remains executable path | done (no golden SciPy suite in this pass) |
+| Tests | `tests/test_stats_engine_wp06.py` + updated plan/prereg tests |
+
+WP-07–11 methods, WP-13 study, WP-14–22 remain for later agents.
