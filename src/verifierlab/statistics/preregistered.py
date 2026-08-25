@@ -10,9 +10,9 @@ from __future__ import annotations
 from typing import Any
 
 from verifierlab.config.campaign import StatsPlan
+from verifierlab.config.preregistration import AnalysisPreregistration, EstimandSpec
 from verifierlab.reports.metrics import CohortMetrics, MetricsReport, compute_metrics_iter
 from verifierlab.statistics.intervals import exact_clopper_pearson, wilson_interval
-from verifierlab.statistics.preregistration import AnalysisPreregistration, EstimandSpec
 
 
 def _rows_for_split(rows: list[Any], split: str | None) -> list[Any]:
@@ -230,14 +230,18 @@ def _compile_estimand(
     return base
 
 
-def _validate_primary_family(plan: StatsPlan, registration: AnalysisPreregistration) -> dict[str, Any]:
+def _validate_primary_family(
+    plan: StatsPlan, registration: AnalysisPreregistration
+) -> dict[str, Any]:
     primary_interval = [
         item
         for item in registration.estimands
         if item.role == "primary" and item.inference == "interval"
     ]
     if not primary_interval:
-        raise ValueError("pre_registered_primary requires at least one inferential primary estimand")
+        raise ValueError(
+            "pre_registered_primary requires at least one inferential primary estimand"
+        )
     secondary_interval = [
         item.estimand_id
         for item in registration.estimands
@@ -248,7 +252,10 @@ def _validate_primary_family(plan: StatsPlan, registration: AnalysisPreregistrat
             "pre_registered_primary requires secondary estimands to be descriptive; "
             f"inferential secondary ids={sorted(secondary_interval)}"
         )
-    if any(item.metric == "optimization_gap" for item in primary_interval) and plan.bootstrap_samples <= 0:
+    if (
+        any(item.metric == "optimization_gap" for item in primary_interval)
+        and plan.bootstrap_samples <= 0
+    ):
         raise ValueError("registered optimization-gap intervals require bootstrap_samples > 0")
     allocated = {item.estimand_id: float(item.alpha or 0.0) for item in primary_interval}
     allocated_total = sum(allocated.values())
@@ -313,9 +320,7 @@ def compile_preregistered_stats_plan(
         "access_model": access_model,
         "stats_plan": plan.model_dump(mode="json"),
         "pool_overall": pool_overall,
-        "cohorts": {
-            name: _descriptive_cohort(cm) for name, cm in sorted(metrics.cohorts.items())
-        },
+        "cohorts": {name: _descriptive_cohort(cm) for name, cm in sorted(metrics.cohorts.items())},
         "optimization_gap": _descriptive_gap(metrics.cohorts),
         "stopping_rule": plan.stopping_rule,
         "multiple_comparison_policy": plan.multiple_comparison_policy,

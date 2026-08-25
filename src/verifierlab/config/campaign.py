@@ -11,8 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from verifierlab.artifacts.records import AccessModel, DisclosureClass
 from verifierlab.budgets.budget import Budget, OverrunPolicy
+from verifierlab.config.preregistration import AnalysisPreregistration
 from verifierlab.diagnostics.codes import Diagnostic, DiagnosticSeverity
-from verifierlab.statistics.preregistration import AnalysisPreregistration
 
 
 class CampaignSpecError(ValueError):
@@ -254,16 +254,19 @@ def validate_campaign_semantics(spec: CampaignSpec) -> list[Diagnostic]:
                 path="stats_plan.stopping_rule",
             )
         )
-    if spec.stats_plan.multiple_comparison_policy == "pre_registered_primary":
+    if (
+        spec.stats_plan.multiple_comparison_policy == "pre_registered_primary"
+        and spec.stats_plan.preregistration is None
+    ):
         diags.append(
             Diagnostic(
-                code="VALAB.CAMPAIGN.PRIMARY_FAMILY_UNSUPPORTED",
+                code="VALAB.CAMPAIGN.PREREGISTRATION_REQUIRED",
                 severity=DiagnosticSeverity.ERROR,
                 message=(
-                    "pre_registered_primary requires an explicit estimand family compiler; "
-                    "use none/bonferroni until that implementation exists"
+                    "pre_registered_primary requires an explicit content-bound "
+                    "stats_plan.preregistration"
                 ),
-                path="stats_plan.multiple_comparison_policy",
+                path="stats_plan.preregistration",
             )
         )
     if not isinstance(spec.access_model, AccessModel):
