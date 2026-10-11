@@ -50,8 +50,7 @@ class AdapterContractVersion(BaseModel):
     minor: int = 0
     surfaces: tuple[str, ...] = CONTRACT_SURFACES
     notes: str = (
-        "Shared by native and optional adapters. "
-        "Fixture evidence cannot be labeled live-tested."
+        "Shared by native and optional adapters. Fixture evidence cannot be labeled live-tested."
     )
 
     def content_digest(self) -> str:
@@ -84,7 +83,9 @@ def assert_matrix_row_honesty(row: dict[str, Any]) -> None:
             f"{sorted(ALLOWED_MATRIX_STATUSES)}"
         )
     live_vs = str(row.get("live_vs_fixture") or "").lower()
-    if status in {"fixture-only", "unsupported"} and ("live-tested" in live_vs or live_vs == "live"):
+    if status in {"fixture-only", "unsupported"} and (
+        "live-tested" in live_vs or live_vs == "live"
+    ):
         raise AdapterMatrixHonestyError(
             f"adapter {row.get('adapter')!r}: status={status} cannot claim live evidence"
         )
@@ -113,7 +114,10 @@ def validate_matrix_document(matrix: dict[str, Any]) -> list[str]:
     if not isinstance(adapters, list) or not adapters:
         return ["matrix must contain a non-empty adapters list"]
     contract = matrix.get("adapter_contract") or {}
-    if str(contract.get("version") or "") != f"{ADAPTER_CONTRACT_V1.major}.{ADAPTER_CONTRACT_V1.minor}":
+    if (
+        str(contract.get("version") or "")
+        != f"{ADAPTER_CONTRACT_V1.major}.{ADAPTER_CONTRACT_V1.minor}"
+    ):
         errors.append(
             f"adapter_contract.version must be "
             f"{ADAPTER_CONTRACT_V1.major}.{ADAPTER_CONTRACT_V1.minor}"
