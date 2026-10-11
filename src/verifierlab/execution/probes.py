@@ -118,12 +118,22 @@ def run_malicious_probe_catalogue(
         Path("/etc/shadow"),
         Path("/proc/1/root"),
     ]
-    visible = [str(p) for p in sensitive_paths if p.exists()]
+    visible: list[str] = []
+    inaccessible: list[str] = []
+    for path in sensitive_paths:
+        try:
+            if path.exists():
+                visible.append(str(path))
+        except OSError:
+            # A restricted /proc path is not proof of absence. Fail closed on
+            # any path whose presence cannot be established.
+            inaccessible.append(str(path))
     outcomes.append(
         _outcome(
             "filesystem_inventory",
-            denied=len(visible) == 0,
-            evidence={"visible": visible},
+            denied=not visible and not inaccessible,
+            evidence={"visible": visible, "inaccessible": inaccessible},
+            detail="sensitive_paths_unobservable" if inaccessible else None,
         )
     )
 
