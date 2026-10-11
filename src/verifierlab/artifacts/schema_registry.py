@@ -124,7 +124,9 @@ def migrate_beam_checkpoint_v1_to_v2(payload: dict[str, Any]) -> dict[str, Any]:
     out = dict(payload)
     version = str(out.get("schema_version", "1"))
     if version != "1":
-        raise SchemaRegistryError(f"beam_checkpoint v1→v2 expects schema_version=1, got {version!r}")
+        raise SchemaRegistryError(
+            f"beam_checkpoint v1→v2 expects schema_version=1, got {version!r}"
+        )
     beam = []
     for item in out.get("beam") or []:
         stored_score, counter, action = item
@@ -324,7 +326,9 @@ def verify_bundle_dir(path: Path, *, registry: SchemaRegistry | None = None) -> 
         "reasons": reasons,
         "artifacts": artifacts,
         "file_digests": digests,
-        "canonical_bytes_probe": canonical_dumps({"schema_registry": reg.schema_version}).hex()[:16],
+        "canonical_bytes_probe": canonical_dumps({"schema_registry": reg.schema_version}).hex()[
+            :16
+        ],
     }
 
 
