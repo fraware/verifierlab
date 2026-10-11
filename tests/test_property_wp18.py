@@ -51,7 +51,6 @@ def test_budget_ledger_remaining_nonnegative(limit: int, spend: int) -> None:
             ledger.add_queries(1)
 
 
-
 def test_lifecycle_transition_matrix_closed() -> None:
     assert can_transition(LifecycleState.DRAFT, LifecycleState.LABEL_RELEASE) is False
     assert can_transition(LifecycleState.FREEZE, LifecycleState.DRAFT) is False
