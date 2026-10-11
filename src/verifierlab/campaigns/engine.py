@@ -264,6 +264,7 @@ async def run_campaign_async(
     boundary_digests: list[str] = []
     probe_report_digest: str | None = None
 
+    outcome: dict[str, Any]
     if execution_policy.mode == "security_grade":
         try:
             secure = select_secure_launcher(execution_policy)
