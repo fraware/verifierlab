@@ -2,8 +2,8 @@
   "access_model": "black-box",
   "budget_digest": "b1d307581a2ae9accde7867a444bf45d9edf962097c37f75c59d7c4afac6c2ee",
   "campaign": "pack-a-outcome-vs-process",
-  "campaign_digest": "641d56653817f395e46b584e2b6435f5857cf30f21ae5a02e3b824d6910758b6",
-  "content_digest": "a002bb0acd3bea67182ea298b4ee1bc6767c4cb099ed8347dc9cbf53ecce8c61",
+  "campaign_digest": "4dff6be309777ecc5e23fd3884de767b775e25a287b4b0e46d521db57c2ca2d4",
+  "content_digest": "3518814a065118759746bece741dd22ca12dd7c849be2796897ff0f2a9e846a3",
   "expected_taxonomies": [
     "process_shortcut",
     "unauthorized_action"
