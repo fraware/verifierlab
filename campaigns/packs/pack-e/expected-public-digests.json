@@ -2,8 +2,8 @@
   "access_model": "black-box",
   "budget_digest": "b1d307581a2ae9accde7867a444bf45d9edf962097c37f75c59d7c4afac6c2ee",
   "campaign": "pack-e-coevolution",
-  "campaign_digest": "deac5fa6ff43b106555b70305382c261807d4493b4d740a98734da9f67be7563",
-  "content_digest": "de8669a568069fc9fe25cd2bcc9565752e6e04a204c81975d014efb531c41607",
+  "campaign_digest": "234e83961d99ac292103df89684a0b4cc3e41b7aff4d10d733665f30bca72eb0",
+  "content_digest": "1690e7b8525b90acf3f3c6568639cdcd3dbd621b37662e8cd8e3f4c75946de99",
   "expected_taxonomies": [
     "reward_hacking",
     "duplicate_effect"
