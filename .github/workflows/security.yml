@@ -1,8 +1,8 @@
 name: Security
 
 # CodeQL on PR/push + dependency audit / SBOM.
-# High/critical pip-audit findings hard-fail on main, release branches, and
-# annotated release tags (WP-18). Time-bounded waivers use security/waivers/.
+# All pip-audit advisories hard-fail on main, release branches, and
+# annotated release tags. pip-audit does not support severity filtering.
 
 on:
   push:
@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       fail_audit:
-        description: "Hard-fail on high/critical pip-audit findings"
+        description: "Hard-fail on all pip-audit vulnerability findings"
         required: false
         type: boolean
         default: true
@@ -118,9 +118,9 @@ jobs:
         continue-on-error: ${{ steps.posture.outputs.hard_fail != 'true' }}
         run: |
           uv pip install pip-audit
-          # Fail on HIGH/CRITICAL for protected lines; advisory otherwise.
+          # pip-audit has no severity-level CLI option. Enforce all findings on protected refs.
           if [[ "${{ steps.posture.outputs.hard_fail }}" == "true" ]]; then
-            uv run pip-audit --desc --severity-level=high
+            uv run pip-audit --desc
           else
             uv run pip-audit --desc
           fi
