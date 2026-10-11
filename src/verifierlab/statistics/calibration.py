@@ -299,7 +299,9 @@ def compile_planted_calibration_report(
         if analysis_registration.plan.content_digest != plan.content_digest:
             raise ValueError("analysis registration does not bind the supplied analysis plan")
         if analysis_registration.observations_available_at_registration:
-            raise ValueError("analysis registration chronology violated: observations were available")
+            raise ValueError(
+                "analysis registration chronology violated: observations were available"
+            )
         if analysis_registration.observation_digests_at_registration:
             raise ValueError("analysis registration chronology violated: observation digests bound")
         observation_digests = tuple(sorted(obs.content_digest for obs in observations))

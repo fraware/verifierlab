@@ -1,4 +1,4 @@
-"""Final acceptance gates A–J and NG-01…NG-15 (WP-22 / Gate G7)."""
+"""Final acceptance gates A-J and NG-01...NG-15 (WP-22 / Gate G7)."""
 
 from __future__ import annotations
 
@@ -9,8 +9,6 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
-
-import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 STUDY = REPO / "studies" / "flagship-2026"
@@ -267,7 +265,7 @@ class TestNoGoRegressions:
         assert "_FORBIDDEN_PACKAGE_PATHS" in text
 
     def test_ng03_scores_need_mapping(self) -> None:
-        from verifierlab.api.decision import Decision, DecisionKind
+        from verifierlab.api.decision import DecisionKind
         from verifierlab.api.verifier import normalize_decision
 
         d = normalize_decision({"decision": "score", "score": 0.99})
@@ -318,8 +316,8 @@ class TestNoGoRegressions:
     def test_ng09_migrations_cannot_upgrade_maturity(self) -> None:
         from verifierlab.artifacts.schema_registry import (
             _strip_forbidden_maturity_upgrades,
-            migrate_artifact,
             load_schema_registry,
+            migrate_artifact,
         )
 
         cleaned = _strip_forbidden_maturity_upgrades(

@@ -264,6 +264,7 @@ async def run_campaign_async(
     boundary_digests: list[str] = []
     probe_report_digest: str | None = None
 
+    outcome: dict[str, Any]
     if execution_policy.mode == "security_grade":
         try:
             secure = select_secure_launcher(execution_policy)
@@ -638,9 +639,7 @@ def freeze_run(run_dir: Path, *, store: ContentAddressedStore | None = None) -> 
             else None
         ),
         assurance_chain_digest=(
-            str(meta.get("assurance_chain_digest"))
-            if meta.get("assurance_chain_digest")
-            else None
+            str(meta.get("assurance_chain_digest")) if meta.get("assurance_chain_digest") else None
         ),
         sealed_at=time.time(),
         metadata={

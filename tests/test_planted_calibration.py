@@ -513,7 +513,9 @@ def test_out_of_design_duplicates_and_mixed_profiles_are_rejected() -> None:
 
     same_work = _observation(by_id["plant-b"], flagged=True, work_unit="a")
     with pytest.raises(ValueError, match="duplicate calibration work_unit_digest"):
-        compile_planted_calibration_report(design, commitment, release, [a, same_work], plan=_plan())
+        compile_planted_calibration_report(
+            design, commitment, release, [a, same_work], plan=_plan()
+        )
 
 
 def test_shared_run_digest_across_items_is_allowed() -> None:

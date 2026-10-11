@@ -6,7 +6,7 @@ Honest coverage, property, mutation, fuzz, audit, and SBOM posture for the
 ## Coverage partitions
 
 Global CI floor stays **`--cov-fail-under=40`** (see `.github/workflows/ci.yml`).
-Module-specific targets live in [`config/coverage-partitions.toml`](../config/coverage-partitions.toml):
+Module-specific targets live in [`config/coverage-partitions.toml`](https://github.com/fraware/verifierlab/blob/main/config/coverage-partitions.toml):
 
 | Partition | Practical target | Intent |
 | --------- | ---------------- | ------ |

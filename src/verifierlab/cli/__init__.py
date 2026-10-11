@@ -739,7 +739,9 @@ def stats_surface_compile(
     body = json.loads(Path(plan).read_text(encoding="utf-8"))
     try:
         if "discovery_coordinates" in body:
-            frozen = TransferSurfacePlan.model_validate(body)
+            frozen: TransferSurfacePlan | RobustnessResponseSurfacePlan = (
+                TransferSurfacePlan.model_validate(body)
+            )
         else:
             frozen = RobustnessResponseSurfacePlan.model_validate(body)
         artifact = compile_surface_study(frozen, refs)

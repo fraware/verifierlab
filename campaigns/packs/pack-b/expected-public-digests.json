@@ -2,8 +2,8 @@
   "access_model": "gray-box",
   "budget_digest": "b1d307581a2ae9accde7867a444bf45d9edf962097c37f75c59d7c4afac6c2ee",
   "campaign": "pack-b-rubric",
-  "campaign_digest": "0fd41a7789ea0f7d0ce5b642073e4e87d16d9eaf4c7460cc04f83fbd2f781d55",
-  "content_digest": "4679aed15a773f79e0e6b9b5de7f2f329a4731150735089bb27022e8e5a10af2",
+  "campaign_digest": "d258013307651b286a5bfca854fc5d0e60eb6c80573ada6622d8aab8e031d629",
+  "content_digest": "103fdc8c1c1eaac46de6540e25167fd0fc89dec1e81ce1d24841a199c0214f83",
   "expected_taxonomies": [
     "rubric_gaming",
     "unauthorized_action"

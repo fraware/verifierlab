@@ -28,19 +28,20 @@ dependencies = [
     "rich>=13.7,<15",
     "pyyaml>=6.0,<7",
     "jinja2>=3.1,<4",
-    "cryptography>=42,<47",
+    "cryptography>=50,<51",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.2,<9",
-    "pytest-asyncio>=0.23,<1",
+    "pytest>=9.0.3,<10",
+    "pytest-asyncio>=1.3,<2",
     "pytest-cov>=5.0,<7",
     "hypothesis>=6.100,<7",
     "ruff>=0.5,<1",
     "mypy>=1.10,<2",
     "types-PyYAML>=6.0,<7",
     "moto[s3]>=5.0,<6",
+    "urllib3>=2.8.0,<3",
 ]
 inspect = [
     "inspect-ai>=0.3.200,<0.4",
@@ -264,8 +265,8 @@ exclude_lines = [
 
 [tool.uv]
 dev-dependencies = [
-    "pytest>=8.2,<9",
-    "pytest-asyncio>=0.23,<1",
+    "pytest>=9.0.3,<10",
+    "pytest-asyncio>=1.3,<2",
     "pytest-cov>=5.0,<7",
     "hypothesis>=6.100,<7",
     "ruff>=0.5,<1",

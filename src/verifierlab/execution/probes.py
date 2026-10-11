@@ -118,12 +118,22 @@ def run_malicious_probe_catalogue(
         Path("/etc/shadow"),
         Path("/proc/1/root"),
     ]
-    visible = [str(p) for p in sensitive_paths if p.exists()]
+    visible: list[str] = []
+    inaccessible: list[str] = []
+    for path in sensitive_paths:
+        try:
+            if path.exists():
+                visible.append(str(path))
+        except OSError:
+            # A restricted /proc path is not proof of absence. Fail closed on
+            # any path whose presence cannot be established.
+            inaccessible.append(str(path))
     outcomes.append(
         _outcome(
             "filesystem_inventory",
-            denied=len(visible) == 0,
-            evidence={"visible": visible},
+            denied=not visible and not inaccessible,
+            evidence={"visible": visible, "inaccessible": inaccessible},
+            detail="sensitive_paths_unobservable" if inaccessible else None,
         )
     )
 
@@ -259,7 +269,7 @@ def run_malicious_probe_catalogue(
 
     # Privilege escalation indicator
     try:
-        euid = os.geteuid()  # type: ignore[attr-defined]
+        euid = os.geteuid()
     except AttributeError:
         euid = -1  # Windows: not a Linux security domain
     non_root = euid not in (0, -1) or (euid == -1 and os.name != "posix")

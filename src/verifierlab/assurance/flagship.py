@@ -388,7 +388,7 @@ def build_flagship_study(*, force: bool = False) -> dict[str, Any]:
     }
     # Preregistered power assumed to need >=16 clusters for primary FAR contrasts.
     underpowered = {k: v < 16 for k, v in n_clusters.items()}
-    stats = {
+    stats: dict[str, Any] = {
         "primary_estimands": [
             {
                 "estimand_id": e.estimand_id,
@@ -426,7 +426,7 @@ def build_flagship_study(*, force: bool = False) -> dict[str, Any]:
     )
 
     # Sealed-run style artifacts so EvidenceResolver can derive internal verification.
-    sealed = {
+    sealed: dict[str, Any] = {
         "schema_version": "2",
         "kind": "sealed_run",
         "seal_id": f"seal-{STUDY_ID}",

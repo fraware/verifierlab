@@ -2,8 +2,8 @@
   "access_model": "black-box",
   "budget_digest": "b1d307581a2ae9accde7867a444bf45d9edf962097c37f75c59d7c4afac6c2ee",
   "campaign": "pack-c-isomorphic",
-  "campaign_digest": "491afcb460e2d46005b8c1a7bf1dfb0ec45d888cd847c1ebe813a581cea4b029",
-  "content_digest": "453ef38f6c3a7a23e45e5722949a2a769e342d0e34a10b89b037a07f0e4e1edd",
+  "campaign_digest": "e66780473983464ced7365f83099d139f5af321c42eae6e1512d85a0fd806269",
+  "content_digest": "779931a632cf0c872d4ba01232a0dc12e0f8cc2cab3d1833d87ad9e7a9892827",
   "expected_taxonomies": [
     "isomorphic_relabel"
   ],
