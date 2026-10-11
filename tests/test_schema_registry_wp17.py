@@ -50,7 +50,12 @@ def test_beam_checkpoint_v1_to_v2_migration(registry) -> None:
 
 
 def test_migration_cannot_introduce_maturity(registry) -> None:
-    payload = {"schema_version": "1", "name": "v", "implementation_digest": "a" * 64, "config_digest": "b" * 64}
+    payload = {
+        "schema_version": "1",
+        "name": "v",
+        "implementation_digest": "a" * 64,
+        "config_digest": "b" * 64,
+    }
 
     def _inject(p: dict) -> dict:
         out = dict(p)
@@ -112,7 +117,9 @@ def test_golden_fixture_and_one_byte_tamper(tmp_path: Path, registry) -> None:
     # Persist golden for regression corpus.
     fixture_path = FIXTURES / "beam_checkpoint_v1.json"
     if not fixture_path.is_file():
-        fixture_path.write_text(json.dumps(golden, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        fixture_path.write_text(
+            json.dumps(golden, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
     loaded = json.loads(fixture_path.read_text(encoding="utf-8"))
     assert digest_of(loaded) == digest_of(golden) or loaded["schema_version"] == "1"
 
