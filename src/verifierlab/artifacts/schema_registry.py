@@ -329,8 +329,8 @@ def verify_bundle_dir(path: Path, *, registry: SchemaRegistry | None = None) -> 
 
 
 __all__ = [
-    "ArtifactSchemaEntry",
     "REGISTRY_PATH",
+    "ArtifactSchemaEntry",
     "SchemaRegistry",
     "SchemaRegistryError",
     "load_schema_registry",
