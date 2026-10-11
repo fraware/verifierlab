@@ -638,9 +638,7 @@ def freeze_run(run_dir: Path, *, store: ContentAddressedStore | None = None) -> 
             else None
         ),
         assurance_chain_digest=(
-            str(meta.get("assurance_chain_digest"))
-            if meta.get("assurance_chain_digest")
-            else None
+            str(meta.get("assurance_chain_digest")) if meta.get("assurance_chain_digest") else None
         ),
         sealed_at=time.time(),
         metadata={
