@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 
@@ -100,6 +101,30 @@ def test_probe_catalogue_without_sentinels_still_not_security_grade_off_executor
     )
     assert report.security_grade_eligible is False
     assert report.structural_only is True
+
+
+def test_inaccessible_sensitive_path_does_not_establish_isolation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An access-denied /proc path is unknown, not evidence of absence."""
+    original_exists = Path.exists
+
+    def inaccessible_root(path: Path) -> bool:
+        if str(path) == "/proc/1/root":
+            raise PermissionError("permission denied")
+        return original_exists(path)
+
+    monkeypatch.setattr(Path, "exists", inaccessible_root)
+    report = run_malicious_probe_catalogue(
+        backend_kind="docker_rootless",
+        ran_inside_executor=True,
+        secret_sentinels={},
+        gt_guess_seed=3,
+    )
+    inventory = next(o for o in report.outcomes if o.probe_id == "filesystem_inventory")
+    assert inventory.denied_or_absent is False
+    assert inventory.detail == "sensitive_paths_unobservable"
+    assert report.security_grade_eligible is False
 
 
 def test_randomized_gt_paths_are_not_a_fixed_denylist() -> None:
