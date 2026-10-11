@@ -259,7 +259,7 @@ def run_malicious_probe_catalogue(
 
     # Privilege escalation indicator
     try:
-        euid = os.geteuid()  # type: ignore[attr-defined]
+        euid = os.geteuid()
     except AttributeError:
         euid = -1  # Windows: not a Linux security domain
     non_root = euid not in (0, -1) or (euid == -1 and os.name != "posix")
